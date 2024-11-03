@@ -36,12 +36,29 @@ const getGenerations = (): StoredGeneration[] => {
   return stored ? JSON.parse(stored) : [];
 };
 
+// Add status messages for better UX
+const getStatusMessage = (state: string) => {
+  switch (state) {
+    case 'queued':
+      return 'Preparing to generate your video...';
+    case 'processing':
+      return 'Creating your masterpiece...';
+    case 'completed':
+      return 'Video ready!';
+    case 'failed':
+      return 'Generation failed';
+    default:
+      return 'Processing...';
+  }
+};
+
 export default function Home() {
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
   const [error, setError] = useState('');
+  const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
 
   useEffect(() => {
     if (pubkey) {
@@ -80,7 +97,6 @@ export default function Home() {
       
       const data = await response.json();
       
-      // Save to local storage
       const newGeneration = {
         id: data.id,
         prompt,
@@ -92,8 +108,8 @@ export default function Home() {
       
       saveGeneration(newGeneration);
       setGenerations(prev => [newGeneration, ...prev]);
-
-      // Start polling for this generation
+      setPrompt('');
+      setSelectedGeneration(newGeneration);
       pollForCompletion(data.id);
     } catch (err) {
       setError('Failed to generate video. Please try again.');
@@ -109,33 +125,33 @@ export default function Home() {
         const data = await response.json();
 
         if (data.state === 'completed' || data.state === 'failed') {
-          setGenerations(prev => 
-            prev.map(g => g.id === id ? {
-              ...g,
-              state: data.state,
-              videoUrl: data.assets?.video
-            } : g)
-          );
-
-          // Update in storage
-          const stored = getGenerations();
-          const updated = stored.map(g => g.id === id ? {
-            ...g,
+          const updatedGeneration = {
+            ...generations.find(g => g.id === id)!,
             state: data.state,
             videoUrl: data.assets?.video
-          } : g);
+          };
+          
+          setGenerations(prev => 
+            prev.map(g => g.id === id ? updatedGeneration : g)
+          );
+          
+          if (selectedGeneration?.id === id) {
+            setSelectedGeneration(updatedGeneration);
+          }
+
+          const stored = getGenerations();
+          const updated = stored.map(g => g.id === id ? updatedGeneration : g);
           localStorage.setItem('generations', JSON.stringify(updated));
 
-          return true; // Stop polling
+          return true;
         }
-        return false; // Continue polling
+        return false;
       } catch (err) {
         console.error('Error checking status:', err);
-        return true; // Stop polling on error
+        return true;
       }
     };
 
-    // Poll every 2 seconds
     const poll = async () => {
       const shouldStop = await checkStatus();
       if (!shouldStop) {
@@ -146,111 +162,171 @@ export default function Home() {
     poll();
   };
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <Head>
-        <title>Luma AI Video Generator</title>
-      </Head>
-
-      <main className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold mb-8 text-center">
-          Luma AI Video Generator
-        </h1>
-
-        {!pubkey ? (
-          <div className="text-center">
+  if (!pubkey) {
+    return (
+      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
+        <div className="max-w-md w-full p-6 space-y-6">
+          <h1 className="text-3xl font-bold text-center">Luma AI Video Generator</h1>
+          <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
+            <p className="text-gray-300 text-center">Connect your Nostr wallet to get started</p>
             <button
               onClick={connectNostr}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg"
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
             >
               Connect with Nostr
             </button>
             {error && (
-              <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+              <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
                 {error}
               </div>
             )}
           </div>
-        ) : (
-          <div className="max-w-4xl mx-auto space-y-6">
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#111111] text-white">
+      <Head>
+        <title>Luma AI Video Generator</title>
+      </Head>
+
+      <div className="flex h-screen">
+        {/* Sidebar */}
+        <div className="w-64 bg-[#1a1a1a] border-r border-gray-800 hidden md:block overflow-auto">
+          <div className="p-4">
+            <h2 className="text-xl font-bold mb-4">History</h2>
+            <div className="space-y-2">
+              {generations.map((gen) => (
+                <button
+                  key={gen.id}
+                  onClick={() => setSelectedGeneration(gen)}
+                  className={`w-full text-left p-3 rounded-lg transition duration-200 ${
+                    selectedGeneration?.id === gen.id 
+                      ? 'bg-purple-600' 
+                      : 'hover:bg-[#2a2a2a]'
+                  }`}
+                >
+                  <p className="text-sm font-medium truncate">{gen.prompt}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {new Date(gen.createdAt).toLocaleDateString()}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col">
+          {/* Header */}
+          <header className="bg-[#1a1a1a] border-b border-gray-800 p-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm">Connected: {pubkey.slice(0, 8)}...{pubkey.slice(-8)}</span>
-              <button
-                onClick={() => setPubkey(null)}
-                className="text-sm text-gray-400 hover:text-white"
-              >
-                Disconnect
-              </button>
-            </div>
-
-            <div className="relative">
-              <textarea
-                className="w-full p-4 bg-gray-800 rounded-lg border border-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                rows={4}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Enter your prompt here..."
-                disabled={loading}
-              />
-            </div>
-
-            <button
-              onClick={generateVideo}
-              disabled={loading || !prompt}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg"
-            >
-              {loading ? 'Generating...' : 'Generate Video'}
-            </button>
-
-            {error && (
-              <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                {error}
+              <h1 className="text-xl font-bold">Luma AI Video Generator</h1>
+              <div className="flex items-center space-x-4">
+                <span className="text-sm text-gray-400">
+                  {pubkey.slice(0, 8)}...{pubkey.slice(-8)}
+                </span>
+                <button
+                  onClick={() => setPubkey(null)}
+                  className="text-sm text-gray-400 hover:text-white transition duration-200"
+                >
+                  Disconnect
+                </button>
               </div>
-            )}
+            </div>
+          </header>
 
-            {generations.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold">Your Generations</h2>
-                {generations.map((gen) => (
-                  <div key={gen.id} className="bg-gray-800 p-4 rounded-lg">
-                    <p className="font-bold mb-2">{gen.prompt}</p>
-                    <p className="text-sm text-gray-400 mb-2">Status: {gen.state}</p>
-                    {gen.videoUrl ? (
-                      <div>
+          {/* Main area */}
+          <div className="flex-1 overflow-auto">
+            {selectedGeneration ? (
+              <div className="p-6">
+                <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
+                      <p className="text-sm text-gray-400 mt-1">
+                        {new Date(selectedGeneration.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSelectedGeneration(null)}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div className="border-t border-gray-800 pt-4">
+                    <p className="text-sm text-gray-300 mb-4">
+                      {getStatusMessage(selectedGeneration.state)}
+                    </p>
+                    
+                    {selectedGeneration.videoUrl ? (
+                      <div className="space-y-4">
                         <video
                           className="w-full rounded-lg"
                           controls
-                          src={gen.videoUrl}
+                          src={selectedGeneration.videoUrl}
                           loop
                         />
                         <a
-                          href={gen.videoUrl}
+                          href={selectedGeneration.videoUrl}
                           download
-                          className="mt-2 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                          className="inline-block bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                         >
                           Download Video
                         </a>
                       </div>
-                    ) : gen.state === 'failed' ? (
-                      <p className="text-red-400">Generation failed</p>
+                    ) : selectedGeneration.state === 'failed' ? (
+                      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+                        Generation failed. Please try again.
+                      </div>
                     ) : (
-                      <div className="animate-pulse flex space-x-4">
-                        <div className="flex-1 space-y-4 py-1">
-                          <div className="h-4 bg-gray-700 rounded w-3/4"></div>
-                          <div className="space-y-2">
-                            <div className="h-4 bg-gray-700 rounded"></div>
-                            <div className="h-4 bg-gray-700 rounded w-5/6"></div>
-                          </div>
-                        </div>
+                      <div className="animate-pulse space-y-4">
+                        <div className="h-64 bg-[#2a2a2a] rounded-lg"></div>
+                        <div className="h-4 bg-[#2a2a2a] rounded w-3/4"></div>
                       </div>
                     )}
                   </div>
-                ))}
+                </div>
+              </div>
+            ) : (
+              <div className="p-6">
+                <div className="max-w-3xl mx-auto">
+                  <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
+                    <textarea
+                      className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+                      rows={4}
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder="Describe your video idea..."
+                      disabled={loading}
+                    />
+                    
+                    <div className="flex justify-end">
+                      <button
+                        onClick={generateVideo}
+                        disabled={loading || !prompt}
+                        className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
+                      >
+                        {loading ? 'Generating...' : 'Generate Video'}
+                      </button>
+                    </div>
+
+                    {error && (
+                      <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                        {error}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        )}
-      </main>
+        </div>
+      </div>
     </div>
   );
 }
