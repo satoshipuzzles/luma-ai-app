@@ -190,20 +190,79 @@ export default function Home() {
   };
 
   const pollForCompletion = async (id: string) => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch(`/api/check-status?id=${id}`);
-        if (!response.ok) {
-          throw new Error('Failed to check status');
-        }
+  const checkStatus = async () => {
+    try {
+      const response = await fetch(`/api/check-status?id=${id}`);
+      if (!response.ok) {
+        throw new Error('Failed to check status');
+      }
+      
+      const data = await response.json();
+      console.log('Status update:', {
+        id: data.id,
+        state: data.state,
+        hasVideo: !!data.assets?.video,
+        videoUrl: data.assets?.video,
+        elapsedTime: `${Math.floor((Date.now() - new Date(data.created_at).getTime()) / 1000)}s`
+      });
+
+      if (data.state === 'completed' && data.assets?.video) {
+        // Make sure to update with the video URL
+        const updatedGeneration = {
+          ...generations.find(g => g.id === id)!,
+          state: 'completed',
+          videoUrl: data.assets.video,
+          createdAt: data.created_at
+        };
         
-        const data = await response.json();
-        console.log('Status update:', {
-          id: data.id,
-          state: data.state,
-          hasVideo: !!data.assets?.video,
-          elapsedTime: `${Math.floor((Date.now() - new Date(data.created_at).getTime()) / 1000)}s`
-        });
+        setGenerations(prev => 
+          prev.map(g => g.id === id ? updatedGeneration : g)
+        );
+        
+        if (selectedGeneration?.id === id) {
+          setSelectedGeneration(updatedGeneration);
+        }
+
+        // Update in storage
+        const stored = getGenerations();
+        const updated = stored.map(g => g.id === id ? updatedGeneration : g);
+        localStorage.setItem('generations', JSON.stringify(updated));
+
+        console.log('Video ready:', data.assets.video);
+        return true; // Stop polling
+      }
+
+      // Update state for in-progress generations
+      const updatedGeneration = {
+        ...generations.find(g => g.id === id)!,
+        state: data.state,
+        createdAt: data.created_at
+      };
+      
+      setGenerations(prev => 
+        prev.map(g => g.id === id ? updatedGeneration : g)
+      );
+      
+      if (selectedGeneration?.id === id) {
+        setSelectedGeneration(updatedGeneration);
+      }
+
+      return false; // Continue polling if not completed
+    } catch (err) {
+      console.error('Status check error:', err);
+      return true; // Stop polling on error
+    }
+  };
+
+  const poll = async () => {
+    const shouldStop = await checkStatus();
+    if (!shouldStop) {
+      setTimeout(poll, 2000);
+    }
+  };
+
+  poll();
+};
 
         // Update the generation in state
         const updatedGeneration = {
