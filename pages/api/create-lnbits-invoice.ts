@@ -1,5 +1,6 @@
 // pages/api/create-lnbits-invoice.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
+import fetch from 'node-fetch';
 
 const LNbitsAPIKey = process.env.LNBITS_API_KEY; // Your Invoice Key
 const LNbitsURL = 'https://1a96a66a73.d.voltageapp.io'; // Your LNbits instance URL
