@@ -1,4 +1,4 @@
-// index.tsx
+// pages/index.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react'; // Import the QRCode component
@@ -139,10 +139,12 @@ export default function Home() {
     }
   };
 
-  // New waitForPayment function
+  // Updated waitForPayment function with debugging logs
   const waitForPayment = async (paymentHash: string) => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
+
+    console.log('Waiting for payment with hash:', paymentHash);
 
     while (!isPaid) {
       if (Date.now() > invoiceExpirationTime) {
@@ -154,6 +156,8 @@ export default function Home() {
       }
 
       try {
+        console.log('Checking payment status for hash:', paymentHash);
+
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
           headers: {
@@ -167,7 +171,9 @@ export default function Home() {
         }
 
         const data = await response.json();
-        isPaid = data.paid;
+        console.log('Payment status response:', data);
+
+        isPaid = data.paid === true;
 
         if (!isPaid) {
           // Wait 5 seconds before checking again
@@ -182,6 +188,8 @@ export default function Home() {
         return;
       }
     }
+
+    console.log('Payment confirmed for hash:', paymentHash);
   };
 
   // Updated generateVideo function
@@ -203,11 +211,14 @@ export default function Home() {
       });
 
       if (!invoiceResponse.ok) {
-        throw new Error('Failed to create invoice');
+        const errorData = await invoiceResponse.json();
+        throw new Error(errorData.error || 'Failed to create invoice');
       }
 
       const invoiceData = await invoiceResponse.json();
       const { payment_request, payment_hash } = invoiceData;
+
+      console.log('Invoice created:', invoiceData);
 
       // Step 2: Display the invoice to the user and wait for payment
       setPaymentRequest(payment_request);
