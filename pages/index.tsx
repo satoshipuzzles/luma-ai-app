@@ -193,7 +193,6 @@ export default function Home() {
 
         const data = await response.json();
 
-        // Better logging to debug the response
         console.log('Raw status response:', data);
         console.log('Current state:', {
           id: data.id,
@@ -203,56 +202,83 @@ export default function Home() {
           assets: data.assets,
         });
 
-        // Check if we have a completed state with video
         if (data.state === 'completed' && data.assets?.video) {
           console.log('Video URL found:', data.assets.video);
 
-          const updatedGeneration = {
-            ...generations.find((g) => g.id === generationId)!,
-            state: 'completed',
-            videoUrl: data.assets.video,
-            createdAt: data.created_at,
-          };
+          setGenerations((prevGenerations) => {
+            const existingGeneration = prevGenerations.find(
+              (g) => g.id === generationId
+            );
 
-          console.log('Updating generation with:', updatedGeneration);
+            if (!existingGeneration) {
+              console.error('Generation not found in state');
+              return prevGenerations;
+            }
 
-          setGenerations((prev) => {
-            const updated = prev.map((g) =>
+            const updatedGeneration = {
+              ...existingGeneration,
+              state: 'completed',
+              videoUrl: data.assets.video,
+              createdAt: data.created_at,
+            };
+
+            const updatedGenerations = prevGenerations.map((g) =>
               g.id === generationId ? updatedGeneration : g
             );
-            console.log('New generations state:', updated);
-            return updated;
+
+            // Update localStorage
+            localStorage.setItem('generations', JSON.stringify(updatedGenerations));
+
+            return updatedGenerations;
           });
 
-          if (selectedGeneration?.id === generationId) {
-            console.log('Updating selected generation');
-            setSelectedGeneration(updatedGeneration);
-          }
-
-          // Update storage
-          const stored = getGenerations();
-          const updated = stored.map((g) =>
-            g.id === generationId ? updatedGeneration : g
-          );
-          localStorage.setItem('generations', JSON.stringify(updated));
+          setSelectedGeneration((prevSelected) => {
+            if (prevSelected?.id === generationId) {
+              return {
+                ...prevSelected,
+                state: 'completed',
+                videoUrl: data.assets.video,
+                createdAt: data.created_at,
+              };
+            }
+            return prevSelected;
+          });
 
           return true; // Stop polling
         }
 
         // Update state for in-progress generations
-        const updatedGeneration = {
-          ...generations.find((g) => g.id === generationId)!,
-          state: data.state,
-          createdAt: data.created_at,
-        };
+        setGenerations((prevGenerations) => {
+          const existingGeneration = prevGenerations.find(
+            (g) => g.id === generationId
+          );
 
-        setGenerations((prev) =>
-          prev.map((g) => (g.id === generationId ? updatedGeneration : g))
-        );
+          if (!existingGeneration) {
+            console.error('Generation not found in state');
+            return prevGenerations;
+          }
 
-        if (selectedGeneration?.id === generationId) {
-          setSelectedGeneration(updatedGeneration);
-        }
+          const updatedGeneration = {
+            ...existingGeneration,
+            state: data.state,
+            createdAt: data.created_at,
+          };
+
+          return prevGenerations.map((g) =>
+            g.id === generationId ? updatedGeneration : g
+          );
+        });
+
+        setSelectedGeneration((prevSelected) => {
+          if (prevSelected?.id === generationId) {
+            return {
+              ...prevSelected,
+              state: data.state,
+              createdAt: data.created_at,
+            };
+          }
+          return prevSelected;
+        });
 
         return false; // Continue polling
       } catch (err) {
@@ -439,7 +465,9 @@ export default function Home() {
                             <span>Download Video</span>
                           </a>
                           <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+                            onClick={() =>
+                              copyVideoUrl(selectedGeneration.videoUrl!)
+                            }
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
                             <svg
