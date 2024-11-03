@@ -1,5 +1,6 @@
 // pages/api/check-lnbits-payment.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
+import fetch from 'node-fetch';
 
 const LNbitsAPIKey = process.env.LNBITS_API_KEY; // Your Invoice Key
 const LNbitsURL = 'https://1a96a66a73.d.voltageapp.io'; // Your LNbits instance URL
@@ -12,24 +13,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { paymentHash } = req.body;
 
-  if (!paymentHash) {
-    res.status(400).json({ error: 'Missing paymentHash' });
+  if (!paymentHash || typeof paymentHash !== 'string') {
+    res.status(400).json({ error: 'Missing or invalid paymentHash' });
     return;
   }
 
   try {
     console.log(`Fetching payment status from LNbits for hash: ${paymentHash}`);
 
-    // Use the Invoice Key; no need for wallet ID
     const response = await fetch(`${LNbitsURL}/api/v1/payments/${paymentHash}`, {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         'X-Api-Key': LNbitsAPIKey!,
+        'Content-Type': 'application/json',
       },
     });
 
     const data = await response.json();
+
+    console.log('LNbits payment status response:', data);
 
     if (!response.ok) {
       console.error('Error from LNbits API:', data);
@@ -39,10 +41,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    console.log('LNbits payment status response:', data);
-
-    // Adjust based on actual data structure
-    const isPaid = data.paid === true || data.paid === 'true' || data.paid === 1;
+    // According to LNbits documentation, the response should be { "paid": <bool> }
+    const isPaid = data.paid === true || data.paid === 'true';
 
     res.status(200).json({ paid: isPaid });
   } catch (error) {
