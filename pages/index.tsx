@@ -189,8 +189,8 @@ export default function Home() {
     }
   };
 
-  const pollForCompletion = async (id: string) => {
-  const checkStatus = async () => {
+ const pollForCompletion = async (id: string) => {
+  const checkStatus = async (id: string) => { // Add id parameter here
     try {
       const response = await fetch(`/api/check-status?id=${id}`);
       if (!response.ok) {
@@ -263,15 +263,14 @@ export default function Home() {
   };
 
   const poll = async () => {
-    const shouldStop = await checkStatus();
+    const shouldStop = await checkStatus(id); // Pass id here
     if (!shouldStop) {
-      setTimeout(poll, 2000);
+      setTimeout(() => poll(), 2000);
     }
   };
 
   poll();
 };
-
         // Update the generation in state
         const updatedGeneration = {
           ...generations.find(g => g.id === id)!,
