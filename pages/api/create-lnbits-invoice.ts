@@ -1,9 +1,6 @@
 // pages/api/create-lnbits-invoice.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-// Removed the import of node-fetch
-// import fetch from 'node-fetch';
-
 const LNbitsAPIKey = process.env.LNBITS_API_KEY;
 const LNbitsURL = 'https://legend.lnbits.com';
 
@@ -33,7 +30,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!response.ok) {
       console.error('Error from LNbits API:', data);
-      throw new Error(`LNbits API error: ${data.detail || response.statusText}`);
+      res.status(response.status).json({ error: data.detail || data.message || 'Unknown error' });
+      return;
     }
 
     res.status(200).json({
