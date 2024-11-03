@@ -1,6 +1,8 @@
 // pages/api/create-lnbits-invoice.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import fetch from 'node-fetch'; // Add this import
+
+// Removed the import of node-fetch
+// import fetch from 'node-fetch';
 
 const LNbitsAPIKey = process.env.LNBITS_API_KEY;
 const LNbitsURL = 'https://legend.lnbits.com';
@@ -27,19 +29,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }),
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Error from LNbits API:', errorData);
-      throw new Error(`LNbits API error: ${errorData.detail || response.statusText}`);
+      console.error('Error from LNbits API:', data);
+      throw new Error(`LNbits API error: ${data.detail || response.statusText}`);
     }
 
-    const data = await response.json();
     res.status(200).json({
       payment_request: data.payment_request,
       payment_hash: data.payment_hash,
     });
   } catch (error) {
     console.error('Error creating invoice:', error);
-    res.status(500).json({ error: 'Error creating invoice' });
+    res.status(500).json({ error: (error as Error).message || 'Error creating invoice' });
   }
 }
