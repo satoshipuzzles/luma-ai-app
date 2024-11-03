@@ -400,39 +400,41 @@ export default function Home() {
                     </p>
                     
                     {selectedGeneration.videoUrl ? (
-                      <div className="space-y-4">
-                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
-                          <video
-                            className="absolute top-0 left-0 w-full h-full object-contain"
-                            controls
-                            autoPlay
-                            loop
-                            src={selectedGeneration.videoUrl}
-                            poster={selectedGeneration.videoUrl + '?thumb=true'}
-                          />
-                        </div>
-                        <div className="flex space-x-2">
-                          <a
-                            href={selectedGeneration.videoUrl}
-                            download={`${selectedGeneration.prompt.slice(0, 30)}.mp4`}
-                            className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            <span>Download Video</span>
-                          </a>
-                          <button
-                           onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            <span>Copy Link</span>
-                          </button>
-                        </div>
-                      </div>
+  <div className="space-y-4">
+    <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+      <video
+        key={selectedGeneration.videoUrl} // Add key to force re-render
+        className="absolute top-0 left-0 w-full h-full object-contain"
+        controls
+        autoPlay
+        loop
+        src={selectedGeneration.videoUrl}
+      />
+    </div>
+    <div className="flex space-x-2">
+      
+        href={selectedGeneration.videoUrl}
+        download
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        <span>Download Video</span>
+      </a>
+      <button
+        onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+        className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+        <span>Copy Link</span>
+      </button>
+    </div>
+  </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
