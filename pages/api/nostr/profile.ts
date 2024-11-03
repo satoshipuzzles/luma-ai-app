@@ -1,24 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import WebSocket from 'ws';
 
-interface NostrEvent {
-  kind: number;
-  pubkey: string;
-  created_at: number;
-  content: string;
-  tags: string[][];
-  id: string;
-  sig: string;
-}
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
-
   const { pubkey } = req.query;
 
   if (!pubkey || typeof pubkey !== 'string') {
@@ -31,8 +17,7 @@ export default async function handler(
       let timeout: NodeJS.Timeout;
 
       ws.onopen = () => {
-        // Subscribe to kind 0 events for this pubkey
-        const subscription = JSON.stringify([
+        const request = JSON.stringify([
           "REQ",
           "profile-lookup",
           {
@@ -42,7 +27,7 @@ export default async function handler(
           }
         ]);
         
-        ws.send(subscription);
+        ws.send(request);
         
         timeout = setTimeout(() => {
           ws.close();
@@ -56,13 +41,12 @@ export default async function handler(
           
           if (type === "EVENT" && eventData.kind === 0) {
             clearTimeout(timeout);
-            
             const profileData = JSON.parse(eventData.content);
             ws.close();
             resolve(profileData);
           }
         } catch (error) {
-          console.error('Error parsing Nostr event:', error);
+          console.error('Error parsing profile:', error);
         }
       };
 
