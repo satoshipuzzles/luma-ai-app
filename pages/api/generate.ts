@@ -1,53 +1,54 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { LumaAI } from 'lumaai';
-
-const client = new LumaAI({
-  authToken: process.env.LUMA_API_KEY as string
-});
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const { id } = req.query;
-
-  if (!id || typeof id !== 'string') {
-    return res.status(400).json({ message: 'Generation ID is required' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  console.log('Checking status for generation:', id);
+  if (!process.env.LUMA_API_KEY) {
+    console.error('LUMA_API_KEY not found in environment variables');
+    return res.status(500).json({ message: 'API configuration error' });
+  }
 
   try {
-    const generation = await client.generations.get(id);
-    
-    console.log('Status check response:', {
-      id: generation.id,
-      state: generation.state,
-      hasAssets: !!generation.assets,
-      hasVideo: !!generation.assets?.video
+    const { prompt } = req.body;
+
+    console.log('Starting generation with prompt:', prompt);
+
+    const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.LUMA_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        aspect_ratio: "16:9",
+        loop: true
+      }),
     });
 
-    // Add proper timestamp handling
-    const response = {
-      ...generation,
-      createdAt: generation.created_at || new Date().toISOString(),
-      checkedAt: new Date().toISOString()
-    };
-    
-    if (generation.state === 'failed') {
-      return res.status(200).json({
-        ...response,
-        failure_reason: generation.failure_reason || 'Unknown error'
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('Luma API error:', errorData);
+      return res.status(response.status).json({ 
+        message: 'Error from Luma API',
+        details: errorData
       });
     }
-    
-    return res.status(200).json(response);
+
+    const data = await response.json();
+    console.log('Generation started:', data);
+
+    return res.status(200).json(data);
   } catch (error) {
-    console.error('Error in status check:', error);
+    console.error('Error in generate:', error);
     return res.status(500).json({ 
-      message: 'Error checking generation status',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
+      message: 'Failed to generate video',
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 }
