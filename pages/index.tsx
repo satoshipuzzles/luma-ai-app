@@ -129,30 +129,66 @@ export default function Home() {
     }
   };
 
-  const pollForCompletion = async (id: string) => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch(`/api/check-status?id=${id}`);
-        if (!response.ok) {
-          throw new Error('Failed to check status');
-        }
-        
-        const data = await response.json();
-        console.log('Status check response:', data);
+const pollForCompletion = async (id: string) => {
+  const checkStatus = async () => {
+    try {
+      const response = await fetch(`/api/check-status?id=${id}`);
+      if (!response.ok) {
+        throw new Error('Failed to check status');
+      }
+      
+      const data = await response.json();
+      console.log('Status check response:', {
+        id: data.id,
+        state: data.state,
+        hasVideo: !!data.assets?.video,
+        videoUrl: data.assets?.video
+      });
 
-        const updatedGeneration = {
-          ...generations.find(g => g.id === id)!,
-          state: data.state,
-          videoUrl: data.assets?.video
-        };
-        
-        setGenerations(prev => 
-          prev.map(g => g.id === id ? updatedGeneration : g)
-        );
-        
-        if (selectedGeneration?.id === id) {
-          setSelectedGeneration(updatedGeneration);
-        }
+      // Update the generation in state
+      const updatedGeneration = {
+        ...generations.find(g => g.id === id)!,
+        state: data.state,
+        videoUrl: data.assets?.video
+      };
+      
+      setGenerations(prev => 
+        prev.map(g => g.id === id ? updatedGeneration : g)
+      );
+      
+      if (selectedGeneration?.id === id) {
+        setSelectedGeneration(updatedGeneration);
+      }
+
+      // Update in storage
+      const stored = getGenerations();
+      const updated = stored.map(g => g.id === id ? updatedGeneration : g);
+      localStorage.setItem('generations', JSON.stringify(updated));
+
+      if (data.state === 'completed' && data.assets?.video) {
+        console.log('Video generation completed:', data.assets.video);
+        return true; // Stop polling
+      }
+      if (data.state === 'failed') {
+        console.error('Generation failed:', data.failure_reason);
+        return true; // Stop polling
+      }
+      return false; // Continue polling
+    } catch (err) {
+      console.error('Error checking status:', err);
+      return true; // Stop polling on error
+    }
+  };
+
+  const poll = async () => {
+    const shouldStop = await checkStatus();
+    if (!shouldStop) {
+      setTimeout(poll, 2000);
+    }
+  };
+
+  poll();
+};
 
         // Update in storage
         const stored = getGenerations();
