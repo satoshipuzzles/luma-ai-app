@@ -1,9 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { LumaAI } from 'lumaai';
-
-const client = new LumaAI({
-  authToken: process.env.LUMA_API_KEY as string
-});
 
 export default async function handler(
   req: NextApiRequest,
@@ -17,7 +12,19 @@ export default async function handler(
 
   try {
     console.log('Checking status for generation:', id);
-    const generation = await client.generations.get(id);
+    
+    const response = await fetch(`https://api.lumalabs.ai/dream-machine/v1/generations/${id}`, {
+      headers: {
+        'Authorization': `Bearer ${process.env.LUMA_API_KEY}`,
+        'Accept': 'application/json'
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to check generation status');
+    }
+
+    const generation = await response.json();
     
     console.log('Status check response:', {
       id: generation.id,
