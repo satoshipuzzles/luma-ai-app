@@ -31,16 +31,16 @@ const formatDate = (dateString: string) => {
     if (!isNaN(date.getTime())) {
       const now = new Date();
       const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-      
+
       if (diffInSeconds < 60) return 'Just now';
       if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
       if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-      
+
       return new Intl.DateTimeFormat('en-US', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
       }).format(date);
     }
     return 'Just now';
@@ -98,7 +98,7 @@ export default function Home() {
 
   useEffect(() => {
     if (pubkey) {
-      const stored = getGenerations().filter(g => g.pubkey === pubkey);
+      const stored = getGenerations().filter((g) => g.pubkey === pubkey);
       setGenerations(stored);
       if (stored.length > 0) {
         setSelectedGeneration(stored[0]);
@@ -136,10 +136,10 @@ export default function Home() {
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
-    
+
     setLoading(true);
     setError('');
-    
+
     try {
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -148,30 +148,30 @@ export default function Home() {
         },
         body: JSON.stringify({ prompt }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to generate video');
       }
-      
+
       const data = await response.json();
       console.log('Generation started:', data);
-      
+
       if (!data.id) {
         throw new Error('Invalid response from server');
       }
-      
+
       const newGeneration = {
         id: data.id,
         prompt,
         state: data.state || 'queued',
         createdAt: data.created_at || new Date().toISOString(),
         pubkey,
-        videoUrl: data.assets?.video
+        videoUrl: data.assets?.video,
       };
-      
+
       saveGeneration(newGeneration);
-      setGenerations(prev => [newGeneration, ...prev]);
+      setGenerations((prev) => [newGeneration, ...prev]);
       setSelectedGeneration(newGeneration);
       setPrompt('');
       pollForCompletion(data.id);
@@ -184,92 +184,92 @@ export default function Home() {
   };
 
   const pollForCompletion = async (generationId: string) => {
-  const checkStatus = async () => {
-    try {
-      const response = await fetch(`/api/check-status?id=${generationId}`);
-      if (!response.ok) {
-        throw new Error('Failed to check status');
-      }
-      
-      const data = await response.json();
-      
-      // Better logging to debug the response
-      console.log('Raw status response:', data);
-      console.log('Current state:', {
-        id: data.id,
-        state: data.state,
-        hasVideo: !!data.assets?.video,
-        videoUrl: data.assets?.video,
-        assets: data.assets
-      });
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/check-status?id=${generationId}`);
+        if (!response.ok) {
+          throw new Error('Failed to check status');
+        }
 
-      // Check if we have a completed state with video
-      if (data.state === 'completed' && data.assets?.video) {
-        console.log('Video URL found:', data.assets.video);
-        
-        const updatedGeneration = {
-          ...generations.find(g => g.id === generationId)!,
-          state: 'completed',
-          videoUrl: data.assets.video,
-          createdAt: data.created_at
-        };
+        const data = await response.json();
 
-        console.log('Updating generation with:', updatedGeneration);
-        
-        setGenerations(prev => {
-          const updated = prev.map(g => 
+        // Better logging to debug the response
+        console.log('Raw status response:', data);
+        console.log('Current state:', {
+          id: data.id,
+          state: data.state,
+          hasVideo: !!data.assets?.video,
+          videoUrl: data.assets?.video,
+          assets: data.assets,
+        });
+
+        // Check if we have a completed state with video
+        if (data.state === 'completed' && data.assets?.video) {
+          console.log('Video URL found:', data.assets.video);
+
+          const updatedGeneration = {
+            ...generations.find((g) => g.id === generationId)!,
+            state: 'completed',
+            videoUrl: data.assets.video,
+            createdAt: data.created_at,
+          };
+
+          console.log('Updating generation with:', updatedGeneration);
+
+          setGenerations((prev) => {
+            const updated = prev.map((g) =>
+              g.id === generationId ? updatedGeneration : g
+            );
+            console.log('New generations state:', updated);
+            return updated;
+          });
+
+          if (selectedGeneration?.id === generationId) {
+            console.log('Updating selected generation');
+            setSelectedGeneration(updatedGeneration);
+          }
+
+          // Update storage
+          const stored = getGenerations();
+          const updated = stored.map((g) =>
             g.id === generationId ? updatedGeneration : g
           );
-          console.log('New generations state:', updated);
-          return updated;
-        });
-        
+          localStorage.setItem('generations', JSON.stringify(updated));
+
+          return true; // Stop polling
+        }
+
+        // Update state for in-progress generations
+        const updatedGeneration = {
+          ...generations.find((g) => g.id === generationId)!,
+          state: data.state,
+          createdAt: data.created_at,
+        };
+
+        setGenerations((prev) =>
+          prev.map((g) => (g.id === generationId ? updatedGeneration : g))
+        );
+
         if (selectedGeneration?.id === generationId) {
-          console.log('Updating selected generation');
           setSelectedGeneration(updatedGeneration);
         }
 
-        // Update storage
-        const stored = getGenerations();
-        const updated = stored.map(g => 
-          g.id === generationId ? updatedGeneration : g
-        );
-        localStorage.setItem('generations', JSON.stringify(updated));
-
-        return true; // Stop polling
+        return false; // Continue polling
+      } catch (err) {
+        console.error('Status check error:', err);
+        return true; // Stop polling on error
       }
+    };
 
-      // Update state for in-progress generations
-      const updatedGeneration = {
-        ...generations.find(g => g.id === generationId)!,
-        state: data.state,
-        createdAt: data.created_at
-      };
-      
-      setGenerations(prev => 
-        prev.map(g => g.id === generationId ? updatedGeneration : g)
-      );
-      
-      if (selectedGeneration?.id === generationId) {
-        setSelectedGeneration(updatedGeneration);
+    const poll = async () => {
+      const shouldStop = await checkStatus();
+      if (!shouldStop) {
+        setTimeout(poll, 2000);
       }
+    };
 
-      return false; // Continue polling
-    } catch (err) {
-      console.error('Status check error:', err);
-      return true; // Stop polling on error
-    }
+    poll();
   };
-
-  const poll = async () => {
-    const shouldStop = await checkStatus();
-    if (!shouldStop) {
-      setTimeout(poll, 2000);
-    }
-  };
-
-  poll();
-};
 
   const copyVideoUrl = async (url: string) => {
     try {
@@ -320,8 +320,8 @@ export default function Home() {
                   key={gen.id}
                   onClick={() => setSelectedGeneration(gen)}
                   className={`w-full text-left p-3 rounded-lg transition duration-200 ${
-                    selectedGeneration?.id === gen.id 
-                      ? 'bg-purple-600' 
+                    selectedGeneration?.id === gen.id
+                      ? 'bg-purple-600'
                       : 'hover:bg-[#2a2a2a]'
                   }`}
                 >
@@ -335,8 +335,10 @@ export default function Home() {
                         <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full mr-1"></div>
                         <span className="text-xs text-purple-400">Dreaming</span>
                       </div>
-                    ) : gen.state === 'completed' && (
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    ) : (
+                      gen.state === 'completed' && (
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      )
                     )}
                   </div>
                 </button>
@@ -351,8 +353,8 @@ export default function Home() {
               <h1 className="text-xl font-bold">Luma AI Video Generator</h1>
               <div className="flex items-center space-x-4">
                 {profile?.picture && (
-                  <img 
-                    src={profile.picture} 
+                  <img
+                    src={profile.picture}
                     alt={profile.name || 'Profile'}
                     className="w-8 h-8 rounded-full"
                   />
@@ -381,7 +383,9 @@ export default function Home() {
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
+                      <h2 className="text-xl font-bold">
+                        {selectedGeneration.prompt}
+                      </h2>
                       <p className="text-sm text-gray-400 mt-1">
                         {formatDate(selectedGeneration.createdAt)}
                       </p>
@@ -393,48 +397,68 @@ export default function Home() {
                       ✕
                     </button>
                   </div>
-                  
+
                   <div className="border-t border-gray-800 pt-4">
                     <p className="text-sm text-gray-300 mb-4">
                       {getStatusMessage(selectedGeneration.state)}
                     </p>
-                    
+
                     {selectedGeneration.videoUrl ? (
-  <div className="space-y-4">
-    <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
-      <video
-        key={selectedGeneration.videoUrl} // Add key to force re-render
-        className="absolute top-0 left-0 w-full h-full object-contain"
-        controls
-        autoPlay
-        loop
-        src={selectedGeneration.videoUrl}
-      />
-    </div>
-    <div className="flex space-x-2">
-      
-        href={selectedGeneration.videoUrl}
-        download
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-        </svg>
-        <span>Download Video</span>
-      </a>
-      <button
-        onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-        className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-        <span>Copy Link</span>
-      </button>
-    </div>
-  </div>
+                      <div className="space-y-4">
+                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+                          <video
+                            key={selectedGeneration.videoUrl} // Add key to force re-render
+                            className="absolute top-0 left-0 w-full h-full object-contain"
+                            controls
+                            autoPlay
+                            loop
+                            src={selectedGeneration.videoUrl}
+                          />
+                        </div>
+                        <div className="flex space-x-2">
+                          <a
+                            href={selectedGeneration.videoUrl}
+                            download
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                          >
+                            <svg
+                              className="w-5 h-5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                              />
+                            </svg>
+                            <span>Download Video</span>
+                          </a>
+                          <button
+                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                          >
+                            <svg
+                              className="w-5 h-5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                              />
+                            </svg>
+                            <span>Copy Link</span>
+                          </button>
+                        </div>
+                      </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
@@ -445,13 +469,33 @@ export default function Home() {
                           <div className="absolute inset-0 flex items-center justify-center">
                             <div className="space-y-4 text-center">
                               <div className="inline-flex items-center space-x-2">
-                                <svg className="animate-spin h-6 w-6 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                <svg
+                                  className="animate-spin h-6 w-6 text-purple-500"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  ></circle>
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  ></path>
                                 </svg>
-                                <span className="text-purple-400 font-medium">AI is dreaming...</span>
+                                <span className="text-purple-400 font-medium">
+                                  AI is dreaming...
+                                </span>
                               </div>
-                              <div className="text-sm text-gray-400">This usually takes 1-2 minutes</div>
+                              <div className="text-sm text-gray-400">
+                                This usually takes 1-2 minutes
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -463,7 +507,7 @@ export default function Home() {
             ) : (
               <div className="p-6">
                 <div className="max-w-3xl mx-auto">
-                  <form 
+                  <form
                     onSubmit={generateVideo}
                     className="bg-[#1a1a1a] rounded-lg p-6 space-y-4"
                     id="generation-form"
@@ -479,7 +523,7 @@ export default function Home() {
                       disabled={loading}
                       aria-label="Video prompt"
                     />
-                    
+
                     <div className="flex justify-end">
                       <button
                         type="submit"
@@ -488,9 +532,25 @@ export default function Home() {
                       >
                         {loading ? (
                           <span className="flex items-center space-x-2">
-                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            <svg
+                              className="animate-spin h-5 w-5"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
                             </svg>
                             <span>Generating...</span>
                           </span>
