@@ -198,7 +198,7 @@ export default function Home() {
       }
       
       const data = await response.json();
-      console.log('Status update:', {
+      console.log('Status check response:', {
         id: data.id,
         state: data.state,
         hasVideo: !!data.assets?.video,
@@ -206,36 +206,44 @@ export default function Home() {
         elapsedTime: `${Math.floor((Date.now() - new Date(data.created_at).getTime()) / 1000)}s`
       });
 
+      // Only update if we have a working video URL
       if (data.state === 'completed' && data.assets?.video) {
-        // Make sure to update with the video URL
-        const updatedGeneration = {
-          ...generations.find(g => g.id === id)!,
-          state: 'completed',
-          videoUrl: data.assets.video,
-          createdAt: data.created_at
-        };
-        
-        setGenerations(prev => 
-          prev.map(g => g.id === id ? updatedGeneration : g)
-        );
-        
-        if (selectedGeneration?.id === id) {
-          setSelectedGeneration(updatedGeneration);
+        // Verify video is accessible
+        try {
+          const videoCheck = await fetch(data.assets.video, { method: 'HEAD' });
+          if (videoCheck.ok) {
+            const updatedGeneration = {
+              ...generations.find(g => g.id === id)!,
+              state: 'completed',
+              videoUrl: data.assets.video,
+              createdAt: data.created_at
+            };
+            
+            setGenerations(prev => 
+              prev.map(g => g.id === id ? updatedGeneration : g)
+            );
+            
+            if (selectedGeneration?.id === id) {
+              setSelectedGeneration(updatedGeneration);
+            }
+
+            // Update in storage
+            const stored = getGenerations();
+            const updated = stored.map(g => g.id === id ? updatedGeneration : g);
+            localStorage.setItem('generations', JSON.stringify(updated));
+
+            console.log('Video ready and accessible:', data.assets.video);
+            return true; // Stop polling
+          }
+        } catch (e) {
+          console.log('Video not yet accessible');
         }
-
-        // Update in storage
-        const stored = getGenerations();
-        const updated = stored.map(g => g.id === id ? updatedGeneration : g);
-        localStorage.setItem('generations', JSON.stringify(updated));
-
-        console.log('Video ready:', data.assets.video);
-        return true; // Stop polling
       }
 
       // Update state for in-progress generations
       const updatedGeneration = {
         ...generations.find(g => g.id === id)!,
-        state: data.state,
+        state: data.state === 'completed' ? 'processing' : data.state,
         createdAt: data.created_at
       };
       
@@ -247,7 +255,7 @@ export default function Home() {
         setSelectedGeneration(updatedGeneration);
       }
 
-      return false; // Continue polling if not completed
+      return false; // Continue polling until video is accessible
     } catch (err) {
       console.error('Status check error:', err);
       return true; // Stop polling on error
