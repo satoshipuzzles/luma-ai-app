@@ -1,7 +1,7 @@
 // pages/index.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import QRCode from 'qrcode.react'; // Import the QRCode component
+import QRCode from 'qrcode.react';
 
 // Types
 interface NostrWindow extends Window {
@@ -139,7 +139,7 @@ export default function Home() {
     }
   };
 
-  // Updated waitForPayment function with debugging logs
+  // Updated waitForPayment function
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
@@ -166,8 +166,11 @@ export default function Home() {
           body: JSON.stringify({ paymentHash }),
         });
 
+        console.log('Response status:', response.status);
+
         if (!response.ok) {
           const errorData = await response.json();
+          console.error('Error response from API:', errorData);
           throw new Error(errorData.error || 'Failed to check payment status');
         }
 
