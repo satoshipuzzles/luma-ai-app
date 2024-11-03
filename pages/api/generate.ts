@@ -1,4 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { LumaAI } from 'lumaai';
+
+const client = new LumaAI({
+  authToken: process.env.LUMA_API_KEY as string
+});
 
 export default async function handler(
   req: NextApiRequest,
@@ -9,7 +14,7 @@ export default async function handler(
   }
 
   if (!process.env.LUMA_API_KEY) {
-    console.error('LUMA_API_KEY not found in environment variables');
+    console.error('LUMA_API_KEY not found');
     return res.status(500).json({ message: 'API configuration error' });
   }
 
@@ -18,32 +23,15 @@ export default async function handler(
 
     console.log('Starting generation with prompt:', prompt);
 
-    const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.LUMA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt,
-        aspect_ratio: "16:9",
-        loop: true
-      }),
+    const generation = await client.generations.create({
+      prompt,
+      aspect_ratio: "16:9",
+      loop: true
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Luma API error:', errorData);
-      return res.status(response.status).json({ 
-        message: 'Error from Luma API',
-        details: errorData
-      });
-    }
+    console.log('Generation started:', generation);
 
-    const data = await response.json();
-    console.log('Generation started:', data);
-
-    return res.status(200).json(data);
+    return res.status(200).json(generation);
   } catch (error) {
     console.error('Error in generate:', error);
     return res.status(500).json({ 
