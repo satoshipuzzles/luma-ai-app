@@ -1,9 +1,9 @@
 // pages/api/create-lnbits-invoice.ts
-
 import type { NextApiRequest, NextApiResponse } from 'next';
+import fetch from 'node-fetch'; // Add this import
 
-const LNbitsAPIKey = process.env.LNBITS_API_KEY; // Access the API key from environment variables
-const LNbitsURL = 'https://legend.lnbits.com'; // Replace with your LNbits instance URL if self-hosted
+const LNbitsAPIKey = process.env.LNBITS_API_KEY;
+const LNbitsURL = 'https://legend.lnbits.com';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -28,7 +28,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (!response.ok) {
-      throw new Error('Failed to create invoice');
+      const errorData = await response.json();
+      console.error('Error from LNbits API:', errorData);
+      throw new Error(`LNbits API error: ${errorData.detail || response.statusText}`);
     }
 
     const data = await response.json();
