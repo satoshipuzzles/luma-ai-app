@@ -32,15 +32,16 @@ const saveGeneration = (generation: StoredGeneration) => {
 };
 
 const getGenerations = (): StoredGeneration[] => {
+  if (typeof window === 'undefined') return [];
   const stored = localStorage.getItem('generations');
   return stored ? JSON.parse(stored) : [];
 };
 
-// Add status messages for better UX
 const getStatusMessage = (state: string) => {
   switch (state) {
     case 'queued':
       return 'Preparing to generate your video...';
+    case 'dreaming':
     case 'processing':
       return 'Creating your masterpiece...';
     case 'completed':
@@ -76,13 +77,15 @@ export default function Home() {
     }
   };
 
-  const generateVideo = async () => {
+  const generateVideo = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
     
     setLoading(true);
     setError('');
     
     try {
+      console.log('Generating video with prompt:', prompt);
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -92,27 +95,34 @@ export default function Home() {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to generate video');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate video');
       }
       
       const data = await response.json();
+      console.log('Generation response:', data);
+      
+      if (!data.id) {
+        throw new Error('Invalid response from server');
+      }
       
       const newGeneration = {
         id: data.id,
         prompt,
-        state: data.state,
-        createdAt: new Date().toISOString(),
+        state: data.state || 'queued',
+        createdAt: data.created_at || new Date().toISOString(),
         pubkey,
         videoUrl: data.assets?.video
       };
       
       saveGeneration(newGeneration);
       setGenerations(prev => [newGeneration, ...prev]);
-      setPrompt('');
       setSelectedGeneration(newGeneration);
+      setPrompt('');
       pollForCompletion(data.id);
     } catch (err) {
-      setError('Failed to generate video. Please try again.');
+      console.error('Generation error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate video. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -122,33 +132,39 @@ export default function Home() {
     const checkStatus = async () => {
       try {
         const response = await fetch(`/api/check-status?id=${id}`);
+        if (!response.ok) {
+          throw new Error('Failed to check status');
+        }
+        
         const data = await response.json();
+        console.log('Status check response:', data);
+
+        const updatedGeneration = {
+          ...generations.find(g => g.id === id)!,
+          state: data.state,
+          videoUrl: data.assets?.video
+        };
+        
+        setGenerations(prev => 
+          prev.map(g => g.id === id ? updatedGeneration : g)
+        );
+        
+        if (selectedGeneration?.id === id) {
+          setSelectedGeneration(updatedGeneration);
+        }
+
+        // Update in storage
+        const stored = getGenerations();
+        const updated = stored.map(g => g.id === id ? updatedGeneration : g);
+        localStorage.setItem('generations', JSON.stringify(updated));
 
         if (data.state === 'completed' || data.state === 'failed') {
-          const updatedGeneration = {
-            ...generations.find(g => g.id === id)!,
-            state: data.state,
-            videoUrl: data.assets?.video
-          };
-          
-          setGenerations(prev => 
-            prev.map(g => g.id === id ? updatedGeneration : g)
-          );
-          
-          if (selectedGeneration?.id === id) {
-            setSelectedGeneration(updatedGeneration);
-          }
-
-          const stored = getGenerations();
-          const updated = stored.map(g => g.id === id ? updatedGeneration : g);
-          localStorage.setItem('generations', JSON.stringify(updated));
-
-          return true;
+          return true; // Stop polling
         }
-        return false;
+        return false; // Continue polling
       } catch (err) {
         console.error('Error checking status:', err);
-        return true;
+        return true; // Stop polling on error
       }
     };
 
@@ -295,32 +311,50 @@ export default function Home() {
             ) : (
               <div className="p-6">
                 <div className="max-w-3xl mx-auto">
-                  <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
+                  <form 
+                    onSubmit={generateVideo}
+                    className="bg-[#1a1a1a] rounded-lg p-6 space-y-4"
+                    id="generation-form"
+                  >
                     <textarea
+                      id="prompt-input"
+                      name="prompt"
                       className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
                       rows={4}
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       placeholder="Describe your video idea..."
                       disabled={loading}
+                      aria-label="Video prompt"
                     />
                     
                     <div className="flex justify-end">
                       <button
-                        onClick={generateVideo}
+                        type="submit"
                         disabled={loading || !prompt}
                         className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                       >
-                        {loading ? 'Generating...' : 'Generate Video'}
+                        {loading ? (
+                          <span className="flex items-center space-x-2">
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Generating...</span>
+                          </span>
+                        ) : (
+                          'Generate Video'
+                        )}
                       </button>
                     </div>
 
                     {error && (
                       <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                        {error}
+                        <p className="font-medium">Error</p>
+                        <p className="text-sm">{error}</p>
                       </div>
                     )}
-                  </div>
+                  </form>
                 </div>
               </div>
             )}
