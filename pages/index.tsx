@@ -17,6 +17,7 @@ interface StoredGeneration {
   pubkey: string;
 }
 
+const [profile, setProfile] = useState<{ name?: string; picture?: string; } | null>(null);
 const getNostrPublicKey = async () => {
   const win = window as NostrWindow;
   if (!win.nostr) {
