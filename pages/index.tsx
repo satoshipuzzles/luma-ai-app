@@ -1,58 +1,66 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
-interface GenerationResult {
-  id: string;
-  state: string;
-  failure_reason?: string | null;
-  assets?: {
-    video?: string;
+interface NostrWindow extends Window {
+  nostr?: {
+    getPublicKey(): Promise<string>;
+    signEvent(event: any): Promise<any>;
   };
-  created_at: string;
 }
 
+interface StoredGeneration {
+  id: string;
+  prompt: string;
+  videoUrl?: string;
+  state: string;
+  createdAt: string;
+  pubkey: string;
+}
+
+const getNostrPublicKey = async () => {
+  const win = window as NostrWindow;
+  if (!win.nostr) {
+    throw new Error('Nostr extension not found. Please install a NIP-07 browser extension.');
+  }
+  return await win.nostr.getPublicKey();
+};
+
+const saveGeneration = (generation: StoredGeneration) => {
+  const generations = getGenerations();
+  generations.unshift(generation);
+  localStorage.setItem('generations', JSON.stringify(generations));
+};
+
+const getGenerations = (): StoredGeneration[] => {
+  const stored = localStorage.getItem('generations');
+  return stored ? JSON.parse(stored) : [];
+};
+
 export default function Home() {
+  const [pubkey, setPubkey] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<GenerationResult | null>(null);
+  const [generations, setGenerations] = useState<StoredGeneration[]>([]);
   const [error, setError] = useState('');
 
-  // Add polling for status updates
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-
-    const checkStatus = async () => {
-      if (result?.id && result.state === 'queued' || result?.state === 'processing') {
-        try {
-          const response = await fetch(`/api/check-status?id=${result.id}`);
-          const data = await response.json();
-          
-          setResult(data);
-          
-          // If we have a video URL, stop polling
-          if (data.state === 'completed' || data.state === 'failed') {
-            clearInterval(intervalId);
-          }
-        } catch (err) {
-          console.error('Error checking status:', err);
-        }
-      }
-    };
-
-    if (result?.id) {
-      // Check status every 5 seconds
-      intervalId = setInterval(checkStatus, 5000);
+    if (pubkey) {
+      const stored = getGenerations().filter(g => g.pubkey === pubkey);
+      setGenerations(stored);
     }
+  }, [pubkey]);
 
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [result?.id, result?.state]);
+  const connectNostr = async () => {
+    try {
+      const key = await getNostrPublicKey();
+      setPubkey(key);
+    } catch (err) {
+      setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
+    }
+  };
 
   const generateVideo = async () => {
-    if (!prompt) return;
+    if (!prompt || !pubkey) return;
     
     setLoading(true);
     setError('');
@@ -71,7 +79,22 @@ export default function Home() {
       }
       
       const data = await response.json();
-      setResult(data);
+      
+      // Save to local storage
+      const newGeneration = {
+        id: data.id,
+        prompt,
+        state: data.state,
+        createdAt: new Date().toISOString(),
+        pubkey,
+        videoUrl: data.assets?.video
+      };
+      
+      saveGeneration(newGeneration);
+      setGenerations(prev => [newGeneration, ...prev]);
+
+      // Start polling for this generation
+      pollForCompletion(data.id);
     } catch (err) {
       setError('Failed to generate video. Please try again.');
     } finally {
@@ -79,27 +102,54 @@ export default function Home() {
     }
   };
 
-  const getStatusMessage = () => {
-    if (!result) return '';
-    switch (result.state) {
-      case 'queued':
-        return 'Your video is queued for generation...';
-      case 'processing':
-        return 'Generating your video...';
-      case 'completed':
-        return 'Video generation complete!';
-      case 'failed':
-        return `Generation failed: ${result.failure_reason || 'Unknown error'}`;
-      default:
-        return `Status: ${result.state}`;
-    }
+  const pollForCompletion = async (id: string) => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/check-status?id=${id}`);
+        const data = await response.json();
+
+        if (data.state === 'completed' || data.state === 'failed') {
+          setGenerations(prev => 
+            prev.map(g => g.id === id ? {
+              ...g,
+              state: data.state,
+              videoUrl: data.assets?.video
+            } : g)
+          );
+
+          // Update in storage
+          const stored = getGenerations();
+          const updated = stored.map(g => g.id === id ? {
+            ...g,
+            state: data.state,
+            videoUrl: data.assets?.video
+          } : g);
+          localStorage.setItem('generations', JSON.stringify(updated));
+
+          return true; // Stop polling
+        }
+        return false; // Continue polling
+      } catch (err) {
+        console.error('Error checking status:', err);
+        return true; // Stop polling on error
+      }
+    };
+
+    // Poll every 2 seconds
+    const poll = async () => {
+      const shouldStop = await checkStatus();
+      if (!shouldStop) {
+        setTimeout(poll, 2000);
+      }
+    };
+
+    poll();
   };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <Head>
         <title>Luma AI Video Generator</title>
-        <meta name="description" content="Generate videos using Luma AI" />
       </Head>
 
       <main className="container mx-auto px-4 py-8">
@@ -107,76 +157,99 @@ export default function Home() {
           Luma AI Video Generator
         </h1>
 
-        <div className="max-w-2xl mx-auto space-y-6">
-          <div className="relative">
-            <textarea
-              className="w-full p-4 bg-gray-800 rounded-lg border border-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
-              rows={4}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Enter your prompt here... (e.g., 'a serene lake surrounded by mountains at sunset')"
-              disabled={loading}
-            />
-          </div>
-
-          <button
-            onClick={generateVideo}
-            disabled={loading || !prompt}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Generating...
-              </span>
-            ) : (
-              'Generate Video'
-            )}
-          </button>
-
-          {error && (
-            <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-              {error}
-            </div>
-          )}
-
-          {result && (
-            <div className="bg-gray-800 p-4 rounded-lg">
-              <h2 className="text-xl font-bold mb-3">{getStatusMessage()}</h2>
-              {result.assets?.video && (
-                <div className="mt-4">
-                  <h3 className="text-lg font-semibold mb-2">Generated Video:</h3>
-                  <div className="relative pt-[56.25%]">
-                    <video 
-                      className="absolute top-0 left-0 w-full h-full rounded-lg" 
-                      controls 
-                      src={result.assets.video}
-                      loop
-                    >
-                      Your browser does not support the video tag.
-                    </video>
-                  </div>
-                  <a 
-                    href={result.assets.video}
-                    download
-                    className="mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                  >
-                    Download Video
-                  </a>
-                </div>
-              )}
-              <div className="mt-4">
-                <h3 className="text-lg font-semibold mb-2">Generation Details:</h3>
-                <pre className="whitespace-pre-wrap bg-gray-900 p-3 rounded-lg text-sm overflow-auto">
-                  {JSON.stringify(result, null, 2)}
-                </pre>
+        {!pubkey ? (
+          <div className="text-center">
+            <button
+              onClick={connectNostr}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg"
+            >
+              Connect with Nostr
+            </button>
+            {error && (
+              <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                {error}
               </div>
+            )}
+          </div>
+        ) : (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Connected: {pubkey.slice(0, 8)}...{pubkey.slice(-8)}</span>
+              <button
+                onClick={() => setPubkey(null)}
+                className="text-sm text-gray-400 hover:text-white"
+              >
+                Disconnect
+              </button>
             </div>
-          )}
-        </div>
+
+            <div className="relative">
+              <textarea
+                className="w-full p-4 bg-gray-800 rounded-lg border border-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                rows={4}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Enter your prompt here..."
+                disabled={loading}
+              />
+            </div>
+
+            <button
+              onClick={generateVideo}
+              disabled={loading || !prompt}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg"
+            >
+              {loading ? 'Generating...' : 'Generate Video'}
+            </button>
+
+            {error && (
+              <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                {error}
+              </div>
+            )}
+
+            {generations.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold">Your Generations</h2>
+                {generations.map((gen) => (
+                  <div key={gen.id} className="bg-gray-800 p-4 rounded-lg">
+                    <p className="font-bold mb-2">{gen.prompt}</p>
+                    <p className="text-sm text-gray-400 mb-2">Status: {gen.state}</p>
+                    {gen.videoUrl ? (
+                      <div>
+                        <video
+                          className="w-full rounded-lg"
+                          controls
+                          src={gen.videoUrl}
+                          loop
+                        />
+                        <a
+                          href={gen.videoUrl}
+                          download
+                          className="mt-2 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                        >
+                          Download Video
+                        </a>
+                      </div>
+                    ) : gen.state === 'failed' ? (
+                      <p className="text-red-400">Generation failed</p>
+                    ) : (
+                      <div className="animate-pulse flex space-x-4">
+                        <div className="flex-1 space-y-4 py-1">
+                          <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+                          <div className="space-y-2">
+                            <div className="h-4 bg-gray-700 rounded"></div>
+                            <div className="h-4 bg-gray-700 rounded w-5/6"></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
