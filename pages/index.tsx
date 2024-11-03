@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
+import QRCode from 'qrcode.react'; // Import the QRCode component
 
 // Types
 interface NostrWindow extends Window {
@@ -96,6 +97,10 @@ export default function Home() {
   const [error, setError] = useState('');
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
 
+  // New state variables for payment
+  const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
+  const [paymentHash, setPaymentHash] = useState<string | null>(null);
+
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -133,6 +138,52 @@ export default function Home() {
     }
   };
 
+  // New waitForPayment function
+  const waitForPayment = async (paymentHash: string) => {
+    let isPaid = false;
+    const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
+
+    while (!isPaid) {
+      if (Date.now() > invoiceExpirationTime) {
+        setError('Invoice has expired. Please try again.');
+        setPaymentRequest(null);
+        setPaymentHash(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/check-lnbits-payment', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ paymentHash }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to check payment status');
+        }
+
+        const data = await response.json();
+        isPaid = data.paid;
+
+        if (!isPaid) {
+          // Wait 5 seconds before checking again
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      } catch (err) {
+        console.error('Error checking payment status:', err);
+        setError('Error checking payment status. Please try again.');
+        setPaymentRequest(null);
+        setPaymentHash(null);
+        setLoading(false);
+        return;
+      }
+    }
+  };
+
+  // Updated generateVideo function
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
@@ -141,6 +192,34 @@ export default function Home() {
     setError('');
 
     try {
+      // Step 1: Create an invoice
+      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: 1000 }), // Amount in sats
+      });
+
+      if (!invoiceResponse.ok) {
+        throw new Error('Failed to create invoice');
+      }
+
+      const invoiceData = await invoiceResponse.json();
+      const { payment_request, payment_hash } = invoiceData;
+
+      // Step 2: Display the invoice to the user and wait for payment
+      setPaymentRequest(payment_request);
+      setPaymentHash(payment_hash);
+
+      // Wait for payment confirmation
+      await waitForPayment(payment_hash);
+
+      // Clear payment request
+      setPaymentRequest(null);
+      setPaymentHash(null);
+
+      // Step 3: Proceed with generating the video
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -177,7 +256,11 @@ export default function Home() {
       pollForCompletion(data.id);
     } catch (err) {
       console.error('Generation error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate video. Please try again.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate video. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -335,6 +418,33 @@ export default function Home() {
       <Head>
         <title>Luma AI Video Generator</title>
       </Head>
+
+      {/* Payment Modal */}
+      {paymentRequest && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
+            <h2 className="text-xl font-bold">Pay to Generate Video</h2>
+            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            <div className="flex justify-center">
+              <QRCode value={paymentRequest} size={256} />
+            </div>
+            <p className="text-sm text-gray-400 break-all">
+              {paymentRequest}
+            </p>
+            <p className="text-sm text-gray-400">Waiting for payment confirmation...</p>
+            <button
+              onClick={() => {
+                setPaymentRequest(null);
+                setPaymentHash(null);
+                setLoading(false);
+              }}
+              className="mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex h-screen">
         <div className="w-64 bg-[#1a1a1a] border-r border-gray-800 hidden md:block overflow-auto">
@@ -555,7 +665,7 @@ export default function Home() {
                     <div className="flex justify-end">
                       <button
                         type="submit"
-                        disabled={loading || !prompt}
+                        disabled={loading || !prompt || paymentRequest}
                         className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                       >
                         {loading ? (
