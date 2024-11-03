@@ -1,9 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { LumaAI } from 'lumaai';
-
-const client = new LumaAI({
-  authToken: process.env.LUMA_API_KEY as string
-});
 
 export default async function handler(
   req: NextApiRequest,
@@ -23,12 +18,26 @@ export default async function handler(
 
     console.log('Starting generation with prompt:', prompt);
 
-    const generation = await client.generations.create({
-      prompt,
-      aspect_ratio: "16:9",
-      loop: true
+    const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.LUMA_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        aspect_ratio: "16:9",
+        loop: true
+      }),
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error response:', errorText);
+      throw new Error('Failed to generate video');
+    }
+
+    const generation = await response.json();
     console.log('Generation started:', generation);
 
     return res.status(200).json(generation);
