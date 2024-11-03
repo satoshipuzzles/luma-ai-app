@@ -2,7 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 const LNbitsAPIKey = process.env.LNBITS_API_KEY;
-const LNbitsURL = 'https://legend.lnbits.com';
+const LNbitsURL = 'https://1a96a66a73.d.voltageapp.io';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
