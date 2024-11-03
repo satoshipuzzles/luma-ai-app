@@ -140,7 +140,7 @@ export default function Home() {
   };
 
   // Updated waitForPayment function with debugging logs
-  const waitForPayment = async (paymentHash: string) => {
+  const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
 
@@ -152,7 +152,7 @@ export default function Home() {
         setPaymentRequest(null);
         setPaymentHash(null);
         setLoading(false);
-        return;
+        return false;
       }
 
       try {
@@ -167,7 +167,8 @@ export default function Home() {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to check payment status');
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to check payment status');
         }
 
         const data = await response.json();
@@ -181,15 +182,20 @@ export default function Home() {
         }
       } catch (err) {
         console.error('Error checking payment status:', err);
-        setError('Error checking payment status. Please try again.');
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Error checking payment status. Please try again.'
+        );
         setPaymentRequest(null);
         setPaymentHash(null);
         setLoading(false);
-        return;
+        return false; // Return false to indicate payment was not confirmed
       }
     }
 
     console.log('Payment confirmed for hash:', paymentHash);
+    return true; // Return true to indicate payment was confirmed
   };
 
   // Updated generateVideo function
@@ -225,7 +231,11 @@ export default function Home() {
       setPaymentHash(payment_hash);
 
       // Wait for payment confirmation
-      await waitForPayment(payment_hash);
+      const paymentConfirmed = await waitForPayment(payment_hash);
+      if (!paymentConfirmed) {
+        // Payment was not confirmed, stop execution
+        return;
+      }
 
       // Clear payment request
       setPaymentRequest(null);
@@ -273,7 +283,6 @@ export default function Home() {
           ? err.message
           : 'Failed to generate video. Please try again.'
       );
-    } finally {
       setLoading(false);
     }
   };
@@ -440,9 +449,7 @@ export default function Home() {
             <div className="flex justify-center">
               <QRCode value={paymentRequest} size={256} />
             </div>
-            <p className="text-sm text-gray-400 break-all">
-              {paymentRequest}
-            </p>
+            <p className="text-sm text-gray-400 break-all">{paymentRequest}</p>
             <p className="text-sm text-gray-400">Waiting for payment confirmation...</p>
             <button
               onClick={() => {
@@ -475,9 +482,7 @@ export default function Home() {
                 >
                   <p className="text-sm font-medium truncate">{gen.prompt}</p>
                   <div className="flex items-center justify-between mt-1">
-                    <p className="text-xs text-gray-400">
-                      {formatDate(gen.createdAt)}
-                    </p>
+                    <p className="text-xs text-gray-400">{formatDate(gen.createdAt)}</p>
                     {gen.state === 'dreaming' ? (
                       <div className="flex items-center">
                         <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full mr-1"></div>
@@ -531,9 +536,7 @@ export default function Home() {
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h2 className="text-xl font-bold">
-                        {selectedGeneration.prompt}
-                      </h2>
+                      <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
                       <p className="text-sm text-gray-400 mt-1">
                         {formatDate(selectedGeneration.createdAt)}
                       </p>
@@ -587,9 +590,7 @@ export default function Home() {
                             <span>Download Video</span>
                           </a>
                           <button
-                            onClick={() =>
-                              copyVideoUrl(selectedGeneration.videoUrl!)
-                            }
+                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
                             <svg
