@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
-// TypeScript interfaces
+// Types
 interface NostrWindow extends Window {
   nostr?: {
     getPublicKey(): Promise<string>;
@@ -28,16 +28,24 @@ interface Profile {
 const formatDate = (dateString: string) => {
   try {
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return 'Just now';
+    if (!isNaN(date.getTime())) {
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+      
+      if (diffInSeconds < 60) return 'Just now';
+      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+      
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
     }
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+    return 'Just now';
   } catch (e) {
+    console.error('Date formatting error:', e);
     return 'Just now';
   }
 };
@@ -67,8 +75,9 @@ const getStatusMessage = (state: string) => {
     case 'queued':
       return 'Preparing to generate your video...';
     case 'dreaming':
+      return 'AI is crafting your video...';
     case 'processing':
-      return 'Creating your masterpiece...';
+      return 'Almost there...';
     case 'completed':
       return 'Video ready!';
     case 'failed':
@@ -79,7 +88,6 @@ const getStatusMessage = (state: string) => {
 };
 
 export default function Home() {
-  // State management
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -88,15 +96,18 @@ export default function Home() {
   const [error, setError] = useState('');
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
 
-  // Load generations when pubkey changes
+  // Load user's generations on pubkey change
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter(g => g.pubkey === pubkey);
       setGenerations(stored);
+      if (stored.length > 0) {
+        setSelectedGeneration(stored[0]);
+      }
     }
   }, [pubkey]);
 
-  // Load profile when pubkey changes
+  // Load Nostr profile
   useEffect(() => {
     const loadProfile = async () => {
       if (pubkey) {
@@ -132,7 +143,7 @@ export default function Home() {
     setError('');
     
     try {
-      console.log('Generating video with prompt:', prompt);
+      console.log('Starting generation:', { prompt });
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -147,7 +158,10 @@ export default function Home() {
       }
       
       const data = await response.json();
-      console.log('Generation response:', data);
+      console.log('Generation initiated:', { 
+        id: data.id,
+        state: data.state
+      });
       
       if (!data.id) {
         throw new Error('Invalid response from server');
@@ -184,18 +198,19 @@ export default function Home() {
         }
         
         const data = await response.json();
-        console.log('Status check response:', {
+        console.log('Status update:', {
           id: data.id,
           state: data.state,
           hasVideo: !!data.assets?.video,
-          videoUrl: data.assets?.video
+          elapsedTime: `${Math.floor((Date.now() - new Date(data.created_at).getTime()) / 1000)}s`
         });
 
         // Update the generation in state
         const updatedGeneration = {
           ...generations.find(g => g.id === id)!,
           state: data.state,
-          videoUrl: data.assets?.video
+          videoUrl: data.assets?.video,
+          createdAt: data.created_at
         };
         
         setGenerations(prev => 
@@ -212,7 +227,10 @@ export default function Home() {
         localStorage.setItem('generations', JSON.stringify(updated));
 
         if (data.state === 'completed' && data.assets?.video) {
-          console.log('Video generation completed:', data.assets.video);
+          console.log('Generation completed:', {
+            id: data.id,
+            videoUrl: data.assets.video
+          });
           return true; // Stop polling
         }
         if (data.state === 'failed') {
@@ -221,7 +239,7 @@ export default function Home() {
         }
         return false; // Continue polling
       } catch (err) {
-        console.error('Error checking status:', err);
+        console.error('Status check error:', err);
         return true; // Stop polling on error
       }
     };
@@ -236,14 +254,23 @@ export default function Home() {
     poll();
   };
 
-  // Login screen
+  // Copy video URL to clipboard
+  const copyVideoUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      // Could add a toast notification here
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
         <div className="max-w-md w-full p-6 space-y-6">
           <h1 className="text-3xl font-bold text-center">Luma AI Video Generator</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect your Nostr wallet to get started</p>
+            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
             <button
               onClick={connectNostr}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
@@ -261,7 +288,6 @@ export default function Home() {
     );
   }
 
-  // Main application
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
@@ -272,7 +298,7 @@ export default function Home() {
         {/* Sidebar */}
         <div className="w-64 bg-[#1a1a1a] border-r border-gray-800 hidden md:block overflow-auto">
           <div className="p-4">
-            <h2 className="text-xl font-bold mb-4">History</h2>
+            <h2 className="text-xl font-bold mb-4">Your Videos</h2>
             <div className="space-y-2">
               {generations.map((gen) => (
                 <button
@@ -289,11 +315,13 @@ export default function Home() {
                     <p className="text-xs text-gray-400">
                       {formatDate(gen.createdAt)}
                     </p>
-                    {gen.state === 'dreaming' && (
+                    {gen.state === 'dreaming' ? (
                       <div className="flex items-center">
                         <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full mr-1"></div>
                         <span className="text-xs text-purple-400">Dreaming</span>
                       </div>
+                    ) : gen.state === 'completed' && (
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     )}
                   </div>
                 </button>
@@ -359,50 +387,38 @@ export default function Home() {
                       {getStatusMessage(selectedGeneration.state)}
                     </p>
                     
-                    {selectedGeneration.videoUrl ? (
-                      <div className="space-y-4">
-                        <video
-                          className="w-full rounded-lg"
-                          controls
-                          src={selectedGeneration.videoUrl}
-                          loop
-                        />
-                        <a
-                          href={selectedGeneration.videoUrl}
-                          download
-                          className="inline-block bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                        >
-                          Download Video
-                        </a>
-                      </div>
-                    ) : selectedGeneration.state === 'failed' ? (
-                      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                        Generation failed. Please try again.
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        <div className="relative h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="space-y-4 text-center">
-                              <div className="inline-flex items-center space-x-2">
-                                <svg className="animate-spin h-6 w-6 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span className="text-purple-400 font-medium">AI is dreaming...</span>
-                              </div>
-                              <div className="text-sm text-gray-400">This usually takes 1-2 minutes</div>
-                            </div>
-                          </div>
-                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#1a1a1a]">
-                            <div className="h-full bg-purple-600 animate-pulse"></div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-6">
-                <div className="max-w-3xl mx-auto">
+                   {selectedGeneration.videoUrl ? (
+  <div className="space-y-4">
+    <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+      <video
+        className="absolute top-0 left-0 w-full h-full object-contain"
+        controls
+        autoPlay
+        loop
+        src={selectedGeneration.videoUrl}
+        poster={selectedGeneration.videoUrl + '?thumb=true'}
+      />
+    </div>
+    <div className="flex space-x-2">
+      
+        href={selectedGeneration.videoUrl}
+        download={`${selectedGeneration.prompt.slice(0, 30)}.mp4`}
+        className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        <span>Download Video</span>
+      </a>
+      <button
+        onClick={() => navigator.clipboard.writeText(selectedGeneration.videoUrl!)}
+        className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+        <span>Copy Link</span>
+      </button>
+    </div>
+  </div>
+) : (loading status section here)}
