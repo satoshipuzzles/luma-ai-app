@@ -44,7 +44,6 @@ export default async function handler(
         
         ws.send(subscription);
         
-        // Set timeout for 5 seconds
         timeout = setTimeout(() => {
           ws.close();
           resolve(null);
@@ -64,7 +63,6 @@ export default async function handler(
           }
         } catch (error) {
           console.error('Error parsing Nostr event:', error);
-          reject(error);
         }
       };
 
