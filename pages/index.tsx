@@ -184,81 +184,92 @@ export default function Home() {
   };
 
   const pollForCompletion = async (generationId: string) => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch(`/api/check-status?id=${generationId}`);
-        if (!response.ok) {
-          throw new Error('Failed to check status');
-        }
+  const checkStatus = async () => {
+    try {
+      const response = await fetch(`/api/check-status?id=${generationId}`);
+      if (!response.ok) {
+        throw new Error('Failed to check status');
+      }
+      
+      const data = await response.json();
+      
+      // Better logging to debug the response
+      console.log('Raw status response:', data);
+      console.log('Current state:', {
+        id: data.id,
+        state: data.state,
+        hasVideo: !!data.assets?.video,
+        videoUrl: data.assets?.video,
+        assets: data.assets
+      });
+
+      // Check if we have a completed state with video
+      if (data.state === 'completed' && data.assets?.video) {
+        console.log('Video URL found:', data.assets.video);
         
-        const data = await response.json();
-        console.log('Status check response:', {
-          id: data.id,
-          state: data.state,
-          hasVideo: !!data.assets?.video,
-          videoUrl: data.assets?.video
-        });
-
-        if (data.state === 'completed' && data.assets?.video) {
-          try {
-            const videoCheck = await fetch(data.assets.video, { method: 'HEAD' });
-            if (videoCheck.ok) {
-              const updatedGeneration = {
-                ...generations.find(g => g.id === generationId)!,
-                state: 'completed',
-                videoUrl: data.assets.video,
-                createdAt: data.created_at
-              };
-              
-              setGenerations(prev => 
-                prev.map(g => g.id === generationId ? updatedGeneration : g)
-              );
-              
-              if (selectedGeneration?.id === generationId) {
-                setSelectedGeneration(updatedGeneration);
-              }
-
-              const stored = getGenerations();
-              const updated = stored.map(g => g.id === generationId ? updatedGeneration : g);
-              localStorage.setItem('generations', JSON.stringify(updated));
-
-              return true; // Stop polling
-            }
-          } catch (e) {
-            console.log('Video not yet accessible');
-          }
-        }
-
         const updatedGeneration = {
           ...generations.find(g => g.id === generationId)!,
-          state: data.state,
+          state: 'completed',
+          videoUrl: data.assets.video,
           createdAt: data.created_at
         };
+
+        console.log('Updating generation with:', updatedGeneration);
         
-        setGenerations(prev => 
-          prev.map(g => g.id === generationId ? updatedGeneration : g)
-        );
+        setGenerations(prev => {
+          const updated = prev.map(g => 
+            g.id === generationId ? updatedGeneration : g
+          );
+          console.log('New generations state:', updated);
+          return updated;
+        });
         
         if (selectedGeneration?.id === generationId) {
+          console.log('Updating selected generation');
           setSelectedGeneration(updatedGeneration);
         }
 
-        return false; // Continue polling
-      } catch (err) {
-        console.error('Status check error:', err);
-        return true; // Stop polling on error
-      }
-    };
+        // Update storage
+        const stored = getGenerations();
+        const updated = stored.map(g => 
+          g.id === generationId ? updatedGeneration : g
+        );
+        localStorage.setItem('generations', JSON.stringify(updated));
 
-    const poll = async () => {
-      const shouldStop = await checkStatus();
-      if (!shouldStop) {
-        setTimeout(poll, 2000);
+        return true; // Stop polling
       }
-    };
 
-    poll();
+      // Update state for in-progress generations
+      const updatedGeneration = {
+        ...generations.find(g => g.id === generationId)!,
+        state: data.state,
+        createdAt: data.created_at
+      };
+      
+      setGenerations(prev => 
+        prev.map(g => g.id === generationId ? updatedGeneration : g)
+      );
+      
+      if (selectedGeneration?.id === generationId) {
+        setSelectedGeneration(updatedGeneration);
+      }
+
+      return false; // Continue polling
+    } catch (err) {
+      console.error('Status check error:', err);
+      return true; // Stop polling on error
+    }
   };
+
+  const poll = async () => {
+    const shouldStop = await checkStatus();
+    if (!shouldStop) {
+      setTimeout(poll, 2000);
+    }
+  };
+
+  poll();
+};
 
   const copyVideoUrl = async (url: string) => {
     try {
