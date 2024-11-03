@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
 interface GenerationResult {
   id: string;
   state: string;
+  failure_reason?: string | null;
   assets?: {
     video?: string;
   };
+  created_at: string;
 }
 
 export default function Home() {
@@ -15,12 +17,45 @@ export default function Home() {
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [error, setError] = useState('');
 
+  // Add polling for status updates
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    const checkStatus = async () => {
+      if (result?.id && result.state === 'queued' || result?.state === 'processing') {
+        try {
+          const response = await fetch(`/api/check-status?id=${result.id}`);
+          const data = await response.json();
+          
+          setResult(data);
+          
+          // If we have a video URL, stop polling
+          if (data.state === 'completed' || data.state === 'failed') {
+            clearInterval(intervalId);
+          }
+        } catch (err) {
+          console.error('Error checking status:', err);
+        }
+      }
+    };
+
+    if (result?.id) {
+      // Check status every 5 seconds
+      intervalId = setInterval(checkStatus, 5000);
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [result?.id, result?.state]);
+
   const generateVideo = async () => {
     if (!prompt) return;
     
     setLoading(true);
     setError('');
-    setResult(null);
     
     try {
       const response = await fetch('/api/generate', {
@@ -41,6 +76,22 @@ export default function Home() {
       setError('Failed to generate video. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getStatusMessage = () => {
+    if (!result) return '';
+    switch (result.state) {
+      case 'queued':
+        return 'Your video is queued for generation...';
+      case 'processing':
+        return 'Generating your video...';
+      case 'completed':
+        return 'Video generation complete!';
+      case 'failed':
+        return `Generation failed: ${result.failure_reason || 'Unknown error'}`;
+      default:
+        return `Status: ${result.state}`;
     }
   };
 
@@ -94,22 +145,32 @@ export default function Home() {
 
           {result && (
             <div className="bg-gray-800 p-4 rounded-lg">
-              <h2 className="text-xl font-bold mb-3">Generation Status: {result.state}</h2>
+              <h2 className="text-xl font-bold mb-3">{getStatusMessage()}</h2>
               {result.assets?.video && (
                 <div className="mt-4">
                   <h3 className="text-lg font-semibold mb-2">Generated Video:</h3>
-                  <video 
-                    className="w-full rounded-lg" 
-                    controls 
-                    src={result.assets.video}
+                  <div className="relative pt-[56.25%]">
+                    <video 
+                      className="absolute top-0 left-0 w-full h-full rounded-lg" 
+                      controls 
+                      src={result.assets.video}
+                      loop
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+                  <a 
+                    href={result.assets.video}
+                    download
+                    className="mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
                   >
-                    Your browser does not support the video tag.
-                  </video>
+                    Download Video
+                  </a>
                 </div>
               )}
               <div className="mt-4">
                 <h3 className="text-lg font-semibold mb-2">Generation Details:</h3>
-                <pre className="whitespace-pre-wrap bg-gray-900 p-3 rounded-lg text-sm">
+                <pre className="whitespace-pre-wrap bg-gray-900 p-3 rounded-lg text-sm overflow-auto">
                   {JSON.stringify(result, null, 2)}
                 </pre>
               </div>
