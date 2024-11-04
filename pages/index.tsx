@@ -634,65 +634,78 @@ export default function Home() {
             )}
           </div>
 
-          <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto">
             {selectedGeneration ? (
               <div className="p-6">
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
-                  {/* Generation Details */}
-                  <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
-                  <div className="text-sm text-gray-400">
-                    {formatDate(selectedGeneration.createdAt)}
+                  {/* Generation Details with Close Button */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
+                      <div className="text-sm text-gray-400 mt-1">
+                        {formatDate(selectedGeneration.createdAt)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedGeneration(null)}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
                   </div>
 
                   <div className="border-t border-gray-800 pt-4">
                     {/* Status Message */}
-                    <div className="text-sm text-gray-300">
+                    <div className="text-sm text-gray-300 mb-4">
                       {getStatusMessage(selectedGeneration.state)}
                     </div>
 
                     {selectedGeneration.videoUrl ? (
                       <div className="space-y-4">
                         {/* Video Player */}
-                        <video
-                          src={selectedGeneration.videoUrl}
-                          controls
-                          className="w-full rounded-lg"
-                        ></video>
+                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+                          <video
+                            key={selectedGeneration.videoUrl}
+                            className="absolute top-0 left-0 w-full h-full object-contain"
+                            controls
+                            autoPlay
+                            loop
+                            src={selectedGeneration.videoUrl}
+                          />
+                        </div>
 
-                        {/* Action Buttons */}
+                        {/* Action Buttons with Dark Theme */}
                         <div className="flex space-x-2">
                           <button
                             onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            Copy Video URL
+                            {/* Copy Link SVG icon */}
+                            <span>Copy Video URL</span>
                           </button>
                           <a
                             href={selectedGeneration.videoUrl}
                             download
-                            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            Download Video
+                            {/* Download SVG icon */}
+                            <span>Download Video</span>
                           </a>
                           {/* Share on Nostr Button */}
                           <button
                             onClick={() => {
-                              setNoteContent(selectedGeneration.prompt);
+                              setNoteContent(
+                                `${selectedGeneration.prompt}\n\nWatch the video here: ${selectedGeneration.videoUrl}`
+                              );
                               setShowNostrModal(true);
                             }}
-                            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            <svg
-                              className="w-5 h-5"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5C10.62 11.5 9.5 10.38 9.5 9S10.62 6.5 12 6.5 14.5 7.62 14.5 9 13.38 11.5 12 11.5z" />
-                            </svg>
+                            {/* Share on Nostr SVG icon */}
                             <span>Share on Nostr</span>
                           </button>
                         </div>
-                      </div>
+  
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
