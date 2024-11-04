@@ -420,7 +420,7 @@ export default function Home() {
   };
 
 import { relayInit, getEventHash, Event } from 'nostr-tools';
-
+//publish note
 const publishNote = async () => {
   if (!pubkey || !window.nostr) {
     setPublishError(
@@ -455,11 +455,12 @@ const publishNote = async () => {
     // List of relay URLs
     const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
 
+    // Initialize relay connections
+    const relayConnections = relayUrls.map((url) => relayInit(url));
+
     // Publish to each relay
     await Promise.all(
-      relayUrls.map(async (url) => {
-        const relay = relayInit(url);
-
+      relayConnections.map((relay) => {
         return new Promise<void>((resolve, reject) => {
           relay.on('connect', async () => {
             console.log(`Connected to relay ${relay.url}`);
@@ -484,6 +485,9 @@ const publishNote = async () => {
         });
       })
     );
+
+    // Close relay connections
+    relayConnections.forEach((relay) => relay.close());
 
     setPublishing(false);
     setShowNostrModal(false);
