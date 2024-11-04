@@ -501,7 +501,7 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
         <div className="max-w-md w-full p-6 space-y-6">
-          <h1 className="text-3xl font-bold text-center">Luma AI Video Generator</h1>
+          <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
             <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
             <button
