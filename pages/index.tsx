@@ -419,10 +419,13 @@ export default function Home() {
     }
   };
 
-  // publishNote function
+import { relayInit, getEventHash, Event } from 'nostr-tools';
+
 const publishNote = async () => {
   if (!pubkey || !window.nostr) {
-    setPublishError('Nostr extension not found. Please install a NIP-07 browser extension.');
+    setPublishError(
+      'Nostr extension not found. Please install a NIP-07 browser extension.'
+    );
     return;
   }
 
@@ -449,7 +452,7 @@ const publishNote = async () => {
       throw new Error('Event ID mismatch after signing.');
     }
 
-    // List of relays
+    // List of relay URLs
     const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
 
     // Publish to each relay
@@ -457,25 +460,28 @@ const publishNote = async () => {
       relayUrls.map(async (url) => {
         const relay = relayInit(url);
 
-        relay.on('connect', async () => {
-          console.log(`Connected to relay ${relay.url}`);
-          try {
-            await relay.publish(signedEvent);
-            console.log(`Event published to ${relay.url}`);
-          } catch (error) {
-            console.error(`Failed to publish to ${relay.url}:`, error);
-            throw error;
-          } finally {
-            relay.close();
-          }
-        });
+        return new Promise<void>((resolve, reject) => {
+          relay.on('connect', async () => {
+            console.log(`Connected to relay ${relay.url}`);
+            try {
+              await relay.publish(signedEvent);
+              console.log(`Event published to ${relay.url}`);
+              resolve();
+            } catch (error) {
+              console.error(`Failed to publish to ${relay.url}:`, error);
+              reject(error);
+            } finally {
+              relay.close();
+            }
+          });
 
-        relay.on('error', (error) => {
-          console.error(`Failed to connect to relay ${relay.url}:`, error);
-          throw error;
-        });
+          relay.on('error', () => {
+            console.error(`Failed to connect to relay ${relay.url}`);
+            reject(new Error(`Failed to connect to relay ${relay.url}`));
+          });
 
-        await relay.connect();
+          relay.connect();
+        });
       })
     );
 
@@ -484,12 +490,13 @@ const publishNote = async () => {
   } catch (err) {
     console.error('Error publishing note:', err);
     setPublishError(
-      err instanceof Error ? err.message : 'Failed to publish note. Please try again.'
+      err instanceof Error
+        ? err.message
+        : 'Failed to publish note. Please try again.'
     );
     setPublishing(false);
   }
 };
-
       // Close relay connections
       relayConnections.forEach((relay) => relay.close());
 
