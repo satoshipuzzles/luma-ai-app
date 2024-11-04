@@ -419,101 +419,81 @@ export default function Home() {
     }
   };
 
-import { relayInit, getEventHash, Event } from 'nostr-tools';
-//publish note
-const publishNote = async () => {
-  if (!pubkey || !window.nostr) {
-    setPublishError(
-      'Nostr extension not found. Please install a NIP-07 browser extension.'
-    );
-    return;
-  }
-
-  setPublishing(true);
-  setPublishError('');
-
-  try {
-    const event: Partial<Event> = {
-      kind: 1,
-      pubkey,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [],
-      content: noteContent,
-    };
-
-    // Get the event hash
-    event.id = getEventHash(event as Event);
-
-    // Sign the event
-    const signedEvent = await window.nostr.signEvent(event as Event);
-
-    // Verify the signature
-    if (signedEvent.id !== event.id) {
-      throw new Error('Event ID mismatch after signing.');
+  // publishNote function
+  const publishNote = async () => {
+    if (!pubkey || !window.nostr) {
+      setPublishError(
+        'Nostr extension not found. Please install a NIP-07 browser extension.'
+      );
+      return;
     }
 
-    // List of relay URLs
-    const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
+    setPublishing(true);
+    setPublishError('');
 
-    // Initialize relay connections
-    const relayConnections = relayUrls.map((url) => relayInit(url));
+    let relayConnections: ReturnType<typeof relayInit>[] = [];
 
-    // Publish to each relay
-    await Promise.all(
-      relayConnections.map((relay) => {
-        return new Promise<void>((resolve, reject) => {
-          relay.on('connect', async () => {
-            console.log(`Connected to relay ${relay.url}`);
-            try {
-              await relay.publish(signedEvent);
-              console.log(`Event published to ${relay.url}`);
-              resolve();
-            } catch (error) {
-              console.error(`Failed to publish to ${relay.url}:`, error);
-              reject(error);
-            } finally {
-              relay.close();
-            }
+    try {
+      const event: Partial<Event> = {
+        kind: 1,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+        content: noteContent,
+      };
+
+      // Get the event hash
+      event.id = getEventHash(event as Event);
+
+      // Sign the event
+      const signedEvent = await window.nostr.signEvent(event as Event);
+
+      // Verify the signature
+      if (signedEvent.id !== event.id) {
+        throw new Error('Event ID mismatch after signing.');
+      }
+
+      // List of relay URLs
+      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
+
+      // Initialize relay connections
+      relayConnections = relayUrls.map((url) => relayInit(url));
+
+      // Publish to each relay
+      await Promise.all(
+        relayConnections.map((relay) => {
+          return new Promise<void>((resolve, reject) => {
+            relay.on('connect', async () => {
+              console.log(`Connected to relay ${relay.url}`);
+              try {
+                await relay.publish(signedEvent);
+                console.log(`Event published to ${relay.url}`);
+                resolve();
+              } catch (error) {
+                console.error(`Failed to publish to ${relay.url}:`, error);
+                reject(error);
+              }
+            });
+
+            relay.on('error', () => {
+              console.error(`Failed to connect to relay ${relay.url}`);
+              reject(new Error(`Failed to connect to relay ${relay.url}`));
+            });
+
+            relay.connect();
           });
-
-          relay.on('error', () => {
-            console.error(`Failed to connect to relay ${relay.url}`);
-            reject(new Error(`Failed to connect to relay ${relay.url}`));
-          });
-
-          relay.connect();
-        });
-      })
-    );
-
-    // Close relay connections
-    relayConnections.forEach((relay) => relay.close());
-
-    setPublishing(false);
-    setShowNostrModal(false);
-  } catch (err) {
-    console.error('Error publishing note:', err);
-    setPublishError(
-      err instanceof Error
-        ? err.message
-        : 'Failed to publish note. Please try again.'
-    );
-    setPublishing(false);
-  }
-};
-      // Close relay connections
-      relayConnections.forEach((relay) => relay.close());
-
-      setPublishing(false);
-      setShowNostrModal(false);
+        })
+      );
     } catch (err) {
       console.error('Error publishing note:', err);
       setPublishError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to publish note. Please try again.'
+        err instanceof Error ? err.message : 'Failed to publish note. Please try again.'
       );
+    } finally {
+      // Close relay connections
+      relayConnections.forEach((relay) => relay.close());
       setPublishing(false);
+      setShowNostrModal(false);
     }
   };
 
@@ -610,7 +590,6 @@ const publishNote = async () => {
 
       <div className="flex h-screen">
         {/* Sidebar */}
-        {/* ... existing sidebar code ... */}
         <div className="w-64 bg-[#1a1a1a] p-6 space-y-4 overflow-y-auto">
           <h2 className="text-2xl font-bold">Your Generations</h2>
           {generations.length > 0 ? (
@@ -619,12 +598,16 @@ const publishNote = async () => {
                 <li
                   key={generation.id}
                   className={`p-2 rounded-lg cursor-pointer ${
-                    selectedGeneration?.id === generation.id ? 'bg-purple-700' : 'hover:bg-gray-700'
+                    selectedGeneration?.id === generation.id
+                      ? 'bg-purple-700'
+                      : 'hover:bg-gray-700'
                   }`}
                   onClick={() => setSelectedGeneration(generation)}
                 >
                   <div className="text-sm font-medium">{generation.prompt}</div>
-                  <div className="text-xs text-gray-400">{formatDate(generation.createdAt)}</div>
+                  <div className="text-xs text-gray-400">
+                    {formatDate(generation.createdAt)}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -635,7 +618,6 @@ const publishNote = async () => {
 
         <div className="flex-1 flex flex-col">
           {/* Header */}
-          {/* ... existing header code ... */}
           <div className="bg-[#1a1a1a] p-4 flex items-center justify-between">
             <h1 className="text-2xl font-bold">Luma AI Video Generator</h1>
             {profile && (
