@@ -525,6 +525,13 @@ export default function Home() {
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
         <title>Animal Sunset 🌞🦒</title>
+         {/* Open Graph Meta Tags */}
+  <meta name="description" content="Animal Sunset - AI-powered video generator." />
+  <meta property="og:title" content="Animal Sunset" />
+  <meta property="og:description" content="AI-powered video generator." />
+  <meta property="og:image" content="https://storage.cdn-luma.com/lit_lite_inference_v1.6-xl/d1e91bcb-2764-4f72-b19b-beecbbb6ca63/9a1a1a07-f2a8-4da6-8e11-d33f9ea10d19_video0194dabfaf1894c4dae68eb7994cd8a8d.mp4" />
+  <meta property="og:url" content="https://animalsunset.com" />
+  <meta property="og:type" content="website" />
       </Head>
 
       {/* Payment Modal */}
