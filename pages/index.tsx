@@ -524,7 +524,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-        <title>Luma AI Video Generator</title>
+        <title>Animal Sunset 🌞🦒</title>
       </Head>
 
       {/* Payment Modal */}
@@ -619,7 +619,7 @@ export default function Home() {
         <div className="flex-1 flex flex-col">
           {/* Header */}
           <div className="bg-[#1a1a1a] p-4 flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Luma AI Video Generator</h1>
+            <h1 className="text-2xl font-bold">Animal Sunset</h1>
             {profile && (
               <div className="flex items-center space-x-2">
                 {profile.picture && (
