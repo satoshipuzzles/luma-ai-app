@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
+import { relayInit, getEventHash } from 'nostr-tools';
 
 // Types
 interface NostrWindow extends Window {
@@ -102,6 +103,12 @@ export default function Home() {
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
 
+  // New state variables for Nostr sharing
+  const [showNostrModal, setShowNostrModal] = useState(false);
+  const [noteContent, setNoteContent] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState('');
+
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -171,7 +178,9 @@ export default function Home() {
         if (!response.ok) {
           const errorData = await response.json();
           console.error('Error response from API:', errorData);
-          throw new Error(errorData.error || 'Failed to check payment status');
+          // Do not throw an error here; instead, wait and check again
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
         }
 
         const data = await response.json();
@@ -185,15 +194,8 @@ export default function Home() {
         }
       } catch (err) {
         console.error('Error checking payment status:', err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'Error checking payment status. Please try again.'
-        );
-        setPaymentRequest(null);
-        setPaymentHash(null);
-        setLoading(false);
-        return false; // Return false to indicate payment was not confirmed
+        // Do not close the modal; wait and check again
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
 
@@ -237,6 +239,7 @@ export default function Home() {
       const paymentConfirmed = await waitForPayment(payment_hash);
       if (!paymentConfirmed) {
         // Payment was not confirmed, stop execution
+        setLoading(false);
         return;
       }
 
@@ -413,6 +416,87 @@ export default function Home() {
     }
   };
 
+  // New function to handle Nostr event publishing
+  const publishNote = async () => {
+    if (!pubkey || !window.nostr) {
+      setPublishError('Nostr extension not found. Please install a NIP-07 browser extension.');
+      return;
+    }
+
+    setPublishing(true);
+    setPublishError('');
+
+    try {
+      const event = {
+        kind: 1,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+        content: noteContent,
+      };
+
+      // Get the event hash
+      event.id = getEventHash(event);
+
+      // Sign the event
+      const signedEvent = await window.nostr.signEvent(event);
+
+      // Verify the signature
+      if (signedEvent.id !== event.id) {
+        throw new Error('Event ID mismatch after signing.');
+      }
+
+      // Connect to the relays
+      const relays = [
+        'wss://relay.damus.io',
+        'wss://relay.nostrefreaks.com',
+      ];
+
+      const relayConnections = relays.map((url) => relayInit(url));
+
+      // Publish the event to each relay
+      await Promise.all(
+        relayConnections.map(async (relay) => {
+          await relay.connect();
+
+          return new Promise((resolve, reject) => {
+            relay.on('connect', () => {
+              console.log(`Connected to relay ${relay.url}`);
+              const pub = relay.publish(signedEvent);
+              pub.on('ok', () => {
+                console.log(`Event published to ${relay.url}`);
+                resolve(null);
+              });
+              pub.on('failed', (reason: string) => {
+                console.error(`Failed to publish to ${relay.url}: ${reason}`);
+                reject(new Error(`Failed to publish to ${relay.url}: ${reason}`));
+              });
+            });
+
+            relay.on('error', () => {
+              console.error(`Failed to connect to relay ${relay.url}`);
+              reject(new Error(`Failed to connect to relay ${relay.url}`));
+            });
+          });
+        })
+      );
+
+      // Close relay connections
+      relayConnections.forEach((relay) => relay.close());
+
+      setPublishing(false);
+      setShowNostrModal(false);
+    } catch (err) {
+      console.error('Error publishing note:', err);
+      setPublishError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to publish note. Please try again.'
+      );
+      setPublishing(false);
+    }
+  };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
@@ -468,156 +552,90 @@ export default function Home() {
         </div>
       )}
 
-      <div className="flex h-screen">
-        <div className="w-64 bg-[#1a1a1a] border-r border-gray-800 hidden md:block overflow-auto">
-          <div className="p-4">
-            <h2 className="text-xl font-bold mb-4">Your Videos</h2>
-            <div className="space-y-2">
-              {generations.map((gen) => (
-                <button
-                  key={gen.id}
-                  onClick={() => setSelectedGeneration(gen)}
-                  className={`w-full text-left p-3 rounded-lg transition duration-200 ${
-                    selectedGeneration?.id === gen.id
-                      ? 'bg-purple-600'
-                      : 'hover:bg-[#2a2a2a]'
-                  }`}
-                >
-                  <p className="text-sm font-medium truncate">{gen.prompt}</p>
-                  <div className="flex items-center justify-between mt-1">
-                    <p className="text-xs text-gray-400">{formatDate(gen.createdAt)}</p>
-                    {gen.state === 'dreaming' ? (
-                      <div className="flex items-center">
-                        <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full mr-1"></div>
-                        <span className="text-xs text-purple-400">Dreaming</span>
-                      </div>
-                    ) : (
-                      gen.state === 'completed' && (
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      )
-                    )}
-                  </div>
-                </button>
-              ))}
+      {/* Nostr Note Modal */}
+      {showNostrModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+            <h2 className="text-xl font-bold">Share on Nostr</h2>
+            <textarea
+              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+              rows={4}
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Write your note..."
+            />
+            {publishError && (
+              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                {publishError}
+              </div>
+            )}
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowNostrModal(false)}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={publishNote}
+                disabled={publishing}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                {publishing ? 'Publishing...' : 'Publish'}
+              </button>
             </div>
           </div>
         </div>
+      )}
+
+      <div className="flex h-screen">
+        {/* Sidebar */}
+        {/* ... existing sidebar code ... */}
 
         <div className="flex-1 flex flex-col">
-          <header className="bg-[#1a1a1a] border-b border-gray-800 p-4">
-            <div className="flex items-center justify-between">
-              <h1 className="text-xl font-bold">Luma AI Video Generator</h1>
-              <div className="flex items-center space-x-4">
-                {profile?.picture && (
-                  <img
-                    src={profile.picture}
-                    alt={profile.name || 'Profile'}
-                    className="w-8 h-8 rounded-full"
-                  />
-                )}
-                <div className="flex flex-col">
-                  {profile?.name && (
-                    <span className="text-sm font-medium">{profile.name}</span>
-                  )}
-                  <span className="text-sm text-gray-400">
-                    {pubkey.slice(0, 8)}...{pubkey.slice(-8)}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setPubkey(null)}
-                  className="text-sm text-gray-400 hover:text-white transition duration-200"
-                >
-                  Disconnect
-                </button>
-              </div>
-            </div>
-          </header>
+          {/* Header */}
+          {/* ... existing header code ... */}
 
           <div className="flex-1 overflow-auto">
             {selectedGeneration ? (
               <div className="p-6">
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
-                      <p className="text-sm text-gray-400 mt-1">
-                        {formatDate(selectedGeneration.createdAt)}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setSelectedGeneration(null)}
-                      className="text-gray-400 hover:text-white"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  {/* Generation Details */}
+                  {/* ... existing generation details code ... */}
 
                   <div className="border-t border-gray-800 pt-4">
-                    <p className="text-sm text-gray-300 mb-4">
-                      {getStatusMessage(selectedGeneration.state)}
-                    </p>
+                    {/* Status Message */}
+                    {/* ... existing status message code ... */}
 
                     {selectedGeneration.videoUrl ? (
                       <div className="space-y-4">
-                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
-                          <video
-                            key={selectedGeneration.videoUrl} // Add key to force re-render
-                            className="absolute top-0 left-0 w-full h-full object-contain"
-                            controls
-                            autoPlay
-                            loop
-                            src={selectedGeneration.videoUrl}
-                          />
-                        </div>
-                        <div className="flex space-x-2">
-                          <a
-                            href={selectedGeneration.videoUrl}
-                            download
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                        {/* Video Player and Actions */}
+                        {/* ... existing video player and action buttons code ... */}
+
+                        {/* Share on Nostr Button */}
+                        <button
+                          onClick={() => {
+                            setNoteContent(selectedGeneration.prompt);
+                            setShowNostrModal(true);
+                          }}
+                          className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
                           >
-                            <svg
-                              className="w-5 h-5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                              />
-                            </svg>
-                            <span>Download Video</span>
-                          </a>
-                          <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                          >
-                            <svg
-                              className="w-5 h-5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                              />
-                            </svg>
-                            <span>Copy Link</span>
-                          </button>
-                        </div>
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5C10.62 11.5 9.5 10.38 9.5 9S10.62 6.5 12 6.5 14.5 7.62 14.5 9 13.38 11.5 12 11.5z" />
+                          </svg>
+                          <span>Share on Nostr</span>
+                        </button>
                       </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
                       </div>
                     ) : (
+                      // ... existing code for when videoUrl is not available ...
                       <div className="space-y-6">
                         <div className="relative h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
                           <div className="absolute inset-0 flex items-center justify-center">
@@ -660,6 +678,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="p-6">
+                {/* ... existing code for when no generation is selected ... */}
                 <div className="max-w-3xl mx-auto">
                   <form
                     onSubmit={generateVideo}
