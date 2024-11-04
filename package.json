@@ -17,7 +17,8 @@
     "tailwindcss": "^3.3.0",
     "ws": "^8.15.1",
     "qrcode.react": "^3.1.0",
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^2.6.7",
+    "nostr-tools"
   },
   "devDependencies": {
     "typescript": "^5",
