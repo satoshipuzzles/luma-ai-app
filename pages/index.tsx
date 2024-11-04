@@ -705,6 +705,7 @@ export default function Home() {
                             <span>Share on Nostr</span>
                           </button>
                         </div>
+                        </div>
   
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
