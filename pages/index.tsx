@@ -4,6 +4,15 @@ import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash } from 'nostr-tools';
 
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: any): Promise<any>;
+    };
+  }
+}
+
 // Types
 interface NostrWindow extends Window {
   nostr?: {
