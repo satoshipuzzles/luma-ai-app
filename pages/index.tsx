@@ -420,66 +420,75 @@ export default function Home() {
   };
 
   // publishNote function
-  const publishNote = async () => {
-    if (!pubkey || !window.nostr) {
-      setPublishError('Nostr extension not found. Please install a NIP-07 browser extension.');
-      return;
+const publishNote = async () => {
+  if (!pubkey || !window.nostr) {
+    setPublishError('Nostr extension not found. Please install a NIP-07 browser extension.');
+    return;
+  }
+
+  setPublishing(true);
+  setPublishError('');
+
+  try {
+    const event: Partial<Event> = {
+      kind: 1,
+      pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: noteContent,
+    };
+
+    // Get the event hash
+    event.id = getEventHash(event as Event);
+
+    // Sign the event
+    const signedEvent = await window.nostr.signEvent(event as Event);
+
+    // Verify the signature
+    if (signedEvent.id !== event.id) {
+      throw new Error('Event ID mismatch after signing.');
     }
 
-    setPublishing(true);
-    setPublishError('');
+    // List of relays
+    const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
 
-    try {
-      const event: Partial<Event> = {
-        kind: 1,
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [],
-        content: noteContent,
-      };
+    // Publish to each relay
+    await Promise.all(
+      relayUrls.map(async (url) => {
+        const relay = relayInit(url);
 
-      // Get the event hash
-      event.id = getEventHash(event as Event);
+        relay.on('connect', async () => {
+          console.log(`Connected to relay ${relay.url}`);
+          try {
+            await relay.publish(signedEvent);
+            console.log(`Event published to ${relay.url}`);
+          } catch (error) {
+            console.error(`Failed to publish to ${relay.url}:`, error);
+            throw error;
+          } finally {
+            relay.close();
+          }
+        });
 
-      // Sign the event
-      const signedEvent = await window.nostr.signEvent(event as Event);
+        relay.on('error', (error) => {
+          console.error(`Failed to connect to relay ${relay.url}:`, error);
+          throw error;
+        });
 
-      // Verify the signature
-      if (signedEvent.id !== event.id) {
-        throw new Error('Event ID mismatch after signing.');
-      }
+        await relay.connect();
+      })
+    );
 
-      // Connect to the relays
-      const relays = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
-
-      const relayConnections = relays.map((url) => relayInit(url));
-
-      // Publish the event to each relay
-      await Promise.all(
-        relayConnections.map(async (relay) => {
-          await relay.connect();
-
-          return new Promise((resolve, reject) => {
-            relay.on('connect', () => {
-              console.log(`Connected to relay ${relay.url}`);
-              const pub = relay.publish(signedEvent);
-              pub.on('ok', () => {
-                console.log(`Event published to ${relay.url}`);
-                resolve(null);
-              });
-              pub.on('failed', (reason: string) => {
-                console.error(`Failed to publish to ${relay.url}: ${reason}`);
-                reject(new Error(`Failed to publish to ${relay.url}: ${reason}`));
-              });
-            });
-
-            relay.on('error', () => {
-              console.error(`Failed to connect to relay ${relay.url}`);
-              reject(new Error(`Failed to connect to relay ${relay.url}`));
-            });
-          });
-        })
-      );
+    setPublishing(false);
+    setShowNostrModal(false);
+  } catch (err) {
+    console.error('Error publishing note:', err);
+    setPublishError(
+      err instanceof Error ? err.message : 'Failed to publish note. Please try again.'
+    );
+    setPublishing(false);
+  }
+};
 
       // Close relay connections
       relayConnections.forEach((relay) => relay.close());
