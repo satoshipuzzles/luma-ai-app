@@ -1,0 +1,1 @@
+{"allowsNostr":true,"minSendable":1000,"maxSendable":100000000000,"metadata":"[[\"text/plain\",\"Paying puzzles@coinos.io\"],[\"text/identifier\",\"puzzles@coinos.io\"]]","nostrPubkey":"ba80990666ef0b6f4ba5059347beb13242921e54669e680064ca755256a1e3a6","callback":"https://coinos.io/api/lnurl/772dfea0-0527-4d0a-a25e-9032c371de71","tag":"payRequest"}
