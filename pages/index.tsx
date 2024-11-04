@@ -525,6 +525,7 @@ export default function Home() {
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
         <title>Animal Sunset 🌞🦒</title>
+        <link rel="icon" href="🌞🦒" />
          {/* Open Graph Meta Tags */}
   <meta name="description" content="Animal Sunset - AI-powered video generator." />
   <meta property="og:title" content="Animal Sunset" />
