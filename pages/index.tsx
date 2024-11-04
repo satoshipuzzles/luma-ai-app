@@ -530,7 +530,7 @@ export default function Home() {
   <meta name="description" content="Animal Sunset - AI-powered video generator." />
   <meta property="og:title" content="Animal Sunset" />
   <meta property="og:description" content="AI-powered video generator." />
-  <meta property="og:image" content="https://storage.cdn-luma.com/lit_lite_inference_v1.6-xl/d1e91bcb-2764-4f72-b19b-beecbbb6ca63/9a1a1a07-f2a8-4da6-8e11-d33f9ea10d19_video0194dabfaf1894c4dae68eb7994cd8a8d.mp4" />
+  <meta property="og:image" content="https://storage.cdn-luma.com/lit_lite_inference_v1.6-xl/13db91a3-3931-4e22-ae20-506f5fde13ad/0d483a58-5963-4a56-a7a9-e48e192a4f3d_video05535b208ca9644ccb3752e4d1bb983f1.mp4" />
   <meta property="og:url" content="https://animalsunset.com" />
   <meta property="og:type" content="website" />
       </Head>
