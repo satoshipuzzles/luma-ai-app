@@ -1,9 +1,11 @@
 // pages/index.tsx
+
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { relayInit, getEventHash } from 'nostr-tools';
+import { relayInit, getEventHash, Event } from 'nostr-tools';
 
+// Declare the global window.nostr interface
 declare global {
   interface Window {
     nostr?: {
@@ -14,13 +16,6 @@ declare global {
 }
 
 // Types
-interface NostrWindow extends Window {
-  nostr?: {
-    getPublicKey(): Promise<string>;
-    signEvent(event: any): Promise<any>;
-  };
-}
-
 interface StoredGeneration {
   id: string;
   prompt: string;
@@ -63,11 +58,10 @@ const formatDate = (dateString: string) => {
 };
 
 const getNostrPublicKey = async () => {
-  const win = window as NostrWindow;
-  if (!win.nostr) {
+  if (!window.nostr) {
     throw new Error('Nostr extension not found. Please install a NIP-07 browser extension.');
   }
-  return await win.nostr.getPublicKey();
+  return await window.nostr.getPublicKey();
 };
 
 const saveGeneration = (generation: StoredGeneration) => {
@@ -108,11 +102,11 @@ export default function Home() {
   const [error, setError] = useState('');
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
 
-  // New state variables for payment
+  // State variables for payment
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
 
-  // New state variables for Nostr sharing
+  // State variables for Nostr sharing
   const [showNostrModal, setShowNostrModal] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
@@ -155,7 +149,7 @@ export default function Home() {
     }
   };
 
-  // Updated waitForPayment function
+  // waitForPayment function
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
@@ -212,7 +206,7 @@ export default function Home() {
     return true; // Return true to indicate payment was confirmed
   };
 
-  // Updated generateVideo function
+  // generateVideo function
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
@@ -277,7 +271,7 @@ export default function Home() {
         throw new Error('Invalid response from server');
       }
 
-      const newGeneration = {
+      const newGeneration: StoredGeneration = {
         id: data.id,
         prompt,
         state: data.state || 'queued',
@@ -425,7 +419,7 @@ export default function Home() {
     }
   };
 
-  // New function to handle Nostr event publishing
+  // publishNote function
   const publishNote = async () => {
     if (!pubkey || !window.nostr) {
       setPublishError('Nostr extension not found. Please install a NIP-07 browser extension.');
@@ -436,7 +430,7 @@ export default function Home() {
     setPublishError('');
 
     try {
-      const event = {
+      const event: Partial<Event> = {
         kind: 1,
         pubkey,
         created_at: Math.floor(Date.now() / 1000),
@@ -445,10 +439,10 @@ export default function Home() {
       };
 
       // Get the event hash
-      event.id = getEventHash(event);
+      event.id = getEventHash(event as Event);
 
       // Sign the event
-      const signedEvent = await window.nostr.signEvent(event);
+      const signedEvent = await window.nostr.signEvent(event as Event);
 
       // Verify the signature
       if (signedEvent.id !== event.id) {
@@ -456,10 +450,7 @@ export default function Home() {
       }
 
       // Connect to the relays
-      const relays = [
-        'wss://relay.damus.io',
-        'wss://relay.nostrefreaks.com',
-      ];
+      const relays = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
 
       const relayConnections = relays.map((url) => relayInit(url));
 
@@ -600,51 +591,112 @@ export default function Home() {
       <div className="flex h-screen">
         {/* Sidebar */}
         {/* ... existing sidebar code ... */}
+        <div className="w-64 bg-[#1a1a1a] p-6 space-y-4 overflow-y-auto">
+          <h2 className="text-2xl font-bold">Your Generations</h2>
+          {generations.length > 0 ? (
+            <ul className="space-y-2">
+              {generations.map((generation) => (
+                <li
+                  key={generation.id}
+                  className={`p-2 rounded-lg cursor-pointer ${
+                    selectedGeneration?.id === generation.id ? 'bg-purple-700' : 'hover:bg-gray-700'
+                  }`}
+                  onClick={() => setSelectedGeneration(generation)}
+                >
+                  <div className="text-sm font-medium">{generation.prompt}</div>
+                  <div className="text-xs text-gray-400">{formatDate(generation.createdAt)}</div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-400">No generations yet.</p>
+          )}
+        </div>
 
         <div className="flex-1 flex flex-col">
           {/* Header */}
           {/* ... existing header code ... */}
+          <div className="bg-[#1a1a1a] p-4 flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Luma AI Video Generator</h1>
+            {profile && (
+              <div className="flex items-center space-x-2">
+                {profile.picture && (
+                  <img
+                    src={profile.picture}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full"
+                  />
+                )}
+                <span>{profile.name || 'Anonymous'}</span>
+              </div>
+            )}
+          </div>
 
           <div className="flex-1 overflow-auto">
             {selectedGeneration ? (
               <div className="p-6">
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
                   {/* Generation Details */}
-                  {/* ... existing generation details code ... */}
+                  <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
+                  <div className="text-sm text-gray-400">
+                    {formatDate(selectedGeneration.createdAt)}
+                  </div>
 
                   <div className="border-t border-gray-800 pt-4">
                     {/* Status Message */}
-                    {/* ... existing status message code ... */}
+                    <div className="text-sm text-gray-300">
+                      {getStatusMessage(selectedGeneration.state)}
+                    </div>
 
                     {selectedGeneration.videoUrl ? (
                       <div className="space-y-4">
-                        {/* Video Player and Actions */}
-                        {/* ... existing video player and action buttons code ... */}
+                        {/* Video Player */}
+                        <video
+                          src={selectedGeneration.videoUrl}
+                          controls
+                          className="w-full rounded-lg"
+                        ></video>
 
-                        {/* Share on Nostr Button */}
-                        <button
-                          onClick={() => {
-                            setNoteContent(selectedGeneration.prompt);
-                            setShowNostrModal(true);
-                          }}
-                          className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
+                        {/* Action Buttons */}
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5C10.62 11.5 9.5 10.38 9.5 9S10.62 6.5 12 6.5 14.5 7.62 14.5 9 13.38 11.5 12 11.5z" />
-                          </svg>
-                          <span>Share on Nostr</span>
-                        </button>
+                            Copy Video URL
+                          </button>
+                          <a
+                            href={selectedGeneration.videoUrl}
+                            download
+                            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                          >
+                            Download Video
+                          </a>
+                          {/* Share on Nostr Button */}
+                          <button
+                            onClick={() => {
+                              setNoteContent(selectedGeneration.prompt);
+                              setShowNostrModal(true);
+                            }}
+                            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                          >
+                            <svg
+                              className="w-5 h-5"
+                              fill="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5C10.62 11.5 9.5 10.38 9.5 9S10.62 6.5 12 6.5 14.5 7.62 14.5 9 13.38 11.5 12 11.5z" />
+                            </svg>
+                            <span>Share on Nostr</span>
+                          </button>
+                        </div>
                       </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
                       </div>
                     ) : (
-                      // ... existing code for when videoUrl is not available ...
+                      // When videoUrl is not available
                       <div className="space-y-6">
                         <div className="relative h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
                           <div className="absolute inset-0 flex items-center justify-center">
@@ -687,7 +739,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="p-6">
-                {/* ... existing code for when no generation is selected ... */}
+                {/* When no generation is selected */}
                 <div className="max-w-3xl mx-auto">
                   <form
                     onSubmit={generateVideo}
