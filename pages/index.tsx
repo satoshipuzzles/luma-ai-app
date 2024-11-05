@@ -1,6 +1,6 @@
 // pages/index.tsx
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
@@ -112,6 +112,12 @@ export default function Home() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
 
+  // State for responsive sidebar
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Ref to control polling
+  const pollingRef = useRef<boolean>(true);
+
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -213,6 +219,7 @@ export default function Home() {
 
     setLoading(true);
     setError('');
+    pollingRef.current = true; // Allow polling
 
     try {
       // Step 1: Create an invoice
@@ -298,6 +305,7 @@ export default function Home() {
 
   const pollForCompletion = async (generationId: string) => {
     const checkStatus = async () => {
+      if (!pollingRef.current) return true; // Stop polling if flag is false
       try {
         const response = await fetch(`/api/check-status?id=${generationId}`);
         if (!response.ok) {
@@ -402,7 +410,7 @@ export default function Home() {
 
     const poll = async () => {
       const shouldStop = await checkStatus();
-      if (!shouldStop) {
+      if (!shouldStop && pollingRef.current) {
         setTimeout(poll, 2000);
       }
     };
@@ -454,7 +462,7 @@ export default function Home() {
       }
 
       // List of relay URLs
-      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
+      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
 
       // Initialize relay connections
       relayConnections = relayUrls.map((url) => relayInit(url));
@@ -470,8 +478,10 @@ export default function Home() {
                 console.log(`Event published to ${relay.url}`);
                 resolve();
               } catch (error) {
-                console.error(`Failed to publish to ${relay.url}:`, error);
+                console.error(`Failed to publish to relay ${relay.url}:`, error);
                 reject(error);
+              } finally {
+                relay.close();
               }
             });
 
@@ -497,108 +507,153 @@ export default function Home() {
     }
   };
 
+  // publishToRelay function
+  const publishToRelay = async (generation: StoredGeneration) => {
+    if (!pubkey || !window.nostr) {
+      setPublishError(
+        'Nostr extension not found. Please install a NIP-07 browser extension.'
+      );
+      return;
+    }
+
+    setPublishing(true);
+    setPublishError('');
+
+    try {
+      const event: Partial<Event> = {
+        kind: 1,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+        content: `Video Prompt: ${generation.prompt}\nVideo URL: ${generation.videoUrl}`,
+      };
+
+      // Get the event hash
+      event.id = getEventHash(event as Event);
+
+      // Sign the event
+      const signedEvent = await window.nostr.signEvent(event as Event);
+
+      // Verify the signature
+      if (signedEvent.id !== event.id) {
+        throw new Error('Event ID mismatch after signing.');
+      }
+
+      // Relay URL for relay.nostrfreaks.com
+      const relayUrl = 'wss://relay.nostrfreaks.com';
+      const relay = relayInit(relayUrl);
+
+      // Publish to relay
+      await new Promise<void>((resolve, reject) => {
+        relay.on('connect', async () => {
+          console.log(`Connected to relay ${relay.url}`);
+          try {
+            await relay.publish(signedEvent);
+            console.log(`Event published to ${relay.url}`);
+            resolve();
+          } catch (error) {
+            console.error(`Failed to publish to relay ${relay.url}:`, error);
+            reject(error);
+          } finally {
+            relay.close();
+          }
+        });
+
+        relay.on('error', () => {
+          console.error(`Failed to connect to relay ${relay.url}`);
+          reject(new Error(`Failed to connect to relay ${relay.url}`));
+        });
+
+        relay.connect();
+      });
+    } catch (err) {
+      console.error('Error publishing to relay:', err);
+      setPublishError(
+        err instanceof Error ? err.message : 'Failed to publish to relay. Please try again.'
+      );
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   if (!pubkey) {
     return (
-      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
-        <div className="max-w-md w-full p-6 space-y-6">
+      <div
+        className="min-h-screen text-white flex items-center justify-center"
+        style={{
+          backgroundImage: `url('https://animalsunset.com/public/images/background.png')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        <div className="absolute inset-0 bg-black opacity-50"></div>
+        <div className="relative z-10 max-w-md w-full p-6 space-y-6 bg-[#1a1a1a] bg-opacity-80 rounded-lg">
           <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
-          <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
-            <button
-              onClick={connectNostr}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
-            >
-              Connect with Nostr
-            </button>
-            {error && (
-              <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                {error}
-              </div>
-            )}
-          </div>
+          <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
+          <button
+            onClick={connectNostr}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
+          >
+            Connect with Nostr
+          </button>
+          {error && (
+            <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+              {error}
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#111111] text-white">
-      <Head>
-        <title>Animal Sunset 🌞🦒</title>
-        <link rel="icon" href="https://animalsunset.com/favicon.png" />
-         {/* Open Graph Meta Tags */}
-  <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
-  <meta property="og:title" content="Animal Sunset 🌞🦒" />
-  <meta property="og:description" content="AI-powered video generator." />
-  <meta property="og:image" content="https://animalsunset.com/og-image.png" />
-  <meta property="og:url" content="https://animalsunset.com" />
-  <meta property="og:type" content="website" />
-      </Head>
+    <div
+      className="min-h-screen text-white relative"
+      style={{
+        backgroundImage: `url('https://animalsunset.com/public/images/background.png')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
+      <div className="absolute inset-0 bg-black opacity-50"></div>
+      <div className="relative z-10 flex flex-col md:flex-row h-screen">
+        {/* Overlay for Sidebar on Mobile */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black opacity-50 z-40 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          ></div>
+        )}
 
-      {/* Payment Modal */}
-      {paymentRequest && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
-            <h2 className="text-xl font-bold">Pay to Generate Video</h2>
-            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
-            <div className="flex justify-center">
-              <QRCode value={paymentRequest} size={256} />
-            </div>
-            <p className="text-sm text-gray-400 break-all">{paymentRequest}</p>
-            <p className="text-sm text-gray-400">Waiting for payment confirmation...</p>
-            <button
-              onClick={() => {
-                setPaymentRequest(null);
-                setPaymentHash(null);
-                setLoading(false);
-              }}
-              className="mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Nostr Note Modal */}
-      {showNostrModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <h2 className="text-xl font-bold">Share on Nostr</h2>
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-              rows={4}
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              placeholder="Write your note..."
-            />
-            {publishError && (
-              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                {publishError}
-              </div>
-            )}
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setShowNostrModal(false)}
-                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={publishNote}
-                disabled={publishing}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                {publishing ? 'Publishing...' : 'Publish'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex h-screen">
         {/* Sidebar */}
-        <div className="w-64 bg-[#1a1a1a] p-6 space-y-4 overflow-y-auto">
+        <div
+          className={`fixed inset-y-0 left-0 transform ${
+            isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          } md:translate-x-0 md:relative md:inset-0 bg-[#1a1a1a] p-6 space-y-4 overflow-y-auto transition-transform duration-200 ease-in-out z-50`}
+        >
+          {/* Close button for mobile */}
+          <button
+            className="md:hidden text-white focus:outline-none mb-4"
+            onClick={() => setIsSidebarOpen(false)}
+          >
+            {/* Close Icon */}
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M6 18L18 6M6 6l12 12"
+              ></path>
+            </svg>
+          </button>
           <h2 className="text-2xl font-bold">Your Generations</h2>
           {generations.length > 0 ? (
             <ul className="space-y-2">
@@ -610,7 +665,10 @@ export default function Home() {
                       ? 'bg-purple-700'
                       : 'hover:bg-gray-700'
                   }`}
-                  onClick={() => setSelectedGeneration(generation)}
+                  onClick={() => {
+                    setSelectedGeneration(generation);
+                    setIsSidebarOpen(false); // Close sidebar on mobile after selection
+                  }}
                 >
                   <div className="text-sm font-medium">{generation.prompt}</div>
                   <div className="text-xs text-gray-400">
@@ -627,7 +685,30 @@ export default function Home() {
         <div className="flex-1 flex flex-col">
           {/* Header */}
           <div className="bg-[#1a1a1a] p-4 flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Animal Sunset</h1>
+            <div className="flex items-center space-x-4">
+              {/* Menu Button for Mobile */}
+              <button
+                className="md:hidden text-white focus:outline-none"
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              >
+                {/* Hamburger Icon */}
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M4 6h16M4 12h16M4 18h16"
+                  ></path>
+                </svg>
+              </button>
+              <h1 className="text-2xl font-bold">Animal Sunset</h1>
+            </div>
             {profile && (
               <div className="flex items-center space-x-2">
                 {profile.picture && (
@@ -642,7 +723,7 @@ export default function Home() {
             )}
           </div>
 
-        <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto">
             {selectedGeneration ? (
               <div className="p-6">
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
@@ -655,7 +736,12 @@ export default function Home() {
                       </div>
                     </div>
                     <button
-                      onClick={() => setSelectedGeneration(null)}
+                      onClick={() => {
+                        setSelectedGeneration(null);
+                        setLoading(false);
+                        pollingRef.current = false; // Stop polling
+                        setError('');
+                      }}
                       className="text-gray-400 hover:text-white"
                     >
                       ✕
@@ -682,13 +768,25 @@ export default function Home() {
                           />
                         </div>
 
-                        {/* Action Buttons with Dark Theme */}
-                        <div className="flex space-x-2">
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap space-x-2">
                           <button
                             onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            {/* Copy Link SVG icon */}
+                            {/* Copy Link Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M8 4a3 3 0 00-3 3v1H5a2 2 0 00-2 2v4a2 2 0 002 2h3v1a3 3 0 003 3h4a3 3 0 003-3v-1h3a2 2 0 002-2v-4a2 2 0 00-2-2h-3V7a3 3 0 00-3-3H8zm-1 6a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm1 4a1 1 0 100-2h4a1 1 0 100 2H8z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
                             <span>Copy Video URL</span>
                           </button>
                           <a
@@ -696,7 +794,19 @@ export default function Home() {
                             download
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            {/* Download SVG icon */}
+                            {/* Download Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M3 3a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V3zm5 7a1 1 0 012 0v3a1 1 0 01-2 0v-3zm2-3a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
                             <span>Download Video</span>
                           </a>
                           {/* Share on Nostr Button */}
@@ -709,57 +819,86 @@ export default function Home() {
                             }}
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            {/* Share on Nostr SVG icon */}
+                            {/* Share Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path d="M15 8a3 3 0 10-3-3 3 3 0 003 3zM9 8a3 3 0 100-6 3 3 0 000 6zM9 14a3 3 0 01-2.995-2.824L6 11a3 3 0 115.995-.176A3 3 0 019 14z" />
+                            </svg>
                             <span>Share on Nostr</span>
                           </button>
+                          {/* Publish to Relay Button */}
+                          <button
+                            onClick={() => publishToRelay(selectedGeneration)}
+                            disabled={publishing}
+                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                          >
+                            {/* Relay Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path d="M4 3a1 1 0 00-1 1v4a1 1 0 001 1h3v6H5a1 1 0 00-1 1v2a1 1 0 001 1h10a1 1 0 001-1v-2a1 1 0 00-1-1h-1v-6h3a1 1 0 001-1V4a1 1 0 00-1-1H4zM5 8h10v8H5V8z" />
+                            </svg>
+                            <span>{publishing ? 'Publishing...' : 'Publish to Relay'}</span>
+                          </button>
                         </div>
-                        </div>
-  
-                    ) : selectedGeneration.state === 'failed' ? (
-                      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                        Generation failed. Please try again.
+                        {publishError && (
+                          <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                            {publishError}
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      // When videoUrl is not available
-                      <div className="space-y-6">
-                        <div className="relative h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="space-y-4 text-center">
-                              <div className="inline-flex items-center space-x-2">
-                                <svg
-                                  className="animate-spin h-6 w-6 text-purple-500"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                  ></circle>
-                                  <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                  ></path>
-                                </svg>
-                                <span className="text-purple-400 font-medium">
-                                  AI is dreaming...
-                                </span>
-                              </div>
-                              <div className="text-sm text-gray-400">
-                                This usually takes 1-2 minutes
-                              </div>
-                            </div>
+                    </div>
+                  </div>
+                ) : selectedGeneration.state === 'failed' ? (
+                  <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+                    Generation failed. Please try again.
+                  </div>
+                ) : (
+                  // When videoUrl is not available
+                  <div className="space-y-6">
+                    <div className="relative h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="space-y-4 text-center">
+                          <div className="inline-flex items-center space-x-2">
+                            <svg
+                              className="animate-spin h-6 w-6 text-purple-500"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
+                            </svg>
+                            <span className="text-purple-400 font-medium">
+                              AI is dreaming...
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-400">
+                            This usually takes 1-2 minutes
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
               <div className="p-6">
@@ -831,6 +970,68 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {paymentRequest && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
+            <h2 className="text-xl font-bold">Pay to Generate Video</h2>
+            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            <div className="flex justify-center">
+              <QRCode value={paymentRequest} size={256} />
+            </div>
+            <p className="text-sm text-gray-400 break-all">{paymentRequest}</p>
+            <p className="text-sm text-gray-400">Waiting for payment confirmation...</p>
+            <button
+              onClick={() => {
+                setPaymentRequest(null);
+                setPaymentHash(null);
+                setLoading(false);
+                pollingRef.current = false; // Stop polling if any
+              }}
+              className="mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Nostr Note Modal */}
+      {showNostrModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+            <h2 className="text-xl font-bold">Share on Nostr</h2>
+            <textarea
+              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+              rows={4}
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Write your note..."
+            />
+            {publishError && (
+              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                {publishError}
+              </div>
+            )}
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowNostrModal(false)}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={publishNote}
+                disabled={publishing}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                {publishing ? 'Publishing...' : 'Publish'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
