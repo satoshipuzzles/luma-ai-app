@@ -454,7 +454,7 @@ export default function Home() {
       }
 
       // List of relay URLs
-      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrefreaks.com'];
+      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
 
       // Initialize relay connections
       relayConnections = relayUrls.map((url) => relayInit(url));
@@ -703,7 +703,7 @@ export default function Home() {
                           <button
                             onClick={() => {
                               setNoteContent(
-                                `${selectedGeneration.prompt}\n\nWatch the video here: ${selectedGeneration.videoUrl}`
+                                `${selectedGeneration.prompt}\n\n ${selectedGeneration.videoUrl}`
                               );
                               setShowNostrModal(true);
                             }}
