@@ -576,6 +576,7 @@ export default function Home() {
     }
   };
 
+  // Render when not connected
   if (!pubkey) {
     return (
       <div
@@ -743,6 +744,7 @@ export default function Home() {
                         setError('');
                       }}
                       className="text-gray-400 hover:text-white"
+                      aria-label="Close Generation"
                     >
                       ✕
                     </button>
