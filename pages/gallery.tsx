@@ -1,14 +1,14 @@
 // /pages/gallery.tsx
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Head from 'next/head';
-import { relayInit, Event } from 'nostr-tools';
+import { relayInit, Relay, Event, Filter } from 'nostr-tools';
 
 interface AnimalKindEvent {
   id: string;
   pubkey: string;
   created_at: number;
-  content: string; // Video file URL
+  content: string; // Video URL
 }
 
 interface Profile {
@@ -28,27 +28,44 @@ const Gallery = () => {
 
   const fetchAnimalKinds = async () => {
     try {
-      const relay = relayInit('wss://sunset.nostrfreaks.com');
-      const events: AnimalKindEvent[] = [];
+      // Initialize the relay connection
+      const relay: Relay = relayInit('wss://sunset.nostrfreaks.com');
 
+      // Define the filters for subscription
+      const filters: Filter[] = [{ kinds: [75757] }];
+
+      // Handle relay events
       relay.on('connect', () => {
-        relay.subscribe([{ kinds: [75757] }], { skipVerification: true });
-      });
+        console.log(`Connected to relay: ${relay.url}`);
 
-      relay.on('event', (event: Event) => {
-        events.push({
-          id: event.id,
-          pubkey: event.pubkey,
-          created_at: event.created_at,
-          content: event.content,
+        // Subscribe to the relay with the defined filters
+        const sub = relay.subscribe(filters, { skipVerification: true });
+
+        // Listen for incoming events
+        sub.on('event', (event: Event) => {
+          const animalKind: AnimalKindEvent = {
+            id: event.id,
+            pubkey: event.pubkey,
+            created_at: event.created_at,
+            content: event.content,
+          };
+          setAnimalKinds((prev) => [...prev, animalKind]);
         });
-        setAnimalKinds([...events]);
+
+        // Handle end of stored events
+        sub.on('eose', () => {
+          console.log('End of stored events');
+          relay.close();
+        });
       });
 
-      relay.on('eose', () => {
-        relay.close();
+      // Handle relay errors
+      relay.on('error', (err) => {
+        console.error('Relay error:', err);
+        setError('Failed to connect to the relay.');
       });
 
+      // Establish the relay connection
       relay.connect();
     } catch (err) {
       console.error('Failed to fetch animal kinds:', err);
@@ -64,6 +81,8 @@ const Gallery = () => {
       if (response.ok) {
         const profileData: Profile = await response.json();
         setProfiles((prev) => ({ ...prev, [pubkey]: profileData }));
+      } else {
+        console.warn(`Profile not found for pubkey: ${pubkey}`);
       }
     } catch (err) {
       console.error(`Failed to fetch profile for ${pubkey}:`, err);
@@ -71,9 +90,6 @@ const Gallery = () => {
   };
 
   const handleZap = (lightningAddress: string) => {
-    // Implement zapping functionality here
-    // This could involve generating an invoice based on the lightning address
-    // and initiating a payment process
     alert('Zap functionality to be implemented.');
   };
 
@@ -125,12 +141,11 @@ interface AnimalCardProps {
 
 const AnimalCard: React.FC<AnimalCardProps> = ({ event, profile, fetchProfile, onZap }) => {
   useEffect(() => {
-    fetchProfile(event.pubkey);
+    if (event.pubkey) fetchProfile(event.pubkey);
   }, [event.pubkey]);
 
   const [lightningAddress, setLightningAddress] = useState<string>('');
 
-  // Fetch the author's lightning address from their kind 0 event
   useEffect(() => {
     const fetchLightningAddress = async () => {
       try {
@@ -144,7 +159,9 @@ const AnimalCard: React.FC<AnimalCardProps> = ({ event, profile, fetchProfile, o
       }
     };
 
-    fetchLightningAddress();
+    if (event.pubkey) {
+      fetchLightningAddress();
+    }
   }, [event.pubkey]);
 
   return (
