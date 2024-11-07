@@ -1,4 +1,4 @@
-import { BitcoinConnect as AlbyConnect, useBitcoinConnect } from "@getalby/bitcoin-connect-react";
+import { Button, useBitcoinConnect } from "@getalby/bitcoin-connect-react";
 import { useEffect } from "react";
 
 interface BitcoinConnectProps {
@@ -17,7 +17,7 @@ export const BitcoinPayment = ({ onConnect, onDisconnect }: BitcoinConnectProps)
 
   return (
     <div className="flex flex-col items-center space-y-4">
-      <AlbyConnect />
+      <Button />
       {connected && (
         <button
           onClick={onDisconnect}
