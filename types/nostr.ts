@@ -14,13 +14,10 @@ export interface AnimalKind extends NostrEvent {
   tags: Array<['p', string] | ['e', string] | ['title', string]>; // p for author, e for reply
 }
 
-export interface ProfileContent {
+export interface Profile {
   name?: string;
-  about?: string;
   picture?: string;
-  lud06?: string;  // Legacy LNURL
-  lud16?: string;  // Lightning Address
-  nip05?: string;
+  about?: string;
 }
 
 export interface NostrProfile extends NostrEvent {
