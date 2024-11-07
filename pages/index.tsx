@@ -3,7 +3,7 @@ import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
 import { Menu, X, Copy, Check } from 'lucide-react';
-
+import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 // Types
 interface StoredGeneration {
   id: string;
