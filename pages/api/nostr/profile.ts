@@ -33,7 +33,8 @@ export default async function handler(
       { skipVerification: true }
     );
 
-    await pool.close();
+    // Close the pool without await
+    pool.close();
 
     if (!event) {
       return res.status(404).json({ message: 'Profile not found' });
@@ -49,7 +50,8 @@ export default async function handler(
 
   } catch (error) {
     console.error('Error fetching profile:', error);
-    await pool.close();
+    // Close the pool in case of error too
+    pool.close();
     return res.status(500).json({ 
       message: 'Error fetching profile',
       error: error instanceof Error ? error.message : 'Unknown error'
