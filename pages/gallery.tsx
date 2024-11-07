@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { AnimalKind, NostrProfile } from '../types/nostr';
+import { AnimalKind, NostrEvent } from '../types/nostr';
 import { fetchProfile, formatPubkey, getLightningAddress } from '../lib/nostr';
+
+interface Profile {
+  name?: string;
+  picture?: string;
+  about?: string;
+}
 
 interface VideoPost {
   event: AnimalKind;
-  profile?: NostrProfile;
+  profile?: Profile;
   comments: AnimalKind[];
 }
 
@@ -52,7 +58,8 @@ export default function Gallery() {
           // This is a main post
           postsMap.set(event.id, {
             event,
-            comments: []
+            comments: [],
+            profile: undefined
           });
         } else {
           // This is a comment
@@ -66,7 +73,20 @@ export default function Gallery() {
       // Fetch profiles for all authors
       const posts = Array.from(postsMap.values());
       await Promise.all(posts.map(async post => {
-        post.profile = await fetchProfile(post.event.pubkey);
+        try {
+          const profileEvent = await fetchProfile(post.event.pubkey);
+          if (profileEvent) {
+            // Parse the profile content
+            const profileContent = JSON.parse(profileEvent.content);
+            post.profile = {
+              name: profileContent.name,
+              picture: profileContent.picture,
+              about: profileContent.about
+            };
+          }
+        } catch (error) {
+          console.error('Error fetching profile:', error);
+        }
       }));
 
       setPosts(posts);
@@ -129,19 +149,14 @@ export default function Gallery() {
             <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
               {/* Author Info */}
               <div className="p-4 flex items-center space-x-3">
-                {post.profile?.content && (
-                  <img
-                    src={JSON.parse(post.profile.content).picture || '/default-avatar.png'}
-                    alt="Profile"
-                    className="w-10 h-10 rounded-full"
-                  />
-                )}
+                <img
+                  src={post.profile?.picture || '/default-avatar.png'}
+                  alt="Profile"
+                  className="w-10 h-10 rounded-full"
+                />
                 <div>
                   <div className="font-medium">
-                    {post.profile?.content 
-                      ? JSON.parse(post.profile.content).name 
-                      : formatPubkey(post.event.pubkey)
-                    }
+                    {post.profile?.name || formatPubkey(post.event.pubkey)}
                   </div>
                   <div className="text-sm text-gray-400">
                     {new Date(post.event.created_at * 1000).toLocaleDateString()}
@@ -210,7 +225,30 @@ export default function Gallery() {
       {/* Comment Modal */}
       {showCommentModal && selectedPost && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          {/* Modal content */}
+          <div className="bg-[#1a1a1a] p-4 rounded-lg space-y-4 max-w-md w-full">
+            <h2 className="text-xl font-bold">Add Comment</h2>
+            <textarea
+              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white"
+              rows={4}
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Write your comment..."
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowCommentModal(false)}
+                className="px-4 py-2 bg-gray-600 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-purple-600 rounded-lg"
+                disabled={!newComment.trim()}
+              >
+                Comment
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
