@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import { relayInit, Event } from 'nostr-tools';
-import QRCode from 'qrcode.react';
 
 interface AnimalKindEvent {
   id: string;
