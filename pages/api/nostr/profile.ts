@@ -1,16 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { SimplePool, Filter, Event } from 'nostr-tools';
-
-const RELAY_URLS = [
-  'wss://relay.damus.io',
-  'wss://relay.nostr.band',
-  'wss://nos.lol'
-];
+import { SimplePool, Filter } from 'nostr-tools';
+import type { Event } from 'nostr-tools';
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
   const { pubkey } = req.query;
 
   if (!pubkey || typeof pubkey !== 'string') {
@@ -18,6 +17,11 @@ export default async function handler(
   }
 
   const pool = new SimplePool();
+  const RELAY_URLS = [
+    'wss://relay.damus.io',
+    'wss://nos.lol',
+    'wss://relay.nostr.band'
+  ];
 
   try {
     const filter: Filter = {
@@ -26,15 +30,13 @@ export default async function handler(
       limit: 1
     };
 
-    // Try to get profile from any of the relays with a 5 second timeout
-    const event: Event | null = await pool.get(
+    const event = await pool.get(
       RELAY_URLS,
-      filter,
-      { skipVerification: true }
+      filter
     );
 
-    // Close the pool without await
-    pool.close();
+    // Don't await close since it doesn't return a promise
+    pool.close(RELAY_URLS);
 
     if (!event) {
       return res.status(404).json({ message: 'Profile not found' });
@@ -50,8 +52,7 @@ export default async function handler(
 
   } catch (error) {
     console.error('Error fetching profile:', error);
-    // Close the pool in case of error too
-    pool.close();
+    pool.close(RELAY_URLS);
     return res.status(500).json({ 
       message: 'Error fetching profile',
       error: error instanceof Error ? error.message : 'Unknown error'
