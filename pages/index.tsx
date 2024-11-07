@@ -1,20 +1,9 @@
-// pages/index.tsx
-
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
-
-// Declare the global window.nostr interface
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent(event: any): Promise<any>;
-    };
-  }
-}
-
+import { Menu, X, Copy, Check } from 'lucide-react';
+import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 // Types
 interface StoredGeneration {
   id: string;
@@ -29,6 +18,16 @@ interface Profile {
   name?: string;
   picture?: string;
   about?: string;
+}
+
+// Declare the global window.nostr interface
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: any): Promise<any>;
+    };
+  }
 }
 
 // Utility functions
@@ -101,6 +100,8 @@ export default function Home() {
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
   const [error, setError] = useState('');
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [hasCopied, setHasCopied] = useState(false);
 
   // State variables for payment
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
@@ -121,6 +122,12 @@ export default function Home() {
       }
     }
   }, [pubkey]);
+
+  useEffect(() => {
+    if (selectedGeneration && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, [selectedGeneration]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -149,12 +156,31 @@ export default function Home() {
     }
   };
 
+  const handleCopyInvoice = async () => {
+    if (paymentRequest) {
+      try {
+        await navigator.clipboard.writeText(paymentRequest);
+        setHasCopied(true);
+        setTimeout(() => setHasCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy invoice:', err);
+      }
+    }
+  };
+
+  const copyVideoUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      // Could add a toast notification here
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   // waitForPayment function
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
-
-    console.log('Waiting for payment with hash:', paymentHash);
 
     while (!isPaid) {
       if (Date.now() > invoiceExpirationTime) {
@@ -166,8 +192,6 @@ export default function Home() {
       }
 
       try {
-        console.log('Checking payment status for hash:', paymentHash);
-
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
           headers: {
@@ -176,34 +200,25 @@ export default function Home() {
           body: JSON.stringify({ paymentHash }),
         });
 
-        console.log('Response status:', response.status);
-
         if (!response.ok) {
           const errorData = await response.json();
-          console.error('Error response from API:', errorData);
-          // Do not throw an error here; instead, wait and check again
           await new Promise((resolve) => setTimeout(resolve, 5000));
           continue;
         }
 
         const data = await response.json();
-        console.log('Payment status response:', data);
-
         isPaid = data.paid === true;
 
         if (!isPaid) {
-          // Wait 5 seconds before checking again
           await new Promise((resolve) => setTimeout(resolve, 5000));
         }
       } catch (err) {
         console.error('Error checking payment status:', err);
-        // Do not close the modal; wait and check again
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
 
-    console.log('Payment confirmed for hash:', paymentHash);
-    return true; // Return true to indicate payment was confirmed
+    return true;
   };
 
   // generateVideo function
@@ -221,13 +236,12 @@ if (!isPromptSafe(prompt)) {
     setError('');
 
     try {
-      // Step 1: Create an invoice
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount: 1000 }), // Amount in sats
+        body: JSON.stringify({ amount: 1000 }),
       });
 
       if (!invoiceResponse.ok) {
@@ -238,25 +252,18 @@ if (!isPromptSafe(prompt)) {
       const invoiceData = await invoiceResponse.json();
       const { payment_request, payment_hash } = invoiceData;
 
-      console.log('Invoice created:', invoiceData);
-
-      // Step 2: Display the invoice to the user and wait for payment
       setPaymentRequest(payment_request);
       setPaymentHash(payment_hash);
 
-      // Wait for payment confirmation
       const paymentConfirmed = await waitForPayment(payment_hash);
       if (!paymentConfirmed) {
-        // Payment was not confirmed, stop execution
         setLoading(false);
         return;
       }
 
-      // Clear payment request
       setPaymentRequest(null);
       setPaymentHash(null);
 
-      // Step 3: Proceed with generating the video
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -271,7 +278,6 @@ if (!isPromptSafe(prompt)) {
       }
 
       const data = await response.json();
-      console.log('Generation started:', data);
 
       if (!data.id) {
         throw new Error('Invalid response from server');
@@ -312,18 +318,7 @@ if (!isPromptSafe(prompt)) {
 
         const data = await response.json();
 
-        console.log('Raw status response:', data);
-        console.log('Current state:', {
-          id: data.id,
-          state: data.state,
-          hasVideo: !!data.assets?.video,
-          videoUrl: data.assets?.video,
-          assets: data.assets,
-        });
-
         if (data.state === 'completed' && data.assets?.video) {
-          console.log('Video URL found:', data.assets.video);
-
           setGenerations((prevGenerations) => {
             const existingGeneration = prevGenerations.find(
               (g) => g.id === generationId
@@ -345,7 +340,6 @@ if (!isPromptSafe(prompt)) {
               g.id === generationId ? updatedGeneration : g
             );
 
-            // Update localStorage
             localStorage.setItem('generations', JSON.stringify(updatedGenerations));
 
             return updatedGenerations;
@@ -363,10 +357,9 @@ if (!isPromptSafe(prompt)) {
             return prevSelected;
           });
 
-          return true; // Stop polling
+          return true;
         }
 
-        // Update state for in-progress generations
         setGenerations((prevGenerations) => {
           const existingGeneration = prevGenerations.find(
             (g) => g.id === generationId
@@ -399,10 +392,10 @@ if (!isPromptSafe(prompt)) {
           return prevSelected;
         });
 
-        return false; // Continue polling
+        return false;
       } catch (err) {
         console.error('Status check error:', err);
-        return true; // Stop polling on error
+        return true;
       }
     };
 
@@ -416,16 +409,6 @@ if (!isPromptSafe(prompt)) {
     poll();
   };
 
-  const copyVideoUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      // Could add a toast notification here
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
-
-  // publishNote function
   const publishNote = async () => {
     if (!pubkey || !window.nostr) {
       setPublishError(
@@ -448,41 +431,29 @@ if (!isPromptSafe(prompt)) {
         content: noteContent,
       };
 
-      // Get the event hash
       event.id = getEventHash(event as Event);
-
-      // Sign the event
       const signedEvent = await window.nostr.signEvent(event as Event);
 
-      // Verify the signature
       if (signedEvent.id !== event.id) {
         throw new Error('Event ID mismatch after signing.');
       }
 
-      // List of relay URLs
       const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-
-      // Initialize relay connections
       relayConnections = relayUrls.map((url) => relayInit(url));
 
-      // Publish to each relay
       await Promise.all(
         relayConnections.map((relay) => {
           return new Promise<void>((resolve, reject) => {
             relay.on('connect', async () => {
-              console.log(`Connected to relay ${relay.url}`);
               try {
                 await relay.publish(signedEvent);
-                console.log(`Event published to ${relay.url}`);
                 resolve();
               } catch (error) {
-                console.error(`Failed to publish to ${relay.url}:`, error);
                 reject(error);
               }
             });
 
             relay.on('error', () => {
-              console.error(`Failed to connect to relay ${relay.url}`);
               reject(new Error(`Failed to connect to relay ${relay.url}`));
             });
 
@@ -490,22 +461,22 @@ if (!isPromptSafe(prompt)) {
           });
         })
       );
+
+      setShowNostrModal(false);
     } catch (err) {
       console.error('Error publishing note:', err);
       setPublishError(
         err instanceof Error ? err.message : 'Failed to publish note. Please try again.'
       );
     } finally {
-      // Close relay connections
       relayConnections.forEach((relay) => relay.close());
       setPublishing(false);
-      setShowNostrModal(false);
     }
   };
 
   if (!pubkey) {
     return (
-      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
         <div className="max-w-md w-full p-6 space-y-6">
           <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
@@ -532,107 +503,87 @@ if (!isPromptSafe(prompt)) {
       <Head>
         <title>Animal Sunset 🌞🦒</title>
         <link rel="icon" href="https://animalsunset.com/favicon.png" />
-         {/* Open Graph Meta Tags */}
-  <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
-  <meta property="og:title" content="Animal Sunset 🌞🦒" />
-  <meta property="og:description" content="AI-powered video generator." />
-  <meta property="og:image" content="https://animalsunset.com/og-image.png" />
-  <meta property="og:url" content="https://animalsunset.com" />
-  <meta property="og:type" content="website" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
+        <meta property="og:title" content="Animal Sunset 🌞🦒" />
+        <meta property="og:description" content="AI-powered video generator." />
+        <meta property="og:image" content="https://animalsunset.com/og-image.png" />
+        <meta property="og:url" content="https://animalsunset.com" />
+        <meta property="og:type" content="website" />
       </Head>
 
-      {/* Payment Modal */}
-      {paymentRequest && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
-            <h2 className="text-xl font-bold">Pay to Generate Video</h2>
-            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
-            <div className="flex justify-center">
-              <QRCode value={paymentRequest} size={256} />
-            </div>
-            <p className="text-sm text-gray-400 break-all">{paymentRequest}</p>
-            <p className="text-sm text-gray-400">Waiting for payment confirmation...</p>
-            <button
-              onClick={() => {
-                setPaymentRequest(null);
-                setPaymentHash(null);
-                setLoading(false);
-              }}
-              className="mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Nostr Note Modal */}
-      {showNostrModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <h2 className="text-xl font-bold">Share on Nostr</h2>
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-              rows={4}
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              placeholder="Write your note..."
-            />
-            {publishError && (
-              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                {publishError}
-              </div>
+      {/* Mobile Header */}
+      <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="text-white p-2 hover:bg-gray-700 rounded-lg"
+          aria-label="Toggle menu"
+        >
+          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+        <h1 className="text-xl font-bold">Animal Sunset</h1>
+        {profile && (
+          <div className="flex items-center">
+            {profile.picture && (
+              <img
+                src={profile.picture}
+                alt="Profile"
+                className="w-8 h-8 rounded-full"
+              />
             )}
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setShowNostrModal(false)}
-                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={publishNote}
-                disabled={publishing}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                {publishing ? 'Publishing...' : 'Publish'}
-              </button>
-            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
+        {/* Sidebar */}
+        <div 
+          className={`
+            fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
+            transition-transform duration-300 ease-in-out
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          `}
+        >
+          <div className="p-6 space-y-4 h-full overflow-y-auto">
+            <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
+            {generations.length > 0 ? (
+              <ul className="space-y-2">
+                {generations.map((generation) => (
+                  <li
+                    key={generation.id}
+                    className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
+                      selectedGeneration?.id === generation.id
+                        ? 'bg-purple-700'
+                        : 'hover:bg-gray-700'
+                    }`}
+                    onClick={() => setSelectedGeneration(generation)}
+                  >
+                    <div className="text-sm font-medium">{generation.prompt}</div>
+                    <div className="text-xs text-gray-400">
+                      {formatDate(generation.createdAt)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-400">No generations yet.</p>
+            )}
           </div>
         </div>
-      )}
 
-      <div className="flex h-screen">
-        {/* Sidebar */}
-        <div className="w-64 bg-[#1a1a1a] p-6 space-y-4 overflow-y-auto">
-          <h2 className="text-2xl font-bold">Your Generations</h2>
-          {generations.length > 0 ? (
-            <ul className="space-y-2">
-              {generations.map((generation) => (
-                <li
-                  key={generation.id}
-                  className={`p-2 rounded-lg cursor-pointer ${
-                    selectedGeneration?.id === generation.id
-                      ? 'bg-purple-700'
-                      : 'hover:bg-gray-700'
-                  }`}
-                  onClick={() => setSelectedGeneration(generation)}
-                >
-                  <div className="text-sm font-medium">{generation.prompt}</div>
-                  <div className="text-xs text-gray-400">
-                    {formatDate(generation.createdAt)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-400">No generations yet.</p>
-          )}
-        </div>
+        {/* Overlay when sidebar is open on mobile */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
 
-        <div className="flex-1 flex flex-col">
-          {/* Header */}
-          <div className="bg-[#1a1a1a] p-4 flex items-center justify-between">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col w-full md:w-auto">
+          {/* Desktop Header */}
+          <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
             <h1 className="text-2xl font-bold">Animal Sunset</h1>
             {profile && (
               <div className="flex items-center space-x-2">
@@ -648,35 +599,37 @@ if (!isPromptSafe(prompt)) {
             )}
           </div>
 
-        <div className="flex-1 overflow-auto">
+          {/* Content Area */}
+          <div className="flex-1 overflow-auto p-4">
             {selectedGeneration ? (
-              <div className="p-6">
-                <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
-                  {/* Generation Details with Close Button */}
+              <div className="max-w-4xl mx-auto">
+                <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
+                  {/* Generation Details */}
                   <div className="flex justify-between items-start">
-                    <div>
-                      <h2 className="text-xl font-bold">{selectedGeneration.prompt}</h2>
-                      <div className="text-sm text-gray-400 mt-1">
+                    <div className="space-y-1">
+                      <h2 className="text-lg md:text-xl font-bold break-words">
+                        {selectedGeneration.prompt}
+                      </h2>
+                      <div className="text-sm text-gray-400">
                         {formatDate(selectedGeneration.createdAt)}
                       </div>
                     </div>
                     <button
                       onClick={() => setSelectedGeneration(null)}
-                      className="text-gray-400 hover:text-white"
+                      className="text-gray-400 hover:text-white p-2"
+                      aria-label="Close"
                     >
-                      ✕
+                      <X size={20} />
                     </button>
                   </div>
 
                   <div className="border-t border-gray-800 pt-4">
-                    {/* Status Message */}
                     <div className="text-sm text-gray-300 mb-4">
                       {getStatusMessage(selectedGeneration.state)}
                     </div>
 
                     {selectedGeneration.videoUrl ? (
                       <div className="space-y-4">
-                        {/* Video Player */}
                         <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
                           <video
                             key={selectedGeneration.videoUrl}
@@ -684,51 +637,46 @@ if (!isPromptSafe(prompt)) {
                             controls
                             autoPlay
                             loop
+                            playsInline
                             src={selectedGeneration.videoUrl}
                           />
                         </div>
 
-                        {/* Action Buttons with Dark Theme */}
-                        <div className="flex space-x-2">
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
-                            {/* Copy Link SVG icon */}
-                            <span>Copy Video URL</span>
+                            <span>Copy URL</span>
                           </button>
                           <a
                             href={selectedGeneration.videoUrl}
                             download
-                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
-                            {/* Download SVG icon */}
-                            <span>Download Video</span>
+                            <span>Download</span>
                           </a>
-                          {/* Share on Nostr Button */}
                           <button
                             onClick={() => {
                               setNoteContent(
-                                `${selectedGeneration.prompt}\n\n ${selectedGeneration.videoUrl}`
+                                `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
                               );
                               setShowNostrModal(true);
                             }}
-                            className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
-                            {/* Share on Nostr SVG icon */}
-                            <span>Share on Nostr</span>
+                            <span>Share</span>
                           </button>
                         </div>
-                        </div>
-  
+                      </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
                       </div>
                     ) : (
-                      // When videoUrl is not available
                       <div className="space-y-6">
-                        <div className="relative h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
+                        <div className="relative h-48 md:h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
                           <div className="absolute inset-0 flex items-center justify-center">
                             <div className="space-y-4 text-center">
                               <div className="inline-flex items-center space-x-2">
@@ -768,75 +716,177 @@ if (!isPromptSafe(prompt)) {
                 </div>
               </div>
             ) : (
-              <div className="p-6">
-                {/* When no generation is selected */}
-                <div className="max-w-3xl mx-auto">
-                  <form
-                    onSubmit={generateVideo}
-                    className="bg-[#1a1a1a] rounded-lg p-6 space-y-4"
-                    id="generation-form"
-                  >
-                    <textarea
-                      id="prompt-input"
-                      name="prompt"
-                      className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-                      rows={4}
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Describe your video idea..."
-                      disabled={loading}
-                      aria-label="Video prompt"
-                    />
+              <div className="max-w-3xl mx-auto">
+                <form
+                  onSubmit={generateVideo}
+                  className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
+                >
+                  <textarea
+                    id="prompt-input"
+                    name="prompt"
+                    className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+                    rows={4}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Describe your video idea..."
+                    disabled={loading}
+                  />
 
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={loading || !prompt || !!paymentRequest}
-                        className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
-                      >
-                        {loading ? (
-                          <span className="flex items-center space-x-2">
-                            <svg
-                              className="animate-spin h-5 w-5"
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                              ></circle>
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                              ></path>
-                            </svg>
-                            <span>Generating...</span>
-                          </span>
-                        ) : (
-                          'Generate Video'
-                        )}
-                      </button>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={loading || !prompt || !!paymentRequest}
+                      className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
+                    >
+                      {loading ? (
+                        <span className="flex items-center space-x-2">
+                          <svg
+                            className="animate-spin h-5 w-5"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            ></circle>
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            ></path>
+                          </svg>
+                          <span>Generating...</span>
+                        </span>
+                      ) : (
+                        'Generate Video'
+                      )}
+                    </button>
+                  </div>
+
+                  {error && (
+                    <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                      <p className="font-medium">Error</p>
+                      <p className="text-sm">{error}</p>
                     </div>
-
-                    {error && (
-                      <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                        <p className="font-medium">Error</p>
-                        <p className="text-sm">{error}</p>
-                      </div>
-                    )}
-                  </form>
-                </div>
+                  )}
+                </form>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {paymentRequest && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">Pay to Generate Video</h2>
+              <button
+                onClick={() => {
+                  setPaymentRequest(null);
+                  setPaymentHash(null);
+                  setLoading(false);
+                }}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            <div className="flex justify-center p-4 bg-white rounded-lg">
+              <QRCode 
+                value={paymentRequest} 
+                size={Math.min(window.innerWidth - 80, 256)}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
+                <input
+                  type="text"
+                  value={paymentRequest}
+                  readOnly
+                  className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
+                />
+                <button
+                  onClick={handleCopyInvoice}
+                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+                >
+                  {hasCopied ? <Check size={16} /> : <Copy size={16} />}
+                  {hasCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
+                Waiting for payment confirmation...
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setPaymentRequest(null);
+                setPaymentHash(null);
+                setLoading(false);
+              }}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Nostr Note Modal */}
+      {showNostrModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">Share on Nostr</h2>
+              <button
+                onClick={() => setShowNostrModal(false)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <textarea
+              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+              rows={4}
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Write your note..."
+            />
+            {publishError && (
+              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                {publishError}
+              </div>
+            )}
+            <div className="flex flex-col md:flex-row gap-2">
+              <button
+                onClick={() => setShowNostrModal(false)}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={publishNote}
+                disabled={publishing}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                {publishing ? 'Publishing...' : 'Publish'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,70 +1,58 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import WebSocket from 'ws';
+import { SimplePool, Filter } from 'nostr-tools';
+import type { Event } from 'nostr-tools';
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
   const { pubkey } = req.query;
 
   if (!pubkey || typeof pubkey !== 'string') {
     return res.status(400).json({ message: 'Pubkey is required' });
   }
 
+  const pool = new SimplePool();
+  const RELAY_URLS = [
+    'wss://relay.damus.io',
+    'wss://nos.lol',
+    'wss://relay.nostr.band'
+  ];
+
   try {
-    const profile = await new Promise((resolve, reject) => {
-      const ws = new WebSocket('wss://relay.damus.io');
-      let timeout: NodeJS.Timeout;
+    const filter: Filter = {
+      kinds: [0],
+      authors: [pubkey],
+      limit: 1
+    };
 
-      ws.onopen = () => {
-        const request = JSON.stringify([
-          "REQ",
-          "profile-lookup",
-          {
-            kinds: [0],
-            authors: [pubkey],
-            limit: 1
-          }
-        ]);
-        
-        ws.send(request);
-        
-        timeout = setTimeout(() => {
-          ws.close();
-          resolve(null);
-        }, 5000);
-      };
+    const event = await pool.get(
+      RELAY_URLS,
+      filter
+    );
 
-      ws.onmessage = (event) => {
-        try {
-          const [type, , eventData] = JSON.parse(event.data.toString());
-          
-          if (type === "EVENT" && eventData.kind === 0) {
-            clearTimeout(timeout);
-            const profileData = JSON.parse(eventData.content);
-            ws.close();
-            resolve(profileData);
-          }
-        } catch (error) {
-          console.error('Error parsing profile:', error);
-        }
-      };
+    // Don't await close since it doesn't return a promise
+    pool.close(RELAY_URLS);
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        clearTimeout(timeout);
-        ws.close();
-        reject(error);
-      };
-    });
-
-    if (!profile) {
+    if (!event) {
       return res.status(404).json({ message: 'Profile not found' });
     }
 
-    return res.status(200).json(profile);
+    try {
+      const profileData = JSON.parse(event.content);
+      return res.status(200).json(profileData);
+    } catch (error) {
+      console.error('Error parsing profile content:', error);
+      return res.status(500).json({ message: 'Invalid profile data' });
+    }
+
   } catch (error) {
     console.error('Error fetching profile:', error);
+    pool.close(RELAY_URLS);
     return res.status(500).json({ 
       message: 'Error fetching profile',
       error: error instanceof Error ? error.message : 'Unknown error'
