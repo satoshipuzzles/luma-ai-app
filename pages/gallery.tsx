@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Head from 'next/head';
-import { relayInit, Relay, Event, Filter } from 'nostr-tools';
+import { relayInit, Relay, Event, Filter, Sub } from 'nostr-tools';
 
 interface AnimalKindEvent {
   id: string;
@@ -38,8 +38,8 @@ const Gallery = () => {
       relay.on('connect', () => {
         console.log(`Connected to relay: ${relay.url}`);
 
-        // Subscribe to the relay with the defined filters
-        const sub = relay.subscribe(filters, { skipVerification: true });
+        // **Use 'sub' instead of 'subscribe'**
+        const sub: Sub = relay.sub(filters, { skipVerification: true });
 
         // Listen for incoming events
         sub.on('event', (event: Event) => {
@@ -72,6 +72,9 @@ const Gallery = () => {
       setError('Failed to load gallery. Please try again later.');
     }
   };
+
+export default Gallery;
+
 
   const fetchProfile = async (pubkey: string) => {
     if (profiles[pubkey]) return; // Profile already fetched
