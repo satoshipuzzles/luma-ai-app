@@ -226,6 +226,12 @@ export default function Home() {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
 
+    // Inside generateVideo function, after the initial checks
+if (!isPromptSafe(prompt)) {
+  setError(getPromptFeedback(prompt));
+  return;
+}
+
     setLoading(true);
     setError('');
 
