@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { relayInit, getEventHash, Event } from 'nostr-tools';
-import { Menu, X, Copy, Check } from 'lucide-react';
+import { relayInit, getEventHash, Event, generatePrivateKey, getPublicKey } from 'nostr-tools';
+import { Menu, X, Copy, Check, Settings } from 'lucide-react';
 import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
+import { BitcoinPayment } from '../components/BitcoinConnect';
+import { Navigation } from '../components/Navigation';
+import { SettingsModal } from '../components/SettingsModal';
+import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
+import type { PaymentProvider } from '../types/payment';
+
 // Types
 interface StoredGeneration {
   id: string;
@@ -91,7 +97,6 @@ const getStatusMessage = (state: string) => {
       return 'Processing...';
   }
 };
-
 export default function Home() {
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -102,6 +107,9 @@ export default function Home() {
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [bitcoinProvider, setBitcoinProvider] = useState<PaymentProvider | null>(null);
 
   // State variables for payment
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
@@ -119,6 +127,11 @@ export default function Home() {
       setGenerations(stored);
       if (stored.length > 0) {
         setSelectedGeneration(stored[0]);
+      }
+      // Load user settings
+      const savedSettings = localStorage.getItem(`settings-${pubkey}`);
+      if (savedSettings) {
+        setUserSettings(JSON.parse(savedSettings));
       }
     }
   }, [pubkey]);
@@ -226,39 +239,63 @@ export default function Home() {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
 
-    // Inside generateVideo function, after the initial checks
-if (!isPromptSafe(prompt)) {
-  setError(getPromptFeedback(prompt));
-  return;
-}
+    if (!isPromptSafe(prompt)) {
+      setError(getPromptFeedback(prompt));
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
-      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ amount: 1000 }),
-      });
+      if (bitcoinProvider) {
+        // Handle Bitcoin-Connect payment
+        try {
+          const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: 1000 }),
+          });
 
-      if (!invoiceResponse.ok) {
-        const errorData = await invoiceResponse.json();
-        throw new Error(errorData.error || 'Failed to create invoice');
-      }
+          if (!invoiceResponse.ok) {
+            throw new Error('Failed to create invoice');
+          }
 
-      const invoiceData = await invoiceResponse.json();
-      const { payment_request, payment_hash } = invoiceData;
+          const { payment_request, payment_hash } = await invoiceResponse.json();
+          await bitcoinProvider.sendPayment(payment_request);
+          setPaymentHash(payment_hash);
+        } catch (error) {
+          console.error('Payment error:', error);
+          setError('Payment failed. Please try again.');
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Handle regular LNBits payment
+        const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ amount: 1000 }),
+        });
 
-      setPaymentRequest(payment_request);
-      setPaymentHash(payment_hash);
+        if (!invoiceResponse.ok) {
+          const errorData = await invoiceResponse.json();
+          throw new Error(errorData.error || 'Failed to create invoice');
+        }
 
-      const paymentConfirmed = await waitForPayment(payment_hash);
-      if (!paymentConfirmed) {
-        setLoading(false);
-        return;
+        const invoiceData = await invoiceResponse.json();
+        const { payment_request, payment_hash } = invoiceData;
+
+        setPaymentRequest(payment_request);
+        setPaymentHash(payment_hash);
+
+        const paymentConfirmed = await waitForPayment(payment_hash);
+        if (!paymentConfirmed) {
+          setLoading(false);
+          return;
+        }
       }
 
       setPaymentRequest(null);
@@ -410,10 +447,8 @@ if (!isPromptSafe(prompt)) {
   };
 
   const publishNote = async () => {
-    if (!pubkey || !window.nostr) {
-      setPublishError(
-        'Nostr extension not found. Please install a NIP-07 browser extension.'
-      );
+    if (!pubkey || !window.nostr || !selectedGeneration) {
+      setPublishError('Not connected or no video selected.');
       return;
     }
 
@@ -423,44 +458,111 @@ if (!isPromptSafe(prompt)) {
     let relayConnections: ReturnType<typeof relayInit>[] = [];
 
     try {
-      const event: Partial<Event> = {
-        kind: 1,
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [],
-        content: noteContent,
-      };
+      if (userSettings.publicGenerations) {
+        // First publish the animal kind (75757)
+        const animalEvent: Partial<Event> = {
+          kind: 75757,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['title', selectedGeneration.prompt],
+            ['r', selectedGeneration.videoUrl!],
+            ['type', 'animal-sunset']
+          ],
+          content: selectedGeneration.videoUrl!,
+        };
 
-      event.id = getEventHash(event as Event);
-      const signedEvent = await window.nostr.signEvent(event as Event);
+        animalEvent.id = getEventHash(animalEvent as Event);
+        const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
 
-      if (signedEvent.id !== event.id) {
-        throw new Error('Event ID mismatch after signing.');
-      }
+        // History event (8008135)
+        const historyEvent: Partial<Event> = {
+          kind: 8008135,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['text-to-speech', selectedGeneration.prompt],
+            ['r', selectedGeneration.videoUrl!],
+            ['e', signedAnimalEvent.id],
+            ['public', 'true']
+          ],
+          content: JSON.stringify({
+            prompt: selectedGeneration.prompt,
+            videoUrl: selectedGeneration.videoUrl,
+            createdAt: selectedGeneration.createdAt,
+            state: selectedGeneration.state,
+            public: true
+          }),
+        };
 
-      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-      relayConnections = relayUrls.map((url) => relayInit(url));
+        historyEvent.id = getEventHash(historyEvent as Event);
+        const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
 
-      await Promise.all(
-        relayConnections.map((relay) => {
-          return new Promise<void>((resolve, reject) => {
-            relay.on('connect', async () => {
-              try {
-                await relay.publish(signedEvent);
-                resolve();
-              } catch (error) {
-                reject(error);
-              }
+        const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+        relayConnections = relayUrls.map((url) => relayInit(url));
+
+        await Promise.all(
+          relayConnections.map((relay) => {
+            return new Promise<void>((resolve, reject) => {
+              relay.on('connect', async () => {
+                try {
+                  await relay.publish(signedAnimalEvent);
+                  await relay.publish(signedHistoryEvent);
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
+              });
+
+              relay.on('error', () => {
+                reject(new Error(`Failed to connect to relay ${relay.url}`));
+              });
+
+              relay.connect();
             });
+          })
+        );
+      } else {
+        // If private, only publish history event
+        const historyEvent: Partial<Event> = {
+          kind: 8008135,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['text-to-speech', selectedGeneration.prompt],
+            ['r', selectedGeneration.videoUrl!],
+            ['public', 'false']
+          ],
+          content: JSON.stringify({
+            prompt: selectedGeneration.prompt,
+            videoUrl: selectedGeneration.videoUrl,
+            createdAt: selectedGeneration.createdAt,
+            state: selectedGeneration.state,
+            public: false
+          }),
+        };
 
-            relay.on('error', () => {
-              reject(new Error(`Failed to connect to relay ${relay.url}`));
-            });
+        historyEvent.id = getEventHash(historyEvent as Event);
+        const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
 
-            relay.connect();
+        const relay = relayInit('wss://relay.damus.io');
+        await new Promise<void>((resolve, reject) => {
+          relay.on('connect', async () => {
+            try {
+              await relay.publish(signedHistoryEvent);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
           });
-        })
-      );
+
+          relay.on('error', () => {
+            reject(new Error('Failed to connect to relay'));
+          });
+
+          relay.connect();
+        });
+      }
 
       setShowNostrModal(false);
     } catch (err) {
@@ -473,7 +575,6 @@ if (!isPromptSafe(prompt)) {
       setPublishing(false);
     }
   };
-
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -521,9 +622,16 @@ if (!isPromptSafe(prompt)) {
         >
           {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <h1 className="text-xl font-bold">Animal Sunset</h1>
+        <Navigation />
         {profile && (
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-gray-700 rounded-lg"
+              aria-label="Settings"
+            >
+              <Settings size={20} />
+            </button>
             {profile.picture && (
               <img
                 src={profile.picture}
@@ -584,9 +692,16 @@ if (!isPromptSafe(prompt)) {
         <div className="flex-1 flex flex-col w-full md:w-auto">
           {/* Desktop Header */}
           <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
-            <h1 className="text-2xl font-bold">Animal Sunset</h1>
+            <Navigation />
             {profile && (
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 hover:bg-gray-700 rounded-lg"
+                  aria-label="Settings"
+                >
+                  <Settings size={20} />
+                </button>
                 {profile.picture && (
                   <img
                     src={profile.picture}
@@ -798,37 +913,71 @@ if (!isPromptSafe(prompt)) {
               >
                 <X size={20} />
               </button>
-            </div>
+              </div>
             <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
-            <div className="flex justify-center p-4 bg-white rounded-lg">
-              <QRCode 
-                value={paymentRequest} 
-                size={Math.min(window.innerWidth - 80, 256)}
-                level="H"
-                includeMargin={true}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
-                <input
-                  type="text"
-                  value={paymentRequest}
-                  readOnly
-                  className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
-                />
+            
+            {bitcoinProvider ? (
+              <div className="space-y-4">
+                <p className="text-sm text-green-400">Wallet Connected!</p>
                 <button
-                  onClick={handleCopyInvoice}
-                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+                  onClick={async () => {
+                    try {
+                      await bitcoinProvider.sendPayment(paymentRequest);
+                    } catch (error) {
+                      console.error('Payment error:', error);
+                      setError('Payment failed. Please try again.');
+                    }
+                  }}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                 >
-                  {hasCopied ? <Check size={16} /> : <Copy size={16} />}
-                  {hasCopied ? 'Copied!' : 'Copy'}
+                  Pay with Connected Wallet
                 </button>
               </div>
-              <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-                <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
-                Waiting for payment confirmation...
-              </div>
-            </div>
+            ) : (
+              <>
+                <BitcoinPayment
+                  onConnect={setBitcoinProvider}
+                  onDisconnect={() => setBitcoinProvider(null)}
+                />
+                <div className="relative text-center my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-800"></div>
+                  </div>
+                  <div className="relative">
+                    <span className="px-2 bg-[#1a1a1a] text-gray-500">or pay manually</span>
+                  </div>
+                </div>
+                <div className="flex justify-center p-4 bg-white rounded-lg">
+                  <QRCode 
+                    value={paymentRequest} 
+                    size={Math.min(window.innerWidth - 80, 256)}
+                    level="H"
+                    includeMargin={true}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
+                    <input
+                      type="text"
+                      value={paymentRequest}
+                      readOnly
+                      className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
+                    />
+                    <button
+                      onClick={handleCopyInvoice}
+                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+                    >
+                      {hasCopied ? <Check size={16} /> : <Copy size={16} />}
+                      {hasCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                    <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
+                    Waiting for payment confirmation...
+                  </div>
+                </div>
+              </>
+            )}
             <button
               onClick={() => {
                 setPaymentRequest(null);
@@ -887,6 +1036,14 @@ if (!isPromptSafe(prompt)) {
           </div>
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        pubkey={pubkey}
+        onSettingsChange={setUserSettings}
+      />
     </div>
   );
 }
