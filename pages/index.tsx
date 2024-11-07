@@ -1,9 +1,10 @@
-// pages/index.tsx
+// /pages/index.tsx
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { relayInit, getEventHash, Event } from 'nostr-tools';
+import { relayInit, getEventHash, Event, generatePrivateKey, getPublicKey } from 'nostr-tools';
+import Filter from 'bad-words';
 
 // Declare the global window.nostr interface
 declare global {
@@ -112,6 +113,12 @@ export default function Home() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
 
+  // Profanity filter
+  const filter = new Filter();
+
+  // State for profanity detection
+  const [isProfane, setIsProfane] = useState<boolean>(false);
+
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -140,12 +147,28 @@ export default function Home() {
     loadProfile();
   }, [pubkey]);
 
+  // Function to connect via Nostr
   const connectNostr = async () => {
     try {
       const key = await getNostrPublicKey();
       setPubkey(key);
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
+    }
+  };
+
+  // Function to login as guest
+  const loginAsGuest = () => {
+    const existingKeypair = localStorage.getItem('guest_keypair');
+    if (existingKeypair) {
+      const keypair = JSON.parse(existingKeypair);
+      setPubkey(keypair.pubkey);
+    } else {
+      const privateKey = generatePrivateKey();
+      const pubkey = getPublicKey(privateKey);
+      const keypair = { privateKey, pubkey };
+      localStorage.setItem('guest_keypair', JSON.stringify(keypair));
+      setPubkey(pubkey);
     }
   };
 
@@ -206,10 +229,23 @@ export default function Home() {
     return true; // Return true to indicate payment was confirmed
   };
 
+  // Profanity check handler
+  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const input = e.target.value;
+    setPrompt(input);
+    setIsProfane(filter.isProfane(input));
+  };
+
   // generateVideo function
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
+
+    // Check for profanity
+    if (isProfane) {
+      setError('Your prompt contains inappropriate language. Please revise and try again.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -410,12 +446,25 @@ export default function Home() {
     poll();
   };
 
+  // Function to copy payment request
+  const copyPaymentRequest = async (invoice: string) => {
+    try {
+      await navigator.clipboard.writeText(invoice);
+      alert('Lightning invoice copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy invoice:', err);
+      alert('Failed to copy the invoice. Please try manually.');
+    }
+  };
+
+  // Function to copy video URL
   const copyVideoUrl = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      // Could add a toast notification here
+      alert('Video URL copied to clipboard!');
     } catch (err) {
       console.error('Failed to copy:', err);
+      alert('Failed to copy the URL. Please try manually.');
     }
   };
 
@@ -484,6 +533,8 @@ export default function Home() {
           });
         })
       );
+
+      alert('Note published successfully!');
     } catch (err) {
       console.error('Error publishing note:', err);
       setPublishError(
@@ -497,18 +548,80 @@ export default function Home() {
     }
   };
 
+  // Function to publish "animal kind" event
+  const publishAnimalKind = async (videoUrl: string) => {
+    if (!pubkey || !window.nostr) {
+      throw new Error('Nostr extension not found. Please install a NIP-07 browser extension.');
+    }
+
+    const event: Partial<Event> = {
+      kind: 75757,
+      pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: videoUrl, // Only the video file URL
+    };
+
+    event.id = getEventHash(event as Event);
+    const signedEvent = await window.nostr.signEvent(event as Event);
+
+    if (signedEvent.id !== event.id) {
+      throw new Error('Event ID mismatch after signing.');
+    }
+
+    const relay = relayInit('wss://sunset.nostrfreaks.com');
+
+    await new Promise<void>((resolve, reject) => {
+      relay.on('connect', async () => {
+        try {
+          await relay.publish(signedEvent);
+          console.log('Animal kind event published to sunset relay.');
+          resolve();
+        } catch (error) {
+          console.error('Failed to publish animal kind event:', error);
+          reject(error);
+        }
+      });
+
+      relay.on('error', () => {
+        console.error('Failed to connect to sunset relay.');
+        reject(new Error('Failed to connect to sunset relay.'));
+      });
+
+      relay.connect();
+    });
+
+    relay.close();
+  };
+
+  // Handle Logout (optional)
+  const handleLogout = () => {
+    setPubkey(null);
+    setProfile(null);
+    localStorage.removeItem('guest_keypair');
+    // Optionally, clear other stored data
+  };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
         <div className="max-w-md w-full p-6 space-y-6">
           <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
+            <p className="text-gray-300 text-center">
+              Connect with Nostr or login as a guest to get started
+            </p>
             <button
               onClick={connectNostr}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
             >
               Connect with Nostr
+            </button>
+            <button
+              onClick={loginAsGuest}
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
+            >
+              Login as Guest
             </button>
             {error && (
               <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
@@ -526,13 +639,13 @@ export default function Home() {
       <Head>
         <title>Animal Sunset 🌞🦒</title>
         <link rel="icon" href="https://animalsunset.com/favicon.png" />
-         {/* Open Graph Meta Tags */}
-  <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
-  <meta property="og:title" content="Animal Sunset 🌞🦒" />
-  <meta property="og:description" content="AI-powered video generator." />
-  <meta property="og:image" content="https://animalsunset.com/og-image.png" />
-  <meta property="og:url" content="https://animalsunset.com" />
-  <meta property="og:type" content="website" />
+        {/* Open Graph Meta Tags */}
+        <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
+        <meta property="og:title" content="Animal Sunset 🌞🦒" />
+        <meta property="og:description" content="AI-powered video generator." />
+        <meta property="og:image" content="https://animalsunset.com/og-image.png" />
+        <meta property="og:url" content="https://animalsunset.com" />
+        <meta property="og:type" content="website" />
       </Head>
 
       {/* Payment Modal */}
@@ -541,10 +654,24 @@ export default function Home() {
           <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
             <h2 className="text-xl font-bold">Pay to Generate Video</h2>
             <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+
             <div className="flex justify-center">
-              <QRCode value={paymentRequest} size={256} />
+              <div className="p-2 bg-[#2a2a2a] rounded-lg shadow-lg">
+                <QRCode value={paymentRequest} size={200} bgColor="#2a2a2a" fgColor="#ffffff" />
+              </div>
             </div>
-            <p className="text-sm text-gray-400 break-all">{paymentRequest}</p>
+
+            <div className="flex items-center justify-between bg-[#2a2a2a] p-2 rounded">
+              <p className="text-sm text-gray-400 break-all">{paymentRequest}</p>
+              <button
+                onClick={() => copyPaymentRequest(paymentRequest)}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1 px-3 rounded ml-2"
+                aria-label="Copy Lightning Invoice"
+              >
+                Copy
+              </button>
+            </div>
+
             <p className="text-sm text-gray-400">Waiting for payment confirmation...</p>
             <button
               onClick={() => {
@@ -596,9 +723,9 @@ export default function Home() {
         </div>
       )}
 
-      <div className="flex h-screen">
+      <div className="flex flex-col md:flex-row h-screen">
         {/* Sidebar */}
-        <div className="w-64 bg-[#1a1a1a] p-6 space-y-4 overflow-y-auto">
+        <div className="md:w-64 w-full bg-[#1a1a1a] p-4 md:p-6 space-y-4 overflow-y-auto">
           <h2 className="text-2xl font-bold">Your Generations</h2>
           {generations.length > 0 ? (
             <ul className="space-y-2">
@@ -638,11 +765,17 @@ export default function Home() {
                   />
                 )}
                 <span>{profile.name || 'Anonymous'}</span>
+                <button
+                  onClick={handleLogout}
+                  className="ml-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-1 px-2 rounded-lg transition duration-200"
+                >
+                  Logout
+                </button>
               </div>
             )}
           </div>
 
-        <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto">
             {selectedGeneration ? (
               <div className="p-6">
                 <div className="bg-[#1a1a1a] rounded-lg p-6 space-y-4">
@@ -657,6 +790,7 @@ export default function Home() {
                     <button
                       onClick={() => setSelectedGeneration(null)}
                       className="text-gray-400 hover:text-white"
+                      aria-label="Close Generation Details"
                     >
                       ✕
                     </button>
@@ -682,13 +816,27 @@ export default function Home() {
                           />
                         </div>
 
-                        {/* Action Buttons with Dark Theme */}
+                        {/* Action Buttons */}
                         <div className="flex space-x-2">
                           <button
                             onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            {/* Copy Link SVG icon */}
+                            {/* Copy Link Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m0 4h2a2 2 0 012 2v2a2 2 0 01-2 2h-2M8 8h.01M12 12h.01"
+                              />
+                            </svg>
                             <span>Copy Video URL</span>
                           </button>
                           <a
@@ -696,7 +844,21 @@ export default function Home() {
                             download
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            {/* Download SVG icon */}
+                            {/* Download Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M4 8v8m16-8l-8 8-4-4-6 6"
+                              />
+                            </svg>
                             <span>Download Video</span>
                           </a>
                           {/* Share on Nostr Button */}
@@ -709,12 +871,25 @@ export default function Home() {
                             }}
                             className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
                           >
-                            {/* Share on Nostr SVG icon */}
+                            {/* Share Icon */}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0 3 3 0 016 0z"
+                              />
+                            </svg>
                             <span>Share on Nostr</span>
                           </button>
                         </div>
-                        </div>
-  
+                      </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
@@ -773,19 +948,26 @@ export default function Home() {
                     <textarea
                       id="prompt-input"
                       name="prompt"
-                      className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+                      className={`w-full bg-[#2a2a2a] rounded-lg border ${
+                        isProfane ? 'border-red-500' : 'border-gray-700'
+                      } p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200`}
                       rows={4}
                       value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
+                      onChange={handlePromptChange}
                       placeholder="Describe your video idea..."
                       disabled={loading}
                       aria-label="Video prompt"
                     />
+                    {isProfane && (
+                      <p className="text-red-500 text-sm">
+                        Please remove profanity from your prompt.
+                      </p>
+                    )}
 
                     <div className="flex justify-end">
                       <button
                         type="submit"
-                        disabled={loading || !prompt || !!paymentRequest}
+                        disabled={loading || !prompt || !!paymentRequest || isProfane}
                         className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                       >
                         {loading ? (
