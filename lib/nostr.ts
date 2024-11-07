@@ -1,5 +1,4 @@
-import { Event, getEventHash, getPublicKey, nip19 } from 'nostr-tools';
-import { AnimalKind, NostrProfile, ProfileContent } from '../types/nostr';
+import { Event, getEventHash, nip19, generatePrivateKey, getPublicKey } from 'nostr-tools';
 
 const SUNSET_RELAY_URL = 'wss://sunset.nostrfreaks.com';
 
@@ -8,7 +7,7 @@ export const createAnimalKind = async (
   videoUrl: string,
   title: string,
   replyTo?: string
-): Promise<AnimalKind> => {
+): Promise<Event> => {
   const tags: string[][] = [
     ['title', title]
   ];
@@ -32,11 +31,11 @@ export const createAnimalKind = async (
   }
 
   const signedEvent = await window.nostr.signEvent(event as Event);
-  return signedEvent as AnimalKind;
+  return signedEvent as Event;
 };
 
 export const generateGuestKeypair = () => {
-  const privateKey = window.crypto.getRandomValues(new Uint8Array(32));
+  const privateKey = generatePrivateKey(); // Use nostr-tools' generatePrivateKey
   const pubkey = getPublicKey(privateKey);
   return { privateKey, pubkey };
 };
@@ -54,7 +53,7 @@ export const getLightningAddress = async (pubkey: string): Promise<string | null
   }
 };
 
-export const fetchProfile = async (pubkey: string): Promise<NostrProfile | null> => {
+export const fetchProfile = async (pubkey: string): Promise<Event | null> => {
   const relays = [SUNSET_RELAY_URL, 'wss://relay.damus.io'];
   const filter = {
     authors: [pubkey],
@@ -74,7 +73,7 @@ export const fetchProfile = async (pubkey: string): Promise<NostrProfile | null>
 
       const events = await response.json();
       if (events.length > 0) {
-        return events[0] as NostrProfile;
+        return events[0] as Event;
       }
     } catch (error) {
       console.error(`Failed to fetch profile from ${relay}:`, error);
@@ -91,3 +90,12 @@ export const formatPubkey = (pubkey: string): string => {
     return pubkey.slice(0, 8) + '...' + pubkey.slice(-8);
   }
 };
+
+interface ProfileContent {
+  name?: string;
+  about?: string;
+  picture?: string;
+  lud06?: string;  // Legacy LNURL
+  lud16?: string;  // Lightning Address
+  nip05?: string;
+}
