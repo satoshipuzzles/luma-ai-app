@@ -758,11 +758,7 @@ export default function Home() {
             {profile && (
               <div className="flex items-center space-x-2">
                 {profile.picture && (
-                  <img
-                    src={profile.picture}
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full"
-                  />
+                  <img src={profile.picture} alt="Profile" className="w-8 h-8 rounded-full" />
                 )}
                 <span>{profile.name || 'Anonymous'}</span>
                 <button
@@ -984,7 +980,7 @@ export default function Home() {
                                 cy="12"
                                 r="10"
                                 stroke="currentColor"
-                                strokeWidth="4"
+                                strokeWidth={4}
                               ></circle>
                               <path
                                 className="opacity-75"
