@@ -1,198 +1,218 @@
-// pages/gallery.tsx
-
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { relayInit, Relay, Event, Filter, Sub } from 'nostr-tools';
+import { AnimalKind, NostrProfile } from '../types/nostr';
+import { fetchProfile, formatPubkey, getLightningAddress } from '../lib/nostr';
 
-interface AnimalKindEvent {
-  id: string;
-  pubkey: string;
-  created_at: number;
-  content: string; // Video URL
+interface VideoPost {
+  event: AnimalKind;
+  profile?: NostrProfile;
+  comments: AnimalKind[];
 }
 
-interface Profile {
-  name?: string;
-  picture?: string;
-  about?: string;
-}
-
-const Gallery = () => {
-  const [animalKinds, setAnimalKinds] = useState<AnimalKindEvent[]>([]);
-  const [profiles, setProfiles] = useState<{ [pubkey: string]: Profile }>({});
-  const [error, setError] = useState<string>('');
+export default function Gallery() {
+  const [posts, setPosts] = useState<VideoPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [sendingZap, setSendingZap] = useState(false);
 
   useEffect(() => {
-    fetchAnimalKinds();
+    fetchPosts();
   }, []);
 
-  const fetchAnimalKinds = async () => {
+  const fetchPosts = async () => {
     try {
-      // Initialize the relay connection
-      const relay: Relay = relayInit('wss://sunset.nostrfreaks.com');
-
-      // Define the filters for subscription
-      const filters: Filter[] = [{ kinds: [75757] }];
-
-      // Handle relay events
-      relay.on('connect', () => {
-        console.log(`Connected to relay: ${relay.url}`);
-
-        // **Use 'sub' instead of 'subscribe'**
-        const sub: Sub = relay.sub(filters, { skipVerification: true });
-
-        // Listen for incoming events
-        sub.on('event', (event: Event) => {
-          const animalKind: AnimalKindEvent = {
-            id: event.id,
-            pubkey: event.pubkey,
-            created_at: event.created_at,
-            content: event.content,
-          };
-          setAnimalKinds((prev) => [...prev, animalKind]);
-        });
-
-        // Handle end of stored events
-        sub.on('eose', () => {
-          console.log('End of stored events');
-          relay.close();
-        });
+      const response = await fetch('/api/nostr/fetch-events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          relay: 'wss://sunset.nostrfreaks.com',
+          filter: {
+            kinds: [75757],
+            limit: 50
+          }
+        })
       });
 
-      // Handle relay errors
-      relay.on('error', (err) => {
-        console.error('Relay error:', err);
-        setError('Failed to connect to the relay.');
-      });
-
-      // Establish the relay connection
-      relay.connect();
-    } catch (err) {
-      console.error('Failed to fetch animal kinds:', err);
-      setError('Failed to load gallery. Please try again later.');
-    }
-  };
-
-export default Gallery;
-
-
-  const fetchProfile = async (pubkey: string) => {
-    if (profiles[pubkey]) return; // Profile already fetched
-
-    try {
-      const response = await fetch(`/api/nostr/profile?pubkey=${pubkey}`);
-      if (response.ok) {
-        const profileData: Profile = await response.json();
-        setProfiles((prev) => ({ ...prev, [pubkey]: profileData }));
-      } else {
-        console.warn(`Profile not found for pubkey: ${pubkey}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch posts');
       }
-    } catch (err) {
-      console.error(`Failed to fetch profile for ${pubkey}:`, err);
+
+      const events = await response.json() as AnimalKind[];
+      
+      // Group comments with their parent posts
+      const postsMap = new Map<string, VideoPost>();
+      
+      for (const event of events) {
+        const replyTo = event.tags.find(tag => tag[0] === 'e')?.[1];
+        
+        if (!replyTo) {
+          // This is a main post
+          postsMap.set(event.id, {
+            event,
+            comments: []
+          });
+        } else {
+          // This is a comment
+          const parentPost = postsMap.get(replyTo);
+          if (parentPost) {
+            parentPost.comments.push(event);
+          }
+        }
+      }
+
+      // Fetch profiles for all authors
+      const posts = Array.from(postsMap.values());
+      await Promise.all(posts.map(async post => {
+        post.profile = await fetchProfile(post.event.pubkey);
+      }));
+
+      setPosts(posts);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load gallery');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleZap = (lightningAddress: string) => {
-    alert('Zap functionality to be implemented.');
+  const handleZap = async (post: VideoPost) => {
+    setSendingZap(true);
+    try {
+      const lnAddress = await getLightningAddress(post.event.pubkey);
+      if (!lnAddress) {
+        throw new Error('No lightning address found for this user');
+      }
+
+      const response = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: 1000,
+          lnAddress
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create invoice');
+      }
+
+      // Handle payment flow similar to generate video
+      // ...
+    } catch (error) {
+      console.error('Error sending zap:', error);
+    } finally {
+      setSendingZap(false);
+    }
   };
+
+  if (loading) {
+    return <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
+      <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full"></div>
+    </div>;
+  }
 
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-        <title>Animal Sunset Gallery 🌞🦒</title>
-        <link rel="icon" href="/favicon.png" />
-        {/* Open Graph Meta Tags */}
-        <meta name="description" content="Gallery of Animal Sunset creations." />
-        <meta property="og:title" content="Animal Sunset Gallery 🌞🦒" />
-        <meta property="og:description" content="Explore AI-generated animal videos." />
-        <meta property="og:image" content="/og-image.png" />
-        <meta property="og:url" content="https://animalsunset.com/gallery" />
-        <meta property="og:type" content="website" />
+        <title>Gallery | Animal Sunset 🌞🦒</title>
+        <meta name="description" content="Discover AI-generated animal videos" />
       </Head>
 
-      <header className="bg-[#1a1a1a] p-4">
-        <h1 className="text-3xl font-bold text-center">Animal Sunset Gallery</h1>
-      </header>
+      <div className="max-w-4xl mx-auto py-8 px-4">
+        <h1 className="text-3xl font-bold mb-8">Animal Gallery</h1>
 
-      <main className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-        {error && (
-          <div className="col-span-full p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-            {error}
-          </div>
-        )}
+        <div className="space-y-8">
+          {posts.map(post => (
+            <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
+              {/* Author Info */}
+              <div className="p-4 flex items-center space-x-3">
+                {post.profile?.content && (
+                  <img
+                    src={JSON.parse(post.profile.content).picture || '/default-avatar.png'}
+                    alt="Profile"
+                    className="w-10 h-10 rounded-full"
+                  />
+                )}
+                <div>
+                  <div className="font-medium">
+                    {post.profile?.content 
+                      ? JSON.parse(post.profile.content).name 
+                      : formatPubkey(post.event.pubkey)
+                    }
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {new Date(post.event.created_at * 1000).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
 
-        {animalKinds.map((event) => (
-          <AnimalCard
-            key={event.id}
-            event={event}
-            profile={profiles[event.pubkey]}
-            fetchProfile={fetchProfile}
-            onZap={handleZap}
-          />
-        ))}
-      </main>
-    </div>
-  );
-};
+              {/* Video */}
+              <div className="relative pt-[56.25%] bg-black">
+                <video
+                  src={post.event.content}
+                  className="absolute top-0 left-0 w-full h-full object-contain"
+                  controls
+                  loop
+                  playsInline
+                />
+              </div>
 
-interface AnimalCardProps {
-  event: AnimalKindEvent;
-  profile?: Profile;
-  fetchProfile: (pubkey: string) => void;
-  onZap: (lightningAddress: string) => void;
-}
+              {/* Actions */}
+              <div className="p-4 flex items-center space-x-4">
+                <button
+                  onClick={() => handleZap(post)}
+                  disabled={sendingZap}
+                  className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" />
+                  </svg>
+                  <span>Zap</span>
+                </button>
 
-const AnimalCard: React.FC<AnimalCardProps> = ({ event, profile, fetchProfile, onZap }) => {
-  useEffect(() => {
-    if (event.pubkey) fetchProfile(event.pubkey);
-  }, [event.pubkey]);
+                <button
+                  onClick={() => {
+                    setSelectedPost(post);
+                    setShowCommentModal(true);
+                  }}
+                  className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                  </svg>
+                  <span>{post.comments.length}</span>
+                </button>
+              </div>
 
-  const [lightningAddress, setLightningAddress] = useState<string>('');
-
-  useEffect(() => {
-    const fetchLightningAddress = async () => {
-      try {
-        const response = await fetch(`/api/nostr/lightning-address?pubkey=${event.pubkey}`);
-        if (response.ok) {
-          const data = await response.json();
-          setLightningAddress(data.lightning_address);
-        }
-      } catch (err) {
-        console.error('Failed to fetch lightning address:', err);
-      }
-    };
-
-    if (event.pubkey) {
-      fetchLightningAddress();
-    }
-  }, [event.pubkey]);
-
-  return (
-    <div className="bg-[#1a1a1a] rounded-lg overflow-hidden shadow-lg">
-      <video
-        src={event.content}
-        controls
-        className="w-full h-48 object-cover"
-        preload="metadata"
-      ></video>
-      <div className="p-4">
-        <div className="flex items-center space-x-2 mb-2">
-          {profile?.picture ? (
-            <img src={profile.picture} alt="Author" className="w-8 h-8 rounded-full" />
-          ) : (
-            <div className="w-8 h-8 bg-gray-700 rounded-full"></div>
-          )}
-          <span className="font-semibold">{profile?.name || 'Anonymous'}</span>
+              {/* Comments */}
+              {post.comments.length > 0 && (
+                <div className="p-4 pt-0 space-y-4">
+                  {post.comments.map(comment => (
+                    <div key={comment.id} className="flex items-start space-x-3 text-sm">
+                      <div className="flex-1 bg-[#2a2a2a] rounded p-3">
+                        <div className="font-medium text-gray-300 mb-1">
+                          {formatPubkey(comment.pubkey)}
+                        </div>
+                        {comment.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
-        <button
-          onClick={() => onZap(lightningAddress)}
-          className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1 px-3 rounded-lg"
-        >
-          Zap
-        </button>
       </div>
+
+      {/* Comment Modal */}
+      {showCommentModal && selectedPost && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          {/* Modal content */}
+        </div>
+      )}
     </div>
   );
-};
-
-export default Gallery;
+}
