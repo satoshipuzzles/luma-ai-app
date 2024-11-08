@@ -795,9 +795,8 @@ const copyVideoUrl = async (url: string) => {
                             src={selectedGeneration.videoUrl}
                           />
                         </div>
-
-                        {/* Action Buttons */}
-                   {/* Action Buttons */}
+                        
+{/* Action Buttons */}
 <div className="flex flex-wrap gap-2">
   <button
     onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
@@ -805,13 +804,37 @@ const copyVideoUrl = async (url: string) => {
   >
     <span>Copy URL</span>
   </button>
-  
-    href={selectedGeneration.videoUrl}
-    download
+  <button
+    onClick={async () => {
+      try {
+        const response = await fetch(selectedGeneration.videoUrl!);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `animal-sunset-${Date.now()}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        showToast({
+          title: "Success",
+          description: "Video download started",
+          onClose: hideToast
+        });
+      } catch (err) {
+        console.error('Download error:', err);
+        showToast({
+          title: "Error",
+          description: "Failed to download video",
+          onClose: hideToast
+        });
+      }
+    }}
     className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
   >
     <span>Download</span>
-  </a>
+  </button>
   <button
     onClick={() => {
       setNoteContent(
@@ -825,10 +848,6 @@ const copyVideoUrl = async (url: string) => {
   </button>
 </div>
                 
-                            <span>Share</span>
-                          </button>
-                        </div>
-                      </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
                         Generation failed. Please try again.
