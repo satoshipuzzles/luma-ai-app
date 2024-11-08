@@ -22,7 +22,7 @@
     "nostr-tools": "^1.12.0",
     "lucide-react": "^0.294.0",
     "@getalby/bitcoin-connect-react": "^1.0.4",
-    "@shadcn/ui": "^0.1.18"
+    "@shadcn/ui": "*"
   },
   "devDependencies": {
     "typescript": "^5",
