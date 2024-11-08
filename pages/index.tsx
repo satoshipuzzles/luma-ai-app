@@ -636,7 +636,7 @@ const copyVideoUrl = async (url: string) => {
     );
   }
 
- return (
+return (
   <div className="min-h-screen bg-[#111111] text-white">
     <Head>
       <title>Animal Sunset 🌞🦒</title>
@@ -978,14 +978,13 @@ const copyVideoUrl = async (url: string) => {
       onSettingsChange={setUserSettings}
     />
 
-{/* Toast Component */}
-{toast && (
-  <Toast
-    title={toast.title || "Default Title"} // Optional fallback title
-    description={toast.description || "Default Description"} // Optional fallback description
-    onClose={hideToast}
-  />
-)}
-
-  </div>  {/* This closes the main min-h-screen div from the top */}
+    {/* Toast Component */}
+    {toast && (
+      <Toast
+        title={toast.title || "Default Title"}
+        description={toast.description || "Default Description"}
+        onClose={hideToast}
+      />
+    )}
+  </div> // Correctly closes main min-h-screen div from the top
 );
