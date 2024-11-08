@@ -986,5 +986,5 @@ return (
         onClose={hideToast}
       />
     )}
-  </div> // Correctly closes main min-h-screen div from the top
+  </div> 
 );
