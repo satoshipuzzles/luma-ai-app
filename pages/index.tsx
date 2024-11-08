@@ -978,13 +978,13 @@ return (
       onSettingsChange={setUserSettings}
     />
 
-    {/* Toast Component */}
-    {toast && (
-      <Toast
-        title={toast.title || "Default Title"}
-        description={toast.description || "Default Description"}
-        onClose={hideToast}
-      />
-    )}
-  </div> 
+   {/* Toast Component */}
+{toast && (
+  <Toast
+    title={toast.title || "Default Title"}
+    description={toast.description || "Default Description"}
+    onClose={hideToast}
+  />
+)}
+</div>
 );
