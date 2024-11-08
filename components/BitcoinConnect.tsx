@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from "react";
 import dynamic from 'next/dynamic';
-import { Button } from '@/components/ui/button';
+import { Button } from '@shadcn/ui/button'
 
 interface BitcoinConnectProps {
   onConnect: (provider: any) => void;
