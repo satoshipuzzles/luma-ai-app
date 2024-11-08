@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from "react";
 import dynamic from 'next/dynamic';
-import { Button } from '@shadcn/ui/button'
+import CustomButton from './CustomButton';
 
 interface BitcoinConnectProps {
   onConnect: (provider: any) => void;
@@ -32,13 +32,9 @@ export const BitcoinPayment = ({ onConnect, onDisconnect }: BitcoinConnectProps)
   return (
     <div className="flex flex-col items-center space-y-4">
       <DynamicButton />
-      <Button
-        onClick={onDisconnect}
-        variant="ghost"
-        className="text-sm text-gray-400 hover:text-gray-300"
-      >
+      <CustomButton onClick={onDisconnect} variant="ghost">
         Disconnect Wallet
-      </Button>
+      </CustomButton>
     </div>
   );
 };
