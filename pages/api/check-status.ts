@@ -5,9 +5,12 @@ export default async function handler(
   res: NextApiResponse
 ) {
   const { id } = req.query;
-
   if (!id || typeof id !== 'string') {
     return res.status(400).json({ message: 'Generation ID is required' });
+  }
+
+  if (!process.env.LUMA_API_KEY) {
+    return res.status(500).json({ message: 'API configuration error' });
   }
 
   try {
@@ -33,12 +36,10 @@ export default async function handler(
       try {
         const videoCheck = await fetch(data.assets.video, { method: 'HEAD' });
         if (!videoCheck.ok) {
-          // If video isn't ready, mark as still processing
           data.state = 'processing';
           data.assets.video = null;
         }
       } catch (e) {
-        // If video check fails, mark as still processing
         data.state = 'processing';
         data.assets.video = null;
       }
