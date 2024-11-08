@@ -35,8 +35,6 @@ declare global {
     };
   }
 }
-const { toast, showToast, hideToast } = useToast();
-
 // Utility functions
 const formatDate = (dateString: string) => {
   try {
@@ -111,7 +109,7 @@ export default function Home() {
   const [hasCopied, setHasCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-
+  const { toast, showToast, hideToast } = useToast();
   // Payment state
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
