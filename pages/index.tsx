@@ -1171,23 +1171,23 @@ const copyVideoUrl = async (url: string) => {
       )}
 
    {/* Settings Modal */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        pubkey={pubkey}
-        onSettingsChange={setUserSettings}
-      />
+<SettingsModal
+  isOpen={showSettings}
+  onClose={() => setShowSettings(false)}
+  pubkey={pubkey}
+  onSettingsChange={setUserSettings}
+/>
 
-      {/* Toast Component */}
-      {toast && (
-        <Toast
-          title={toast.title}
-          description={toast.description}
-          onClose={hideToast}
-        />
-      )}
-    </div>  {/* This closes the main min-h-screen div from the top */}
-  );  /* This closes the return statement */
+{/* Toast Component */}
+{toast && (
+  <Toast
+    title={toast.title}
+    description={toast.description}
+    onClose={hideToast}
+  />
+)}
+</div>  {/* This closes the main min-h-screen div from the top */}
+);  /* This closes the return statement */
 }  /* This closes the Home function */
-
 export default Home;
+
