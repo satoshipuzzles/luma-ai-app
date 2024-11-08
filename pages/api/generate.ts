@@ -1,3 +1,4 @@
+// pages/api/generate.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
@@ -14,9 +15,31 @@ export default async function handler(
   }
 
   try {
-    const { prompt } = req.body;
-
+    const { prompt, loop = true, startImageUrl, extend, videoId } = req.body;
     console.log('Starting generation with prompt:', prompt);
+
+    const requestBody: any = {
+      prompt,
+      aspect_ratio: "16:9",
+      loop: Boolean(loop)
+    };
+
+    // Add keyframes if we have a start image or extending video
+    if (extend && videoId) {
+      requestBody.keyframes = {
+        frame0: {
+          type: "generation",
+          id: videoId
+        }
+      };
+    } else if (startImageUrl) {
+      requestBody.keyframes = {
+        frame0: {
+          type: "image",
+          url: startImageUrl
+        }
+      };
+    }
 
     const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
       method: 'POST',
@@ -24,11 +47,7 @@ export default async function handler(
         'Authorization': `Bearer ${process.env.LUMA_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        prompt,
-        aspect_ratio: "16:9",
-        loop: true
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -39,7 +58,6 @@ export default async function handler(
 
     const generation = await response.json();
     console.log('Generation started:', generation);
-
     return res.status(200).json(generation);
   } catch (error) {
     console.error('Error in generate:', error);
