@@ -8,7 +8,7 @@ import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { useToast } from "../components/ui/toast";
+import { useToast, Toast } from "../components/ui/toast"; // Ensure Toast is imported here
 
 // Types
 interface StoredGeneration {
@@ -978,13 +978,14 @@ const copyVideoUrl = async (url: string) => {
       onSettingsChange={setUserSettings}
     />
 
-    {/* Toast Component */}
-    {toast && (
-      <Toast
-        title={toast.title}
-        description={toast.description}
-        onClose={hideToast}
-      />
-    )}
+{/* Toast Component */}
+{toast && (
+  <Toast
+    title={toast.title || "Default Title"} // Optional fallback title
+    description={toast.description || "Default Description"} // Optional fallback description
+    onClose={hideToast}
+  />
+)}
+
   </div>  {/* This closes the main min-h-screen div from the top */}
 );
