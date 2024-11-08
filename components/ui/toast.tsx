@@ -23,7 +23,7 @@ export function Toast({
   }, [onClose])
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-50 animate-slide-up">
       <div className="bg-gray-800 text-white rounded-lg shadow-lg p-4 min-w-[200px] max-w-[350px]">
         <div className="flex justify-between items-start">
           {title && (
