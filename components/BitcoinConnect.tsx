@@ -17,15 +17,12 @@ export const BitcoinPayment = ({ onConnect, onDisconnect }: BitcoinConnectProps)
 
   useEffect(() => {
     setIsClient(true);
-    // Initialize Bitcoin Connect
-    const initBitcoinConnect = async () => {
-      const { init, onConnected } = await import('@getalby/bitcoin-connect-react');
-      init({
-        appName: "Animal Sunset",
-      });
-
+    
+    const setupConnect = async () => {
+      const { onConnected } = await import('@getalby/bitcoin-connect-react');
       const unsub = onConnected((provider) => {
         onConnect(provider);
+        (window as any).webln = provider;
       });
 
       return () => {
@@ -33,7 +30,7 @@ export const BitcoinPayment = ({ onConnect, onDisconnect }: BitcoinConnectProps)
       };
     };
 
-    initBitcoinConnect();
+    setupConnect();
   }, [onConnect]);
 
   if (!isClient) return null;
