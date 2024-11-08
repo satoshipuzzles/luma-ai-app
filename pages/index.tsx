@@ -3,7 +3,7 @@ import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
 import { Menu, X, Copy, Check, Settings, Upload, RefreshCw } from 'lucide-react';
-import { Switch } from "@/components/ui/switch";
+import { Switch } from "../components/ui/switch";
 import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
