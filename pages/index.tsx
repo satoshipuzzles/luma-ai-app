@@ -1186,6 +1186,8 @@ const copyVideoUrl = async (url: string) => {
           onClose={hideToast}
         />
       )}
-    </div>
-  );
-}
+    </div>  {/* This closes the main min-h-screen div from the top */}
+  );  /* This closes the return statement */
+}  /* This closes the Home function */
+
+export default Home;
