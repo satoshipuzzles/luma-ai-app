@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { relayInit, getEventHash, Event, generatePrivateKey, getPublicKey } from 'nostr-tools';
-import { Menu, X, Copy, Check, Settings } from 'lucide-react';
+import { relayInit, getEventHash, Event } from 'nostr-tools';
+import { Menu, X, Copy, Check, Settings, Upload, RefreshCw } from 'lucide-react';
+import { Switch } from "@/components/ui/switch";
 import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
-import { BitcoinPayment } from '../components/BitcoinConnect';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
-import type { PaymentProvider } from '../types/payment';
 
 // Types
 interface StoredGeneration {
@@ -98,6 +97,7 @@ const getStatusMessage = (state: string) => {
   }
 };
 export default function Home() {
+  // State variables
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -109,18 +109,25 @@ export default function Home() {
   const [hasCopied, setHasCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-  const [bitcoinProvider, setBitcoinProvider] = useState<PaymentProvider | null>(null);
 
-  // State variables for payment
+  // Payment state
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
 
-  // State variables for Nostr sharing
+  // Luma features state
+  const [isLooping, setIsLooping] = useState(true);
+  const [startImageUrl, setStartImageUrl] = useState<string | null>(null);
+  const [isExtending, setIsExtending] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Nostr state
   const [showNostrModal, setShowNostrModal] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
 
+  // Effects
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -128,7 +135,6 @@ export default function Home() {
       if (stored.length > 0) {
         setSelectedGeneration(stored[0]);
       }
-      // Load user settings
       const savedSettings = localStorage.getItem(`settings-${pubkey}`);
       if (savedSettings) {
         setUserSettings(JSON.parse(savedSettings));
@@ -160,12 +166,42 @@ export default function Home() {
     loadProfile();
   }, [pubkey]);
 
+  // Core functions
   const connectNostr = async () => {
     try {
       const key = await getNostrPublicKey();
       setPubkey(key);
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
+    }
+  };
+
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploadingImage(true);
+      setError('');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('https://nostr.build/api/v2/upload/files', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setStartImageUrl(result.data[0].url);
+        return result.data[0].url;
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (err) {
+      setError('Failed to upload image. Please try again.');
+      return null;
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -184,13 +220,16 @@ export default function Home() {
   const copyVideoUrl = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      // Could add a toast notification here
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   };
 
-  // waitForPayment function
+  const clearStartImage = () => {
+    setStartImageUrl(null);
+  };
+
+  // Payment handling
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
@@ -233,8 +272,7 @@ export default function Home() {
 
     return true;
   };
-
-  // generateVideo function
+  // Generate video function
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
@@ -248,65 +286,54 @@ export default function Home() {
     setError('');
 
     try {
-      if (bitcoinProvider) {
-        // Handle Bitcoin-Connect payment
-        try {
-          const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: 1000 }),
-          });
+      // Handle LNBits payment
+      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: 1000 }),
+      });
 
-          if (!invoiceResponse.ok) {
-            throw new Error('Failed to create invoice');
-          }
+      if (!invoiceResponse.ok) {
+        const errorData = await invoiceResponse.json();
+        throw new Error(errorData.error || 'Failed to create invoice');
+      }
 
-          const { payment_request, payment_hash } = await invoiceResponse.json();
-          await bitcoinProvider.sendPayment(payment_request);
-          setPaymentHash(payment_hash);
-        } catch (error) {
-          console.error('Payment error:', error);
-          setError('Payment failed. Please try again.');
-          setLoading(false);
-          return;
-        }
-      } else {
-        // Handle regular LNBits payment
-        const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ amount: 1000 }),
-        });
+      const invoiceData = await invoiceResponse.json();
+      const { payment_request, payment_hash } = invoiceData;
 
-        if (!invoiceResponse.ok) {
-          const errorData = await invoiceResponse.json();
-          throw new Error(errorData.error || 'Failed to create invoice');
-        }
+      setPaymentRequest(payment_request);
+      setPaymentHash(payment_hash);
 
-        const invoiceData = await invoiceResponse.json();
-        const { payment_request, payment_hash } = invoiceData;
-
-        setPaymentRequest(payment_request);
-        setPaymentHash(payment_hash);
-
-        const paymentConfirmed = await waitForPayment(payment_hash);
-        if (!paymentConfirmed) {
-          setLoading(false);
-          return;
-        }
+      const paymentConfirmed = await waitForPayment(payment_hash);
+      if (!paymentConfirmed) {
+        setLoading(false);
+        return;
       }
 
       setPaymentRequest(null);
       setPaymentHash(null);
+
+      // Prepare generation request with new options
+      const generationBody: any = { 
+        prompt,
+        loop: isLooping
+      };
+
+      if (isExtending && selectedVideoId) {
+        generationBody.extend = true;
+        generationBody.videoId = selectedVideoId;
+      } else if (startImageUrl) {
+        generationBody.startImageUrl = startImageUrl;
+      }
 
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(generationBody),
       });
 
       if (!response.ok) {
@@ -847,10 +874,113 @@ export default function Home() {
                     disabled={loading}
                   />
 
+                  {/* Video Options */}
+                  <div className="space-y-4">
+                    {/* Loop Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Loop Video</label>
+                      <Switch
+                        checked={isLooping}
+                        onCheckedChange={setIsLooping}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Extend Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => {
+                          setIsExtending(checked);
+                          if (checked) clearStartImage();
+                        }}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Conditional Content */}
+                    {isExtending ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">
+                          Select Video to Extend
+                        </label>
+                        <select
+                          className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                          value={selectedVideoId || ''}
+                          onChange={(e) => setSelectedVideoId(e.target.value)}
+                          disabled={loading}
+                        >
+                          <option value="">Select a video...</option>
+                          {generations
+                            .filter(g => g.state === 'completed')
+                            .map((gen) => (
+                              <option key={gen.id} value={gen.id}>
+                                {gen.prompt}
+                              </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      /* Start Image Upload */
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Start Image (Optional)
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <label className="flex-1">
+                            <div className={`
+                              flex items-center justify-center w-full h-32 
+                              border-2 border-dashed border-gray-700 rounded-lg 
+                              cursor-pointer hover:border-purple-500
+                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                            `}>
+                              {startImageUrl ? (
+                                <div className="relative w-full h-full">
+                                  <img
+                                    src={startImageUrl}
+                                    alt="Start frame"
+                                    className="w-full h-full object-cover rounded-lg"
+                                  />
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      clearStartImage();
+                                    }}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <Upload size={24} className="text-gray-500" />
+                                  <span className="mt-2 text-sm text-gray-500">
+                                    {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleImageUpload(file);
+                              }}
+                              className="hidden"
+                              disabled={loading}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex justify-end">
                     <button
                       type="submit"
-                      disabled={loading || !prompt || !!paymentRequest}
+                      disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
                       className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                     >
                       {loading ? (
@@ -913,71 +1043,40 @@ export default function Home() {
               >
                 <X size={20} />
               </button>
-              </div>
+            </div>
             <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
             
-            {bitcoinProvider ? (
-              <div className="space-y-4">
-                <p className="text-sm text-green-400">Wallet Connected!</p>
+            <div className="flex justify-center p-4 bg-white rounded-lg">
+              <QRCode 
+                value={paymentRequest} 
+                size={Math.min(window.innerWidth - 80, 256)}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
+                <input
+                  type="text"
+                  value={paymentRequest}
+                  readOnly
+                  className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
+                />
                 <button
-                  onClick={async () => {
-                    try {
-                      await bitcoinProvider.sendPayment(paymentRequest);
-                    } catch (error) {
-                      console.error('Payment error:', error);
-                      setError('Payment failed. Please try again.');
-                    }
-                  }}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                  onClick={handleCopyInvoice}
+                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
                 >
-                  Pay with Connected Wallet
+                  {hasCopied ? <Check size={16} /> : <Copy size={16} />}
+                  {hasCopied ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-            ) : (
-              <>
-                <BitcoinPayment
-                  onConnect={setBitcoinProvider}
-                  onDisconnect={() => setBitcoinProvider(null)}
-                />
-                <div className="relative text-center my-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-800"></div>
-                  </div>
-                  <div className="relative">
-                    <span className="px-2 bg-[#1a1a1a] text-gray-500">or pay manually</span>
-                  </div>
-                </div>
-                <div className="flex justify-center p-4 bg-white rounded-lg">
-                  <QRCode 
-                    value={paymentRequest} 
-                    size={Math.min(window.innerWidth - 80, 256)}
-                    level="H"
-                    includeMargin={true}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
-                    <input
-                      type="text"
-                      value={paymentRequest}
-                      readOnly
-                      className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
-                    />
-                    <button
-                      onClick={handleCopyInvoice}
-                      className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
-                    >
-                      {hasCopied ? <Check size={16} /> : <Copy size={16} />}
-                      {hasCopied ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-                    <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
-                    Waiting for payment confirmation...
-                  </div>
-                </div>
-              </>
-            )}
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
+                Waiting for payment confirmation...
+              </div>
+            </div>
+
             <button
               onClick={() => {
                 setPaymentRequest(null);
