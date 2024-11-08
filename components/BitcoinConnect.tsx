@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from "react";
-import dynamic from 'next/dynamic';
-import CustomButton from './CustomButton';
+import { Button } from '@getalby/bitcoin-connect-react';
 
 interface BitcoinConnectProps {
   onConnect: (provider: any) => void;
@@ -15,26 +14,22 @@ export const BitcoinPayment = ({ onConnect, onDisconnect }: BitcoinConnectProps)
     setIsClient(true);
   }, []);
 
-  const DynamicButton = dynamic(
-    () => import('@getalby/bitcoin-connect-react').then((mod) => {
-      const handleConnect = (provider: any) => {
-        onConnect(provider);
-        (window as any).webln = provider;
-      };
-
-      return () => <mod.Button onClick={handleConnect} />;
-    }),
-    { ssr: false }
-  );
+  const handleConnect = (provider: any) => {
+    onConnect(provider);
+    (window as any).webln = provider;
+  };
 
   if (!isClient) return null;
 
   return (
     <div className="flex flex-col items-center space-y-4">
-      <DynamicButton />
-      <CustomButton onClick={onDisconnect} variant="ghost">
+      <Button onClick={handleConnect} />
+      <button
+        onClick={onDisconnect}
+        className="text-sm text-gray-400 hover:text-gray-300"
+      >
         Disconnect Wallet
-      </CustomButton>
+      </button>
     </div>
   );
 };
