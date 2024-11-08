@@ -4,6 +4,12 @@
 
 :root {
   color-scheme: dark;
+  
+  /* Add these variables for the Switch component */
+  --background: #111111;
+  --foreground: #ffffff;
+  --ring: rgb(168, 85, 247);
+  --ring-offset: #111111;
 }
 
 body {
