@@ -1,35 +1,57 @@
 'use client'
-import { useEffect, useState } from "react";
-import { Button } from '@getalby/bitcoin-connect-react';
+import { useState } from 'react';
+import { requestProvider, launchModal, launchPaymentModal } from '@getalby/bitcoin-connect-react';
 
 interface BitcoinConnectProps {
   onConnect: (provider: any) => void;
   onDisconnect: () => void;
 }
 
-export const BitcoinPayment = ({ onConnect, onDisconnect }: BitcoinConnectProps) => {
-  const [isClient, setIsClient] = useState(false);
+const BitcoinConnect = ({ onConnect, onDisconnect }: BitcoinConnectProps) => {
+  const [isConnected, setIsConnected] = useState(false);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  const handleConnect = (provider: any) => {
-    onConnect(provider);
-    (window as any).webln = provider;
+  const handleConnect = async () => {
+    try {
+      const provider = await requestProvider();
+      setIsConnected(true);
+      onConnect(provider);
+      // Use the provider to interact with the user's lightning wallet
+      await provider.sendPayment('lnbc...');
+    } catch (error) {
+      console.error('Error connecting to wallet:', error);
+      onDisconnect();
+    }
   };
 
-  if (!isClient) return null;
+  const handleReceivePayment = async () => {
+    const { setPaid } = launchPaymentModal({
+      invoice: 'lnbc...',
+      onPaid: (response) => {
+        // Handle successful payment
+        console.log('Payment received:', response);
+      },
+      onCancelled: () => {
+        // Handle cancelled payment
+        console.log('Payment cancelled');
+      },
+    });
+
+    // Implement logic to check if the invoice has been paid
+    // and call the `setPaid` function when that happens
+  };
 
   return (
-    <div className="flex flex-col items-center space-y-4">
-      <Button onClick={handleConnect} />
-      <button
-        onClick={onDisconnect}
-        className="text-sm text-gray-400 hover:text-gray-300"
-      >
-        Disconnect Wallet
-      </button>
+    <div>
+      {!isConnected ? (
+        <button onClick={handleConnect}>Connect Wallet</button>
+      ) : (
+        <div>
+          <button onClick={handleReceivePayment}>Receive Payment</button>
+          <button onClick={onDisconnect}>Disconnect Wallet</button>
+        </div>
+      )}
     </div>
   );
 };
+
+export default BitcoinConnect;
