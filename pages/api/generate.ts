@@ -1,5 +1,5 @@
-// pages/api/generate.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { verifyPayment } from '../../middleware/paymentVerification';
 
 export default async function handler(
   req: NextApiRequest,
@@ -14,10 +14,20 @@ export default async function handler(
     return res.status(500).json({ message: 'API configuration error' });
   }
 
+  // Payment verification
+  const { paymentHash } = req.body;
+  if (!paymentHash) {
+    return res.status(400).json({ error: 'Payment hash required' });
+  }
+
+  const isPaid = await verifyPayment(paymentHash);
+  if (!isPaid) {
+    return res.status(402).json({ error: 'Payment required' });
+  }
+
   try {
     const { prompt, loop = true, startImageUrl, extend, videoId } = req.body;
     console.log('Starting generation with prompt:', prompt);
-
     const requestBody: any = {
       prompt,
       aspect_ratio: "16:9",
