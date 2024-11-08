@@ -2,8 +2,13 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
-import { Menu, X, Copy, Check } from 'lucide-react';
+import { Menu, X, Copy, Check, Settings, Upload, RefreshCw } from 'lucide-react';
+import { Switch } from "../components/ui/switch";
 import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
+import { Navigation } from '../components/Navigation';
+import { SettingsModal } from '../components/SettingsModal';
+import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
+
 // Types
 interface StoredGeneration {
   id: string;
@@ -91,8 +96,8 @@ const getStatusMessage = (state: string) => {
       return 'Processing...';
   }
 };
-
 export default function Home() {
+  // State variables
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -102,23 +107,37 @@ export default function Home() {
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
 
-  // State variables for payment
+  // Payment state
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
 
-  // State variables for Nostr sharing
+  // Luma features state
+  const [isLooping, setIsLooping] = useState(true);
+  const [startImageUrl, setStartImageUrl] = useState<string | null>(null);
+  const [isExtending, setIsExtending] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Nostr state
   const [showNostrModal, setShowNostrModal] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
 
+  // Effects
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
       setGenerations(stored);
       if (stored.length > 0) {
         setSelectedGeneration(stored[0]);
+      }
+      const savedSettings = localStorage.getItem(`settings-${pubkey}`);
+      if (savedSettings) {
+        setUserSettings(JSON.parse(savedSettings));
       }
     }
   }, [pubkey]);
@@ -147,12 +166,42 @@ export default function Home() {
     loadProfile();
   }, [pubkey]);
 
+  // Core functions
   const connectNostr = async () => {
     try {
       const key = await getNostrPublicKey();
       setPubkey(key);
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
+    }
+  };
+
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploadingImage(true);
+      setError('');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('https://nostr.build/api/v2/upload/files', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setStartImageUrl(result.data[0].url);
+        return result.data[0].url;
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (err) {
+      setError('Failed to upload image. Please try again.');
+      return null;
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -171,13 +220,16 @@ export default function Home() {
   const copyVideoUrl = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      // Could add a toast notification here
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   };
 
-  // waitForPayment function
+  const clearStartImage = () => {
+    setStartImageUrl(null);
+  };
+
+  // Payment handling
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
@@ -220,22 +272,21 @@ export default function Home() {
 
     return true;
   };
-
-  // generateVideo function
+  // Generate video function
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
 
-    // Inside generateVideo function, after the initial checks
-if (!isPromptSafe(prompt)) {
-  setError(getPromptFeedback(prompt));
-  return;
-}
+    if (!isPromptSafe(prompt)) {
+      setError(getPromptFeedback(prompt));
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
+      // Handle LNBits payment
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
         headers: {
@@ -264,12 +315,25 @@ if (!isPromptSafe(prompt)) {
       setPaymentRequest(null);
       setPaymentHash(null);
 
+      // Prepare generation request with new options
+      const generationBody: any = { 
+        prompt,
+        loop: isLooping
+      };
+
+      if (isExtending && selectedVideoId) {
+        generationBody.extend = true;
+        generationBody.videoId = selectedVideoId;
+      } else if (startImageUrl) {
+        generationBody.startImageUrl = startImageUrl;
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(generationBody),
       });
 
       if (!response.ok) {
@@ -410,10 +474,8 @@ if (!isPromptSafe(prompt)) {
   };
 
   const publishNote = async () => {
-    if (!pubkey || !window.nostr) {
-      setPublishError(
-        'Nostr extension not found. Please install a NIP-07 browser extension.'
-      );
+    if (!pubkey || !window.nostr || !selectedGeneration) {
+      setPublishError('Not connected or no video selected.');
       return;
     }
 
@@ -423,44 +485,111 @@ if (!isPromptSafe(prompt)) {
     let relayConnections: ReturnType<typeof relayInit>[] = [];
 
     try {
-      const event: Partial<Event> = {
-        kind: 1,
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [],
-        content: noteContent,
-      };
+      if (userSettings.publicGenerations) {
+        // First publish the animal kind (75757)
+        const animalEvent: Partial<Event> = {
+          kind: 75757,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['title', selectedGeneration.prompt],
+            ['r', selectedGeneration.videoUrl!],
+            ['type', 'animal-sunset']
+          ],
+          content: selectedGeneration.videoUrl!,
+        };
 
-      event.id = getEventHash(event as Event);
-      const signedEvent = await window.nostr.signEvent(event as Event);
+        animalEvent.id = getEventHash(animalEvent as Event);
+        const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
 
-      if (signedEvent.id !== event.id) {
-        throw new Error('Event ID mismatch after signing.');
-      }
+        // History event (8008135)
+        const historyEvent: Partial<Event> = {
+          kind: 8008135,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['text-to-speech', selectedGeneration.prompt],
+            ['r', selectedGeneration.videoUrl!],
+            ['e', signedAnimalEvent.id],
+            ['public', 'true']
+          ],
+          content: JSON.stringify({
+            prompt: selectedGeneration.prompt,
+            videoUrl: selectedGeneration.videoUrl,
+            createdAt: selectedGeneration.createdAt,
+            state: selectedGeneration.state,
+            public: true
+          }),
+        };
 
-      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-      relayConnections = relayUrls.map((url) => relayInit(url));
+        historyEvent.id = getEventHash(historyEvent as Event);
+        const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
 
-      await Promise.all(
-        relayConnections.map((relay) => {
-          return new Promise<void>((resolve, reject) => {
-            relay.on('connect', async () => {
-              try {
-                await relay.publish(signedEvent);
-                resolve();
-              } catch (error) {
-                reject(error);
-              }
+        const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+        relayConnections = relayUrls.map((url) => relayInit(url));
+
+        await Promise.all(
+          relayConnections.map((relay) => {
+            return new Promise<void>((resolve, reject) => {
+              relay.on('connect', async () => {
+                try {
+                  await relay.publish(signedAnimalEvent);
+                  await relay.publish(signedHistoryEvent);
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
+              });
+
+              relay.on('error', () => {
+                reject(new Error(`Failed to connect to relay ${relay.url}`));
+              });
+
+              relay.connect();
             });
+          })
+        );
+      } else {
+        // If private, only publish history event
+        const historyEvent: Partial<Event> = {
+          kind: 8008135,
+          pubkey,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['text-to-speech', selectedGeneration.prompt],
+            ['r', selectedGeneration.videoUrl!],
+            ['public', 'false']
+          ],
+          content: JSON.stringify({
+            prompt: selectedGeneration.prompt,
+            videoUrl: selectedGeneration.videoUrl,
+            createdAt: selectedGeneration.createdAt,
+            state: selectedGeneration.state,
+            public: false
+          }),
+        };
 
-            relay.on('error', () => {
-              reject(new Error(`Failed to connect to relay ${relay.url}`));
-            });
+        historyEvent.id = getEventHash(historyEvent as Event);
+        const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
 
-            relay.connect();
+        const relay = relayInit('wss://relay.damus.io');
+        await new Promise<void>((resolve, reject) => {
+          relay.on('connect', async () => {
+            try {
+              await relay.publish(signedHistoryEvent);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
           });
-        })
-      );
+
+          relay.on('error', () => {
+            reject(new Error('Failed to connect to relay'));
+          });
+
+          relay.connect();
+        });
+      }
 
       setShowNostrModal(false);
     } catch (err) {
@@ -473,7 +602,6 @@ if (!isPromptSafe(prompt)) {
       setPublishing(false);
     }
   };
-
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -521,9 +649,16 @@ if (!isPromptSafe(prompt)) {
         >
           {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <h1 className="text-xl font-bold">Animal Sunset</h1>
+        <Navigation />
         {profile && (
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-gray-700 rounded-lg"
+              aria-label="Settings"
+            >
+              <Settings size={20} />
+            </button>
             {profile.picture && (
               <img
                 src={profile.picture}
@@ -584,9 +719,16 @@ if (!isPromptSafe(prompt)) {
         <div className="flex-1 flex flex-col w-full md:w-auto">
           {/* Desktop Header */}
           <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
-            <h1 className="text-2xl font-bold">Animal Sunset</h1>
+            <Navigation />
             {profile && (
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 hover:bg-gray-700 rounded-lg"
+                  aria-label="Settings"
+                >
+                  <Settings size={20} />
+                </button>
                 {profile.picture && (
                   <img
                     src={profile.picture}
@@ -732,10 +874,113 @@ if (!isPromptSafe(prompt)) {
                     disabled={loading}
                   />
 
+                  {/* Video Options */}
+                  <div className="space-y-4">
+                    {/* Loop Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Loop Video</label>
+                      <Switch
+                        checked={isLooping}
+                        onCheckedChange={setIsLooping}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Extend Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => {
+                          setIsExtending(checked);
+                          if (checked) clearStartImage();
+                        }}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Conditional Content */}
+                    {isExtending ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">
+                          Select Video to Extend
+                        </label>
+                        <select
+                          className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                          value={selectedVideoId || ''}
+                          onChange={(e) => setSelectedVideoId(e.target.value)}
+                          disabled={loading}
+                        >
+                          <option value="">Select a video...</option>
+                          {generations
+                            .filter(g => g.state === 'completed')
+                            .map((gen) => (
+                              <option key={gen.id} value={gen.id}>
+                                {gen.prompt}
+                              </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      /* Start Image Upload */
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Start Image (Optional)
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <label className="flex-1">
+                            <div className={`
+                              flex items-center justify-center w-full h-32 
+                              border-2 border-dashed border-gray-700 rounded-lg 
+                              cursor-pointer hover:border-purple-500
+                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                            `}>
+                              {startImageUrl ? (
+                                <div className="relative w-full h-full">
+                                  <img
+                                    src={startImageUrl}
+                                    alt="Start frame"
+                                    className="w-full h-full object-cover rounded-lg"
+                                  />
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      clearStartImage();
+                                    }}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <Upload size={24} className="text-gray-500" />
+                                  <span className="mt-2 text-sm text-gray-500">
+                                    {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleImageUpload(file);
+                              }}
+                              className="hidden"
+                              disabled={loading}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex justify-end">
                     <button
                       type="submit"
-                      disabled={loading || !prompt || !!paymentRequest}
+                      disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
                       className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                     >
                       {loading ? (
@@ -800,6 +1045,7 @@ if (!isPromptSafe(prompt)) {
               </button>
             </div>
             <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
                 value={paymentRequest} 
@@ -808,6 +1054,7 @@ if (!isPromptSafe(prompt)) {
                 includeMargin={true}
               />
             </div>
+
             <div className="space-y-2">
               <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
                 <input
@@ -829,6 +1076,7 @@ if (!isPromptSafe(prompt)) {
                 Waiting for payment confirmation...
               </div>
             </div>
+
             <button
               onClick={() => {
                 setPaymentRequest(null);
@@ -887,6 +1135,14 @@ if (!isPromptSafe(prompt)) {
           </div>
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        pubkey={pubkey}
+        onSettingsChange={setUserSettings}
+      />
     </div>
   );
 }
