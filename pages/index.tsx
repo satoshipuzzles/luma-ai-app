@@ -8,6 +8,7 @@ import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { useToast } from "../components/ui/toast";
 
 // Types
 interface StoredGeneration {
@@ -34,6 +35,7 @@ declare global {
     };
   }
 }
+const { toast, showToast, hideToast } = useToast();
 
 // Utility functions
 const formatDate = (dateString: string) => {
@@ -217,13 +219,23 @@ export default function Home() {
     }
   };
 
-  const copyVideoUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
+const copyVideoUrl = async (url: string) => {
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast({ 
+      title: "Copied!", 
+      description: "Video URL copied to clipboard",
+      onClose: hideToast 
+    });
+  } catch (err) {
+    console.error('Failed to copy:', err);
+    showToast({
+      title: "Error",
+      description: "Failed to copy URL",
+      onClose: hideToast
+    });
+  }
+};
 
   const clearStartImage = () => {
     setStartImageUrl(null);
@@ -785,29 +797,34 @@ export default function Home() {
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <span>Copy URL</span>
-                          </button>
-                          <a
-                            href={selectedGeneration.videoUrl}
-                            download
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <span>Download</span>
-                          </a>
-                          <button
-                            onClick={() => {
-                              setNoteContent(
-                                `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
-                              );
-                              setShowNostrModal(true);
-                            }}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
+                   {/* Action Buttons */}
+<div className="flex flex-wrap gap-2">
+  <button
+    onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+    className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+  >
+    <span>Copy URL</span>
+  </button>
+  
+    href={selectedGeneration.videoUrl}
+    download
+    className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+  >
+    <span>Download</span>
+  </a>
+  <button
+    onClick={() => {
+      setNoteContent(
+        `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
+      );
+      setShowNostrModal(true);
+    }}
+    className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+  >
+    <span>Share</span>
+  </button>
+</div>
+                
                             <span>Share</span>
                           </button>
                         </div>
