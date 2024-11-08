@@ -986,5 +986,8 @@ return (
     onClose={hideToast}
   />
 )}
+
+// Close the main div wrapper and component function
 </div>
 );
+}
