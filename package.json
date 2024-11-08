@@ -21,7 +21,6 @@
     "bad-words": "^3.0.4",
     "nostr-tools": "^1.12.0",
     "lucide-react": "^0.294.0",
-    "@getalby/bitcoin-connect-react": "^1.0.4",
     "@shadcn/ui": "*"
   },
   "devDependencies": {
