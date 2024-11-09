@@ -496,21 +496,10 @@ export default function Home() {
     setPublishing(true);
     setPublishError('');
 
-    let relayConnections: ReturnType<typeof relayInit
-      const publishNote = async () => {
-  if (!pubkey || !window.nostr || !selectedGeneration) {
-    setPublishError('Not connected or no video selected.');
-    return;
-  }
+    const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+    const relayConnections = relayUrls.map((url) => relayInit(url));
 
-  setPublishing(true);
-  setPublishError('');
-
-  let relayConnections: ReturnType<typeof relayInit>[] = [];
-
-  try {
-    if (userSettings.publicGenerations) {
-      // First publish the animal kind (75757)
+    try {
       const animalEvent: Partial<Event> = {
         kind: 75757,
         pubkey,
@@ -526,7 +515,6 @@ export default function Home() {
       animalEvent.id = getEventHash(animalEvent as Event);
       const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
 
-      // History event (8008135)
       const historyEvent: Partial<Event> = {
         kind: 8008135,
         pubkey,
@@ -549,9 +537,6 @@ export default function Home() {
       historyEvent.id = getEventHash(historyEvent as Event);
       const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
 
-      const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-      relayConnections = relayUrls.map((url) => relayInit(url));
-
       await Promise.all(
         relayConnections.map((relay) => {
           return new Promise<void>((resolve, reject) => {
@@ -573,439 +558,378 @@ export default function Home() {
           });
         })
       );
-    } else {
-      // If private, only publish history event
-      const historyEvent: Partial<Event> = {
-        kind: 8008135,
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [
-          ['text-to-speech', selectedGeneration.prompt],
-          ['r', selectedGeneration.videoUrl!],
-          ['public', 'false']
-        ],
-        content: JSON.stringify({
-          prompt: selectedGeneration.prompt,
-          videoUrl: selectedGeneration.videoUrl,
-          createdAt: selectedGeneration.createdAt,
-          state: selectedGeneration.state,
-          public: false
-        }),
-      };
 
-      historyEvent.id = getEventHash(historyEvent as Event);
-      const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
-
-      const relay = relayInit('wss://relay.damus.io');
-      await new Promise<void>((resolve, reject) => {
-        relay.on('connect', async () => {
-          try {
-            await relay.publish(signedHistoryEvent);
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        });
-
-        relay.on('error', () => {
-          reject(new Error('Failed to connect to relay'));
-        });
-
-        relay.connect();
-      });
+    } catch (err) {
+      console.error('Error publishing note:', err);
+      setPublishError('Failed to publish note. Please try again.');
+    } finally {
+      relayConnections.forEach((relay) => relay.close());
+      setPublishing(false);
     }
+  };
 
-    setShowNostrModal(false);
-  } catch (err) {
-    console.error('Error publishing note:', err);
-    setPublishError(
-      err instanceof Error ? err.message : 'Failed to publish note. Please try again.'
+  // Render connection screen if not connected to Nostr
+  if (!pubkey) {
+    return (
+      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full p-6 space-y-6">
+          <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
+          <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
+            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
+            <button
+              onClick={connectNostr}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
+            >
+              Connect with Nostr
+            </button>
+            {error && (
+              <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     );
-  } finally {
-    relayConnections.forEach((relay) => relay.close());
-    setPublishing(false);
   }
-};
 
-// If not connected with Nostr, show the connection screen
-if (!pubkey) {
   return (
-    <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
-      <div className="max-w-md w-full p-6 space-y-6">
-        <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
-        <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-          <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
-          <button
-            onClick={connectNostr}
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
-          >
-            Connect with Nostr
-          </button>
-          {error && (
-            <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-              {error}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Main Content after connecting with Nostr
-return (
-  <>
-    {/* Mobile Header */}
-    <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
-      <button
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="text-white p-2 hover:bg-gray-700 rounded-lg"
-        aria-label="Toggle menu"
-      >
-        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
-      <Navigation />
-      {profile && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 hover:bg-gray-700 rounded-lg"
-            aria-label="Settings"
-          >
-            <Settings size={20} />
-          </button>
-          {profile.picture && (
-            <img
-              src={profile.picture}
-              alt="Profile"
-              className="w-8 h-8 rounded-full"
-            />
-          )}
-        </div>
-      )}
-    </div>
-
-    <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
-      {/* Sidebar */}
-      <div
-        className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
-          transition-transform duration-300 ease-in-out
-          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-        `}
-      >
-        <div className="p-6 space-y-4 h-full overflow-y-auto">
-          <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
-          {generations.length > 0 ? (
-            <ul className="space-y-2">
-              {generations.map((generation) => (
-                <li
-                  key={generation.id}
-                  className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
-                    selectedGeneration?.id === generation.id
-                      ? 'bg-purple-700'
-                      : 'hover:bg-gray-700'
-                  }`}
-                  onClick={() => setSelectedGeneration(generation)}
-                >
-                  <div className="text-sm font-medium">{generation.prompt}</div>
-                  <div className="text-xs text-gray-400">
-                    {formatDate(generation.createdAt)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-400">No generations yet.</p>
-          )}
-        </div>
+    <>
+      <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="text-white p-2 hover:bg-gray-700 rounded-lg"
+          aria-label="Toggle menu"
+        >
+          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+        <Navigation />
+        {profile && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-gray-700 rounded-lg"
+              aria-label="Settings"
+            >
+              <Settings size={20} />
+            </button>
+            {profile.picture && (
+              <img
+                src={profile.picture}
+                alt="Profile"
+                className="w-8 h-8 rounded-full"
+              />
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Overlay when sidebar is open on mobile */}
-      {isSidebarOpen && (
+      <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col w-full md:w-auto">
-        {/* Desktop Header */}
-        <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
-          <Navigation />
-          {profile && (
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setShowSettings(true)}
-                className="p-2 hover:bg-gray-700 rounded-lg"
-                aria-label="Settings"
-              >
-                <Settings size={20} />
-              </button>
-              {profile.picture && (
-                <img
-                  src={profile.picture}
-                  alt="Profile"
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span>{profile.name || 'Anonymous'}</span>
-            </div>
-          )}
+          className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
+            transition-transform duration-300 ease-in-out
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          `}
+        >
+          <div className="p-6 space-y-4 h-full overflow-y-auto">
+            <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
+            {generations.length > 0 ? (
+              <ul className="space-y-2">
+                {generations.map((generation) => (
+                  <li
+                    key={generation.id}
+                    className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
+                      selectedGeneration?.id === generation.id
+                        ? 'bg-purple-700'
+                        : 'hover:bg-gray-700'
+                    }`}
+                    onClick={() => setSelectedGeneration(generation)}
+                  >
+                    <div className="text-sm font-medium">{generation.prompt}</div>
+                    <div className="text-xs text-gray-400">
+                      {formatDate(generation.createdAt)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-400">No generations yet.</p>
+            )}
+          </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-auto p-4">
-          {selectedGeneration ? (
-            <div className="max-w-4xl mx-auto">
-              <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
-                {/* Generation Details */}
-                {/* ... */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        <div className="flex-1 flex flex-col w-full md:w-auto">
+          <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
+            <Navigation />
+            {profile && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 hover:bg-gray-700 rounded-lg"
+                  aria-label="Settings"
+                >
+                  <Settings size={20} />
+                </button>
+                {profile.picture && (
+                  <img
+                    src={profile.picture}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full"
+                  />
+                )}
+                <span>{profile.name || 'Anonymous'}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-auto p-4">
+            {selectedGeneration ? (
+              <div className="max-w-4xl mx-auto">
+                <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
+                  {/* Generation Details */}
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-3xl mx-auto">
+                <form
+                  onSubmit={generateVideo}
+                  className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
+                >
+                  {/* Prompt Input */}
+                  {/* Video Options */}
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Start Image (Optional)
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex-1">
+                          <div
+                            className={`
+                              flex items-center justify-center w-full h-32 
+                              border-2 border-dashed border-gray-700 rounded-lg 
+                              cursor-pointer hover:border-purple-500
+                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                            `}
+                          >
+                            {startImageUrl ? (
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={startImageUrl}
+                                  alt="Start frame"
+                                  className="w-full h-full object-cover rounded-lg"
+                                />
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    clearStartImage();
+                                  }}
+                                  className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center">
+                                <Upload size={24} className="text-gray-500" />
+                                <span className="mt-2 text-sm text-gray-500">
+                                  {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleImageUpload(file);
+                            }}
+                            className="hidden"
+                            disabled={loading}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
+                      className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200 flex justify-end"
+                    >
+                      {loading ? (
+                        <span className="flex items-center space-x-2">
+                          <svg
+                            className="animate-spin h-5 w-5"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            ></circle>
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            ></path>
+                          </svg>
+                          <span>Generating...</span>
+                        </span>
+                      ) : (
+                        'Generate Video'
+                      )}
+                    </button>
+
+                    {error && (
+                      <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                        <p className="font-medium">Error</p>
+                        <p className="text-sm">{error}</p>
+                      </div>
+                    )}
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
+      {paymentRequest && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">Pay to Generate Video</h2>
+              <button
+                onClick={() => {
+                  setPaymentRequest(null);
+                  setPaymentHash(null);
+                  setLoading(false);
+                }}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            <div className="flex justify-center p-4 bg-white rounded-lg">
+              <QRCode 
+                value={paymentRequest} 
+                size={Math.min(window.innerWidth - 80, 256)}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
+                <input
+                  type="text"
+                  value={paymentRequest}
+                  readOnly
+                  className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
+                />
+                <button
+                  onClick={handleCopyInvoice}
+                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+                >
+                  {hasCopied ? <Check size={16} /> : <Copy size={16} />}
+                  {hasCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
+                Waiting for payment confirmation...
               </div>
             </div>
-          ) : (
-            <div className="max-w-3xl mx-auto">
-              <form
-                onSubmit={generateVideo}
-                className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
-              >
-                {/* Prompt Input */}
-                {/* ... */}
 
-                {/* Video Options */}
-                <div className="space-y-4">
-                  {/* Loop Toggle */}
-                  {/* ... */}
-
-                  {/* Extend Toggle */}
-                  {/* ... */}
-
-                  {/* Start Image Upload */}
-                  <div className="relative">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Start Image (Optional)
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <label className="flex-1">
-                        <div
-                          className={`
-                            flex items-center justify-center w-full h-32 
-                            border-2 border-dashed border-gray-700 rounded-lg 
-                            cursor-pointer hover:border-purple-500
-                            ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                          `}
-                        >
-                          {startImageUrl ? (
-                            <div className="relative w-full h-full">
-                              <img
-                                src={startImageUrl}
-                                alt="Start frame"
-                                className="w-full h-full object-cover rounded-lg"
-                              />
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  clearStartImage();
-                                }}
-                                className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-                              >
-                                <X size={16} />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center">
-                              <Upload size={24} className="text-gray-500" />
-                              <span className="mt-2 text-sm text-gray-500">
-                                {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleImageUpload(file);
-                          }}
-                          className="hidden"
-                          disabled={loading}
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Generate Button */}
-                  <button
-                    type="submit"
-                    disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
-                    className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200 flex justify-end"
-                  >
-                    {loading ? (
-                      <span className="flex items-center space-x-2">
-                        <svg
-                          className="animate-spin h-5 w-5"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          ></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        <span>Generating...</span>
-                      </span>
-                    ) : (
-                      'Generate Video'
-                    )}
-                  </button>
-
-                  {error && (
-                    <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                      <p className="font-medium">Error</p>
-                      <p className="text-sm">{error}</p>
-                    </div>
-                  )}
-                </div>
-              </form>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-// Payment Modal
-{paymentRequest && (
-  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-    <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Pay to Generate Video</h2>
-        <button
-          onClick={() => {
-            setPaymentRequest(null);
-            setPaymentHash(null);
-            setLoading(false);
-          }}
-          className="text-gray-400 hover:text-white"
-          aria-label="Close"
-        >
-          <X size={20} />
-        </button>
-      </div>
-      <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
-      <div className="flex justify-center p-4 bg-white rounded-lg">
-        <QRCode 
-          value={paymentRequest} 
-          size={Math.min(window.innerWidth - 80, 256)}
-          level="H"
-          includeMargin={true}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
-          <input
-            type="text"
-            value={paymentRequest}
-            readOnly
-            className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
-          />
-          <button
-            onClick={handleCopyInvoice}
-            className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
-          >
-            {hasCopied ? <Check size={16} /> : <Copy size={16} />}
-            {hasCopied ? 'Copied!' : 'Copy'}
-          </button>
-        </div>
-        <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-          <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
-          Waiting for payment confirmation...
-        </div>
-      </div>
-
-      <button
-        onClick={() => {
-          setPaymentRequest(null);
-          setPaymentHash(null);
-          setLoading(false);
-        }}
-        className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-      >
-        Cancel
-      </button>
-    </div>
-  </div>
-)}
-
-// Nostr Note Modal
-{showNostrModal && (
-  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-    <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Share on Nostr</h2>
-        <button
-          onClick={() => setShowNostrModal(false)}
-          className="text-gray-400 hover:text-white"
-          aria-label="Close"
-        >
-          <X size={20} />
-        </button>
-      </div>
-      <textarea
-        className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-        rows={4}
-        value={noteContent}
-        onChange={(e) => setNoteContent(e.target.value)}
-        placeholder="Write your note..."
-      />
-      {publishError && (
-        <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-          {publishError}
+            <button
+              onClick={() => {
+                setPaymentRequest(null);
+                setPaymentHash(null);
+                setLoading(false);
+              }}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
-      <div className="flex flex-col md:flex-row gap-2">
-        <button
-          onClick={() => setShowNostrModal(false)}
-          className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={publishNote}
-          disabled={publishing}
-          className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-        >
-          {publishing ? 'Publishing...' : 'Publish'}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
 
-// Settings Modal
-<SettingsModal
-  isOpen={showSettings}
-  onClose={() => setShowSettings(false)}
-  pubkey={pubkey}
-  onSettingsChange={setUserSettings}
-/>
+      {showNostrModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">Share on Nostr</h2>
+              <button
+                onClick={() => setShowNostrModal(false)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <textarea
+              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+              rows={4}
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Write your note..."
+            />
+            {publishError && (
+              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                {publishError}
+              </div>
+            )}
+            <div className="flex flex-col md:flex-row gap-2">
+              <button
+                onClick={() => setShowNostrModal(false)}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={publishNote}
+                disabled={publishing}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
+                {publishing ? 'Publishing...' : 'Publish'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-// Toast Component
-{toast && (
-  <Toast
-    title={toast.title || "Default Title"}
-    description={toast.description || "Default Description"}
-    onClose={hideToast}
-  />
-)}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        pubkey={pubkey}
+        onSettingsChange={setUserSettings}
+      />
+
+      {toast && (
+        <Toast
+          title={toast.title || "Default Title"}
+          description={toast.description || "Default Description"}
+          onClose={hideToast}
+        />
+      )}
+    </>
+  );
+}
