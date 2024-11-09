@@ -917,7 +917,7 @@ export default function Home() {
                         checked={isExtending}
                         onCheckedChange={(checked) => {
                           setIsExtending(checked);
-                          if (checked) clearStartImage();
+                          if (checked) setStartImage();
                         }}
                         disabled={loading}
                       />
