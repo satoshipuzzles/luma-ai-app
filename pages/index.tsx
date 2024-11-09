@@ -40,7 +40,7 @@ interface Profile {
   about?: string;
 }
 
-interface NostrWindow extends Window {
+/*interface NostrWindow extends Window {
   nostr?: {
     getPublicKey(): Promise<string>;
     signEvent(event: any): Promise<any>;
@@ -50,6 +50,7 @@ interface NostrWindow extends Window {
 declare global {
   interface Window extends NostrWindow {}
 }
+*/
 
 // Constants
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
