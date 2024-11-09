@@ -1177,6 +1177,3 @@ export default function Home() {
     description={toast.description || "Default Description"}
     onClose={hideToast}
   />
-)}
-</div>
-);
