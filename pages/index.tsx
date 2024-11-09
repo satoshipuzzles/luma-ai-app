@@ -1046,6 +1046,8 @@ export default function Home() {
     <p className="text-sm">{error}</p>
   </div>
 )}
+</> 
+);              
 </form>
 </div>
 )}
