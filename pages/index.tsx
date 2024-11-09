@@ -657,107 +657,108 @@ export default function Home() {
         <meta property="og:type" content="website" />
       </Head>
   </div>
-);
-      {/* Mobile Header */}
-      <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
-        <button
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="text-white p-2 hover:bg-gray-700 rounded-lg"
-          aria-label="Toggle menu"
-        >
-          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-        <Navigation />
-        {profile && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 hover:bg-gray-700 rounded-lg"
-              aria-label="Settings"
-            >
-              <Settings size={20} />
-            </button>
-            {profile.picture && (
-              <img
-                src={profile.picture}
-                alt="Profile"
-                className="w-8 h-8 rounded-full"
-              />
-            )}
-          </div>
-        )}
+);return (
+  <>
+    {/* Mobile Header */}
+    <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
+      <button
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        className="text-white p-2 hover:bg-gray-700 rounded-lg"
+        aria-label="Toggle menu"
+      >
+        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+      <Navigation />
+      {profile && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-gray-700 rounded-lg"
+            aria-label="Settings"
+          >
+            <Settings size={20} />
+          </button>
+          {profile.picture && (
+            <img
+              src={profile.picture}
+              alt="Profile"
+              className="w-8 h-8 rounded-full"
+            />
+          )}
+        </div>
+      )}
+    </div>
+
+    <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
+      {/* Sidebar */}
+      <div
+        className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
+          transition-transform duration-300 ease-in-out
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}
+      >
+        <div className="p-6 space-y-4 h-full overflow-y-auto">
+          <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
+          {generations.length > 0 ? (
+            <ul className="space-y-2">
+              {generations.map((generation) => (
+                <li
+                  key={generation.id}
+                  className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
+                    selectedGeneration?.id === generation.id
+                      ? 'bg-purple-700'
+                      : 'hover:bg-gray-700'
+                  }`}
+                  onClick={() => setSelectedGeneration(generation)}
+                >
+                  <div className="text-sm font-medium">{generation.prompt}</div>
+                  <div className="text-xs text-gray-400">
+                    {formatDate(generation.createdAt)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-400">No generations yet.</p>
+          )}
+        </div>
       </div>
 
-      <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
-        {/* Sidebar */}
-        <div 
-          className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
-            transition-transform duration-300 ease-in-out
-            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          `}
-        >
-          <div className="p-6 space-y-4 h-full overflow-y-auto">
-            <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
-            {generations.length > 0 ? (
-              <ul className="space-y-2">
-                {generations.map((generation) => (
-                  <li
-                    key={generation.id}
-                    className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
-                      selectedGeneration?.id === generation.id
-                        ? 'bg-purple-700'
-                        : 'hover:bg-gray-700'
-                    }`}
-                    onClick={() => setSelectedGeneration(generation)}
-                  >
-                    <div className="text-sm font-medium">{generation.prompt}</div>
-                    <div className="text-xs text-gray-400">
-                      {formatDate(generation.createdAt)}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-400">No generations yet.</p>
-            )}
-          </div>
+      {/* Overlay when sidebar is open on mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col w-full md:w-auto">
+        {/* Desktop Header */}
+        <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
+          <Navigation />
+          {profile && (
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 hover:bg-gray-700 rounded-lg"
+                aria-label="Settings"
+              >
+                <Settings size={20} />
+              </button>
+              {profile.picture && (
+                <img
+                  src={profile.picture}
+                  alt="Profile"
+                  className="w-8 h-8 rounded-full"
+                />
+              )}
+              <span>{profile.name || 'Anonymous'}</span>
+            </div>
+          )}
         </div>
-
-        {/* Overlay when sidebar is open on mobile */}
-        {isSidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col w-full md:w-auto">
-          {/* Desktop Header */}
-          <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
-            <Navigation />
-            {profile && (
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="p-2 hover:bg-gray-700 rounded-lg"
-                  aria-label="Settings"
-                >
-                  <Settings size={20} />
-                </button>
-                {profile.picture && (
-                  <img
-                    src={profile.picture}
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full"
-                  />
-                )}
-                <span>{profile.name || 'Anonymous'}</span>
-              </div>
-            )}
-          </div>
-
+        
           {/* Content Area */}
           <div className="flex-1 overflow-auto p-4">
             {selectedGeneration ? (
