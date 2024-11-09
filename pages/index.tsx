@@ -644,20 +644,6 @@ export default function Home() {
 
   // Main Content after connecting with Nostr
   return (
-    <div className="min-h-screen bg-[#111111] text-white">
-      <Head>
-        <title>Animal Sunset 🌞🦒</title>
-        <link rel="icon" href="https://animalsunset.com/favicon.png" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
-        <meta property="og:title" content="Animal Sunset 🌞🦒" />
-        <meta property="og:description" content="AI-powered video generator." />
-        <meta property="og:image" content="https://animalsunset.com/og-image.png" />
-        <meta property="og:url" content="https://animalsunset.com" />
-        <meta property="og:type" content="website" />
-      </Head>
-  </div>
-);return (
   <>
     {/* Mobile Header */}
     <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
@@ -758,440 +744,439 @@ export default function Home() {
             </div>
           )}
         </div>
-        
-          {/* Content Area */}
-          <div className="flex-1 overflow-auto p-4">
-            {selectedGeneration ? (
-              <div className="max-w-4xl mx-auto">
-                <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
-                  {/* Generation Details */}
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                      <h2 className="text-lg md:text-xl font-bold break-words">
-                        {selectedGeneration.prompt}
-                      </h2>
-                      <div className="text-sm text-gray-400">
-                        {formatDate(selectedGeneration.createdAt)}
-                      </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-auto p-4">
+          {selectedGeneration ? (
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
+                {/* Generation Details */}
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <h2 className="text-lg md:text-xl font-bold break-words">
+                      {selectedGeneration.prompt}
+                    </h2>
+                    <div className="text-sm text-gray-400">
+                      {formatDate(selectedGeneration.createdAt)}
                     </div>
-                    <button
-                      onClick={() => setSelectedGeneration(null)}
-                      className="text-gray-400 hover:text-white p-2"
-                      aria-label="Close"
-                    >
-                      <X size={20} />
-                    </button>
+                  </div>
+                  <button
+                    onClick={() => setSelectedGeneration(null)}
+                    className="text-gray-400 hover:text-white p-2"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="border-t border-gray-800 pt-4">
+                  <div className="text-sm text-gray-300 mb-4">
+                    {getStatusMessage(selectedGeneration.state)}
                   </div>
 
-                  <div className="border-t border-gray-800 pt-4">
-                    <div className="text-sm text-gray-300 mb-4">
-                      {getStatusMessage(selectedGeneration.state)}
+                  {selectedGeneration.videoUrl ? (
+                    <div className="space-y-4">
+                      <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+                        <video
+                          key={selectedGeneration.videoUrl}
+                          className="absolute top-0 left-0 w-full h-full object-contain"
+                          controls
+                          autoPlay
+                          loop
+                          playsInline
+                          src={selectedGeneration.videoUrl}
+                        />
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+                          className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                        >
+                          <span>Copy URL</span>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(selectedGeneration.videoUrl!);
+                              const blob = await response.blob();
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `animal-sunset-${Date.now()}.mp4`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                              showToast({
+                                title: "Success",
+                                description: "Video download started",
+                                onClose: hideToast
+                              });
+                            } catch (err) {
+                              console.error('Download error:', err);
+                              showToast({
+                                title: "Error",
+                                description: "Failed to download video",
+                                onClose: hideToast
+                              });
+                            }
+                          }}
+                          className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                        >
+                          <span>Download</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setNoteContent(
+                              `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
+                            );
+                            setShowNostrModal(true);
+                          }}
+                          className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                        >
+                          <span>Share</span>
+                        </button>
+                      </div>
                     </div>
-
-                    {selectedGeneration.videoUrl ? (
-                      <div className="space-y-4">
-                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
-                          <video
-                            key={selectedGeneration.videoUrl}
-                            className="absolute top-0 left-0 w-full h-full object-contain"
-                            controls
-                            autoPlay
-                            loop
-                            playsInline
-                            src={selectedGeneration.videoUrl}
-                          />
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <span>Copy URL</span>
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                const response = await fetch(selectedGeneration.videoUrl!);
-                                const blob = await response.blob();
-                                const url = window.URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `animal-sunset-${Date.now()}.mp4`;
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                window.URL.revokeObjectURL(url);
-                                showToast({
-                                  title: "Success",
-                                  description: "Video download started",
-                                  onClose: hideToast
-                                });
-                              } catch (err) {
-                                console.error('Download error:', err);
-                                showToast({
-                                  title: "Error",
-                                  description: "Failed to download video",
-                                  onClose: hideToast
-                                });
-                              }
-                            }}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <span>Download</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setNoteContent(
-                                `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
-                              );
-                              setShowNostrModal(true);
-                            }}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <span>Share</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : selectedGeneration.state === 'failed' ? (
-                      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                        Generation failed. Please try again.
-                      </div>
-                    ) : (
-                      <div className="space-y-6">
-                        <div className="relative h-48 md:h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="space-y-4 text-center">
-                              <div className="inline-flex items-center space-x-2">
-                                <svg
-                                  className="animate-spin h-6 w-6 text-purple-500"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                  ></circle>
-                                  <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                  ></path>
-                                </svg>
-                                <span className="text-purple-400 font-medium">
-                                  AI is dreaming...
-                                </span>
-                              </div>
-                              <div className="text-sm text-gray-400">
-                                This usually takes 1-2 minutes
-                              </div>
+                  ) : selectedGeneration.state === 'failed' ? (
+                    <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+                      Generation failed. Please try again.
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="relative h-48 md:h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="space-y-4 text-center">
+                            <div className="inline-flex items-center space-x-2">
+                              <svg
+                                className="animate-spin h-6 w-6 text-purple-500"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                ></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                              </svg>
+                              <span className="text-purple-400 font-medium">
+                                AI is dreaming...
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              This usually takes 1-2 minutes
                             </div>
                           </div>
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="max-w-3xl mx-auto">
-                  <form
-                    onSubmit={generateVideo}
-                    className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
-                  >
-                    <textarea
-                      id="prompt-input"
-                      name="prompt"
-                      className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-                      rows={4}
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Describe your video idea..."
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto">
+              <form
+                onSubmit={generateVideo}
+                className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
+              >
+                <textarea
+                  id="prompt-input"
+                  name="prompt"
+                  className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+                  rows={4}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Describe your video idea..."
+                  disabled={loading}
+                />
+
+                {/* Video Options */}
+                <div className="space-y-4">
+                  {/* Loop Toggle */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-300">Loop Video</label>
+                    <Switch
+                      checked={isLooping}
+                      onCheckedChange={setIsLooping}
                       disabled={loading}
                     />
+                  </div>
 
-                    {/* Video Options */}
-                    <div className="space-y-4">
-                      {/* Loop Toggle */}
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-300">Loop Video</label>
-                        <Switch
-                          checked={isLooping}
-                          onCheckedChange={setIsLooping}
-                          disabled={loading}
-                        />
-                      </div>
+                  {/* Extend Toggle */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
+                    <Switch
+                      checked={isExtending}
+                      onCheckedChange={(checked) => {
+                        setIsExtending(checked);
+                        if (checked) clearStartImage();
+                      }}
+                      disabled={loading}
+                    />
+                  </div>
 
-                      {/* Extend Toggle */}
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                        <Switch
-                          checked={isExtending}
-                          onCheckedChange={(checked) => {
-                            setIsExtending(checked);
-                            if (checked) clearStartImage();
-                          }}
-                          disabled={loading}
-                        />
-                      </div>
-
-                      {/* Conditional Content */}
-                      {isExtending ? (
-                        <div className="space-y-2">
-                          <label className="block text-sm font-medium text-gray-300">
-                            Select Video to Extend
-                          </label>
-                          <select
-                            className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
-                            value={selectedVideoId || ''}
-                            onChange={(e) => setSelectedVideoId(e.target.value)}
-                            disabled={loading}
-                          >
-                            <option value="">Select a video...</option>
-                            {generations
-                              .filter(g => g.state === 'completed')
-                              .map((gen) => (
-                                <option key={gen.id} value={gen.id}>
-                                  {gen.prompt}
-                                </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : (
-                        /* Start Image Upload */
-                        <div className="relative">
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Start Image (Optional)
-                          </label>
-                          <div className="flex items-center gap-4">
-                            <label className="flex-1">
-                              <div className={`
-                                flex items-center justify-center w-full h-32 
-                                border-2 border-dashed border-gray-700 rounded-lg 
-                                cursor-pointer hover:border-purple-500
-                                ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                              `}>
-                                {startImageUrl ? (
-                                  <div className="relative w-full h-full">
-                                    <img
-                                      src={startImageUrl}
-                                      alt="Start frame"
-                                      className="w-full h-full object-cover rounded-lg"
-                                    />
-                                    <button
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        clearStartImage();
-                                      }}
-                                      className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-                                    >
-                                      <X size={16} />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col items-center">
-                                    <Upload size={24} className="text-gray-500" />
-                                    <span className="mt-2 text-sm text-gray-500">
-                                      {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleImageUpload(file);
-                                }}
-                                className="hidden"
-                                disabled={loading}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
-                        className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
+                  {/* Conditional Content */}
+                  {isExtending ? (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        Select Video to Extend
+                      </label>
+                      <select
+                        className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                        value={selectedVideoId || ''}
+                        onChange={(e) => setSelectedVideoId(e.target.value)}
+                        disabled={loading}
                       >
-                        {loading ? (
-                          <span className="flex items-center space-x-2">
-                            <svg
-                              className="animate-spin h-5 w-5"
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                              ></circle>
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                              ></path>
-                            </svg>
-                            <span>Generating...</span>
-                          </span>
-                        ) : (
-                          'Generate Video'
-                        )}
-                      </button>
+                        <option value="">Select a video...</option>
+                        {generations
+                          .filter(g => g.state === 'completed')
+                          .map((gen) => (
+                            <option key={gen.id} value={gen.id}>
+                              {gen.prompt}
+                            </option>
+                        ))}
+                      </select>
                     </div>
-
-                    {error && (
-                      <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                        <p className="font-medium">Error</p>
-                        <p className="text-sm">{error}</p>
+                  ) : (
+                    /* Start Image Upload */
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Start Image (Optional)
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex-1">
+                          <div className={`
+                            flex items-center justify-center w-full h-32 
+                            border-2 border-dashed border-gray-700 rounded-lg 
+                            cursor-pointer hover:border-purple-500
+                            ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                          `}>
+                            {startImageUrl ? (
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={startImageUrl}
+                                  alt="Start frame"
+                                  className="w-full h-full object-cover rounded-lg"
+                                />
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    clearStartImage();
+                                  }}
+                                  className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center">
+                                <Upload size={24} className="text-gray-500" />
+                                <span className="mt-2 text-sm text-gray-500">
+                                  {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleImageUpload(file);
+                            }}
+                            className="hidden"
+                            disabled={loading}
+                          />
+                        </label>
                       </div>
-                    )}
-                  </form>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Payment Modal */}
-        {paymentRequest && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-            <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold">Pay to Generate Video</h2>
-                <button
-                  onClick={() => {
-                    setPaymentRequest(null);
-                    setPaymentHash(null);
-                    setLoading(false);
-                  }}
-                  className="text-gray-400 hover:text-white"
-                  aria-label="Close"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
-              <div className="flex justify-center p-4 bg-white rounded-lg">
-                <QRCode 
-                  value={paymentRequest} 
-                  size={Math.min(window.innerWidth - 80, 256)}
-                  level="H"
-                  includeMargin={true}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
-                  <input
-                    type="text"
-                    value={paymentRequest}
-                    readOnly
-                    className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
-                  />
+                <div className="flex justify-end">
                   <button
-                    onClick={handleCopyInvoice}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
-                  >
-                    {hasCopied ? <Check size={16} /> : <Copy size={16} />}
-                    {hasCopied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-                  <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
-                  Waiting for payment confirmation...
-                </div>
-              </div>
+                    type="submit"
+                    disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
+                    className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
+                  >{loading ? (
+  <span className="flex items-center space-x-2">
+    <svg
+      className="animate-spin h-5 w-5"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      ></circle>
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      ></path>
+    </svg>
+    <span>Generating...</span>
+  </span>
+) : (
+  'Generate Video'
+)}
+</button>
+</div>
 
-              <button
-                onClick={() => {
-                  setPaymentRequest(null);
-                  setPaymentHash(null);
-                  setLoading(false);
-                }}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+{error && (
+  <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+    <p className="font-medium">Error</p>
+    <p className="text-sm">{error}</p>
+  </div>
+)}
+</form>
+</div>
+)}
+</div>
+</div>
+</div>
 
-        {/* Nostr Note Modal */}
-        {showNostrModal && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-            <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold">Share on Nostr</h2>
-                <button
-                  onClick={() => setShowNostrModal(false)}
-                  className="text-gray-400 hover:text-white"
-                  aria-label="Close"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <textarea
-                className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-                rows={4}
-                value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
-                placeholder="Write your note..."
-              />
-              {publishError && (
-                <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                  {publishError}
-                </div>
-              )}
-              <div className="flex flex-col md:flex-row gap-2">
-                <button
-                  onClick={() => setShowNostrModal(false)}
-                  className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={publishNote}
-                  disabled={publishing}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                >
-                  {publishing ? 'Publishing...' : 'Publish'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Settings Modal */}
-        <SettingsModal
-          isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-          pubkey={pubkey}
-          onSettingsChange={setUserSettings}
-        />
-
-        {/* Toast Component */}
-        {toast && (
-          <Toast
-            title={toast.title || "Default Title"}
-            description={toast.description || "Default Description"}
-            onClose={hideToast}
-          />
-        )}
+{/* Payment Modal */}
+{paymentRequest && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Pay to Generate Video</h2>
+        <button
+          onClick={() => {
+            setPaymentRequest(null);
+            setPaymentHash(null);
+            setLoading(false);
+          }}
+          className="text-gray-400 hover:text-white"
+          aria-label="Close"
+        >
+          <X size={20} />
+        </button>
       </div>
-    );
-}
+      <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+      <div className="flex justify-center p-4 bg-white rounded-lg">
+        <QRCode 
+          value={paymentRequest} 
+          size={Math.min(window.innerWidth - 80, 256)}
+          level="H"
+          includeMargin={true}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
+          <input
+            type="text"
+            value={paymentRequest}
+            readOnly
+            className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
+          />
+          <button
+            onClick={handleCopyInvoice}
+            className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+          >
+            {hasCopied ? <Check size={16} /> : <Copy size={16} />}
+            {hasCopied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+        <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+          <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
+          Waiting for payment confirmation...
+        </div>
+      </div>
+
+      <button
+        onClick={() => {
+          setPaymentRequest(null);
+          setPaymentHash(null);
+          setLoading(false);
+        }}
+        className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
+
+{/* Nostr Note Modal */}
+{showNostrModal && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Share on Nostr</h2>
+        <button
+          onClick={() => setShowNostrModal(false)}
+          className="text-gray-400 hover:text-white"
+          aria-label="Close"
+        >
+          <X size={20} />
+        </button>
+      </div>
+      <textarea
+        className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+        rows={4}
+        value={noteContent}
+        onChange={(e) => setNoteContent(e.target.value)}
+        placeholder="Write your note..."
+      />
+      {publishError && (
+        <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+          {publishError}
+        </div>
+      )}
+      <div className="flex flex-col md:flex-row gap-2">
+        <button
+          onClick={() => setShowNostrModal(false)}
+          className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={publishNote}
+          disabled={publishing}
+          className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+        >
+          {publishing ? 'Publishing...' : 'Publish'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Settings Modal */}
+<SettingsModal
+  isOpen={showSettings}
+  onClose={() => setShowSettings(false)}
+  pubkey={pubkey}
+  onSettingsChange={setUserSettings}
+/>
+
+{/* Toast Component */}
+{toast && (
+  <Toast
+    title={toast.title || "Default Title"}
+    description={toast.description || "Default Description"}
+    onClose={hideToast}
+  />
+)}
+</div>
+);
