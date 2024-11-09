@@ -472,6 +472,7 @@ export default function Home() {
         <meta property="og:url" content="https://animalsunset.com" />
         <meta property="og:type" content="website" />
       </Head>
+
       {/* Mobile Header */}
       <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
         <button
@@ -501,11 +502,16 @@ export default function Home() {
           </div>
         )}
       </div>
+
       <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
         {/* Sidebar */}
-        <div className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
-          transition-transform duration-300 ease-in-out
-          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div 
+          className={`
+            fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
+            transition-transform duration-300 ease-in-out
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          `}
+        >
           <div className="p-6 space-y-4 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
             {generations.length > 0 ? (
@@ -514,7 +520,9 @@ export default function Home() {
                   <li
                     key={generation.id}
                     className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
-                      selectedGeneration?.id === generation.id ? 'bg-purple-700' : 'hover:bg-gray-700'
+                      selectedGeneration?.id === generation.id
+                        ? 'bg-purple-700'
+                        : 'hover:bg-gray-700'
                     }`}
                     onClick={() => setSelectedGeneration(generation)}
                   >
@@ -530,6 +538,7 @@ export default function Home() {
             )}
           </div>
         </div>
+
         {/* Overlay when sidebar is open on mobile */}
         {isSidebarOpen && (
           <div
@@ -538,6 +547,7 @@ export default function Home() {
             aria-hidden="true"
           />
         )}
+
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col w-full md:w-auto">
           {/* Desktop Header */}
@@ -563,6 +573,7 @@ export default function Home() {
               </div>
             )}
           </div>
+
           {/* Content Area */}
           <div className="flex-1 overflow-auto p-4">
             {selectedGeneration ? (
@@ -586,10 +597,12 @@ export default function Home() {
                       <X size={20} />
                     </button>
                   </div>
+
                   <div className="border-t border-gray-800 pt-4">
                     <div className="text-sm text-gray-300 mb-4">
                       {getStatusMessage(selectedGeneration.state)}
                     </div>
+
                     {selectedGeneration.videoUrl ? (
                       <div className="space-y-4">
                         <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
@@ -603,6 +616,7 @@ export default function Home() {
                             src={selectedGeneration.videoUrl}
                           />
                         </div>
+
                         {/* Action Buttons */}
                         <div className="flex flex-wrap gap-2">
                           <button
@@ -640,7 +654,7 @@ export default function Home() {
                         <div className="relative h-48 md:h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
                           <div className="absolute inset-0 flex items-center justify-center">
                             <div className="space-y-4 text-center">
-                              <div className="inline-flex items-center space-x-2">
+                              <div className="inline-flex items                                 center space-x-2">
                                 <svg
                                   className="animate-spin h-6 w-6 text-purple-500"
                                   xmlns="http://www.w3.org/2000/svg"
@@ -692,6 +706,8 @@ export default function Home() {
                     placeholder="Describe your video idea..."
                     disabled={loading}
                   />
+
+                  {/* Video Options */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Loop Video</label>
@@ -701,6 +717,7 @@ export default function Home() {
                         disabled={loading}
                       />
                     </div>
+
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
                       <Switch
@@ -712,6 +729,7 @@ export default function Home() {
                         disabled={loading}
                       />
                     </div>
+
                     {isExtending ? (
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-300">
@@ -725,7 +743,7 @@ export default function Home() {
                         >
                           <option value="">Select a video...</option>
                           {generations
-                            .filter(g => g.state === 'completed')
+                            .filter((g) => g.state === 'completed')
                             .map((gen) => (
                               <option key={gen.id} value={gen.id}>
                                 {gen.prompt}
@@ -740,10 +758,12 @@ export default function Home() {
                         </label>
                         <div className="flex items-center gap-4">
                           <label className="flex-1">
-                            <div className={`flex items-center justify-center w-full h-32 
-                              border-2 border-dashed border-gray-700 rounded-lg 
-                              cursor-pointer hover:border-purple-500
-                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                            <div
+                              className={`flex items-center justify-center w-full h-32 
+                                border-2 border-dashed border-gray-700 rounded-lg 
+                                cursor-pointer hover:border-purple-500
+                                ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
                               {startImageUrl ? (
                                 <div className="relative w-full h-full">
                                   <img
@@ -785,6 +805,7 @@ export default function Home() {
                       </div>
                     )}
                   </div>
+
                   <div className="flex justify-end">
                     <button
                       type="submit"
@@ -820,6 +841,7 @@ export default function Home() {
                       )}
                     </button>
                   </div>
+
                   {error && (
                     <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
                       <p className="font-medium">Error</p>
@@ -832,6 +854,7 @@ export default function Home() {
           </div>
         </div>
       </div>
+
       {/* Payment Modal */}
       {paymentRequest && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
@@ -851,6 +874,7 @@ export default function Home() {
               </button>
             </div>
             <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
                 value={paymentRequest} 
@@ -859,6 +883,7 @@ export default function Home() {
                 includeMargin={true}
               />
             </div>
+
             <div className="space-y-2">
               <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
                 <input
@@ -880,6 +905,7 @@ export default function Home() {
                 Waiting for payment confirmation...
               </div>
             </div>
+
             <button
               onClick={() => {
                 setPaymentRequest(null);
@@ -893,6 +919,7 @@ export default function Home() {
           </div>
         </div>
       )}
+
       {/* Nostr Note Modal */}
       {showNostrModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
@@ -937,6 +964,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Settings Modal */}
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
