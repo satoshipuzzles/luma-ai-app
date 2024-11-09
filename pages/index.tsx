@@ -8,7 +8,6 @@ import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { useToast, Toast } from "../components/ui/toast";
 
 // Types
 interface StoredGeneration {
@@ -111,8 +110,7 @@ export default function Home() {
   const [hasCopied, setHasCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-  const { toast, showToast, hideToast } = useToast();
-  
+
   // Payment state
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
@@ -169,7 +167,6 @@ export default function Home() {
     loadProfile();
   }, [pubkey]);
 
-  // Core functions
   const connectNostr = async () => {
     try {
       const key = await getNostrPublicKey();
@@ -223,18 +220,8 @@ export default function Home() {
   const copyVideoUrl = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      showToast({ 
-        title: "Copied!", 
-        description: "Video URL copied to clipboard",
-        onClose: hideToast 
-      });
     } catch (err) {
       console.error('Failed to copy:', err);
-      showToast({
-        title: "Error",
-        description: "Failed to copy URL",
-        onClose: hideToast
-      });
     }
   };
 
@@ -242,7 +229,6 @@ export default function Home() {
     setStartImageUrl(null);
   };
 
-  // Payment handling
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     let isPaid = false;
     const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
@@ -259,17 +245,9 @@ export default function Home() {
       try {
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ paymentHash }),
         });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
 
         const data = await response.json();
         isPaid = data.paid === true;
@@ -286,7 +264,6 @@ export default function Home() {
     return true;
   };
 
-  // Generate video function
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
@@ -300,19 +277,11 @@ export default function Home() {
     setError('');
 
     try {
-      // Handle LNBits payment
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: 1000 }),
       });
-
-      if (!invoiceResponse.ok) {
-        const errorData = await invoiceResponse.json();
-        throw new Error(errorData.error || 'Failed to create invoice');
-      }
 
       const invoiceData = await invoiceResponse.json();
       const { payment_request, payment_hash } = invoiceData;
@@ -329,7 +298,6 @@ export default function Home() {
       setPaymentRequest(null);
       setPaymentHash(null);
 
-      // Prepare generation request with new options
       const generationBody: any = { 
         prompt,
         loop: isLooping
@@ -344,22 +312,11 @@ export default function Home() {
 
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(generationBody),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to generate video');
-      }
-
       const data = await response.json();
-
-      if (!data.id) {
-        throw new Error('Invalid response from server');
-      }
 
       const newGeneration: StoredGeneration = {
         id: data.id,
@@ -377,11 +334,7 @@ export default function Home() {
       pollForCompletion(data.id);
     } catch (err) {
       console.error('Generation error:', err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to generate video. Please try again.'
-      );
+      setError('Failed to generate video. Please try again.');
       setLoading(false);
     }
   };
@@ -390,86 +343,23 @@ export default function Home() {
     const checkStatus = async () => {
       try {
         const response = await fetch(`/api/check-status?id=${generationId}`);
-        if (!response.ok) {
-          throw new Error('Failed to check status');
-        }
-
         const data = await response.json();
 
         if (data.state === 'completed' && data.assets?.video) {
           setGenerations((prevGenerations) => {
-            const existingGeneration = prevGenerations.find(
-              (g) => g.id === generationId
-            );
-
-            if (!existingGeneration) {
-              console.error('Generation not found in state');
-              return prevGenerations;
-            }
-
-            const updatedGeneration = {
-              ...existingGeneration,
-              state: 'completed',
-              videoUrl: data.assets.video,
-              createdAt: data.created_at,
-            };
-
             const updatedGenerations = prevGenerations.map((g) =>
-              g.id === generationId ? updatedGeneration : g
+              g.id === generationId ? { ...g, state: 'completed', videoUrl: data.assets.video } : g
             );
-
             localStorage.setItem('generations', JSON.stringify(updatedGenerations));
-
             return updatedGenerations;
           });
-
-          setSelectedGeneration((prevSelected) => {
-            if (prevSelected?.id === generationId) {
-              return {
-                ...prevSelected,
-                state: 'completed',
-                videoUrl: data.assets.video,
-                createdAt: data.created_at,
-              };
-            }
-            return prevSelected;
-          });
-
+          setSelectedGeneration((prevSelected) =>
+            prevSelected?.id === generationId
+              ? { ...prevSelected, state: 'completed', videoUrl: data.assets.video }
+              : prevSelected
+          );
           return true;
         }
-
-        setGenerations((prevGenerations) => {
-          const existingGeneration = prevGenerations.find(
-            (g) => g.id === generationId
-          );
-
-          if (!existingGeneration) {
-            console.error('Generation not found in state');
-            return prevGenerations;
-          }
-
-          const updatedGeneration = {
-            ...existingGeneration,
-            state: data.state,
-            createdAt: data.created_at,
-          };
-
-          return prevGenerations.map((g) =>
-            g.id === generationId ? updatedGeneration : g
-          );
-        });
-
-        setSelectedGeneration((prevSelected) => {
-          if (prevSelected?.id === generationId) {
-            return {
-              ...prevSelected,
-              state: data.state,
-              createdAt: data.created_at,
-            };
-          }
-          return prevSelected;
-        });
-
         return false;
       } catch (err) {
         console.error('Status check error:', err);
@@ -483,7 +373,6 @@ export default function Home() {
         setTimeout(poll, 2000);
       }
     };
-
     poll();
   };
 
@@ -496,25 +385,9 @@ export default function Home() {
     setPublishing(true);
     setPublishError('');
 
-    const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-    const relayConnections = relayUrls.map((url) => relayInit(url));
+    let relayConnections: ReturnType<typeof relayInit>[] = [];
 
     try {
-      const animalEvent: Partial<Event> = {
-        kind: 75757,
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [
-          ['title', selectedGeneration.prompt],
-          ['r', selectedGeneration.videoUrl!],
-          ['type', 'animal-sunset']
-        ],
-        content: selectedGeneration.videoUrl!,
-      };
-
-      animalEvent.id = getEventHash(animalEvent as Event);
-      const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
-
       const historyEvent: Partial<Event> = {
         kind: 8008135,
         pubkey,
@@ -522,43 +395,37 @@ export default function Home() {
         tags: [
           ['text-to-speech', selectedGeneration.prompt],
           ['r', selectedGeneration.videoUrl!],
-          ['e', signedAnimalEvent.id],
-          ['public', 'true']
+          ['public', 'false']
         ],
         content: JSON.stringify({
           prompt: selectedGeneration.prompt,
           videoUrl: selectedGeneration.videoUrl,
           createdAt: selectedGeneration.createdAt,
           state: selectedGeneration.state,
-          public: true
+          public: false
         }),
       };
 
       historyEvent.id = getEventHash(historyEvent as Event);
       const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
 
-      await Promise.all(
-        relayConnections.map((relay) => {
-          return new Promise<void>((resolve, reject) => {
-            relay.on('connect', async () => {
-              try {
-                await relay.publish(signedAnimalEvent);
-                await relay.publish(signedHistoryEvent);
-                resolve();
-              } catch (error) {
-                reject(error);
-              }
-            });
+      const relay = relayInit('wss://relay.damus.io');
+      await new Promise<void>((resolve, reject) => {
+        relay.on('connect', async () => {
+          try {
+            await relay.publish(signedHistoryEvent);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        });
+        relay.on('error', () => {
+          reject(new Error('Failed to connect to relay'));
+        });
+        relay.connect();
+      });
 
-            relay.on('error', () => {
-              reject(new Error(`Failed to connect to relay ${relay.url}`));
-            });
-
-            relay.connect();
-          });
-        })
-      );
-
+      setShowNostrModal(false);
     } catch (err) {
       console.error('Error publishing note:', err);
       setPublishError('Failed to publish note. Please try again.');
@@ -568,7 +435,6 @@ export default function Home() {
     }
   };
 
-  // Render connection screen if not connected to Nostr
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -594,7 +460,19 @@ export default function Home() {
   }
 
   return (
-    <>
+    <div className="min-h-screen bg-[#111111] text-white">
+      <Head>
+        <title>Animal Sunset 🌞🦒</title>
+        <link rel="icon" href="https://animalsunset.com/favicon.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
+        <meta property="og:title" content="Animal Sunset 🌞🦒" />
+        <meta property="og:description" content="AI-powered video generator." />
+        <meta property="og:image" content="https://animalsunset.com/og-image.png" />
+        <meta property="og:url" content="https://animalsunset.com" />
+        <meta property="og:type" content="website" />
+      </Head>
+      {/* Mobile Header */}
       <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -623,14 +501,11 @@ export default function Home() {
           </div>
         )}
       </div>
-
       <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
-        <div
-          className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
-            transition-transform duration-300 ease-in-out
-            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          `}
-        >
+        {/* Sidebar */}
+        <div className={`fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
+          transition-transform duration-300 ease-in-out
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           <div className="p-6 space-y-4 h-full overflow-y-auto">
             <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
             {generations.length > 0 ? (
@@ -639,9 +514,7 @@ export default function Home() {
                   <li
                     key={generation.id}
                     className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
-                      selectedGeneration?.id === generation.id
-                        ? 'bg-purple-700'
-                        : 'hover:bg-gray-700'
+                      selectedGeneration?.id === generation.id ? 'bg-purple-700' : 'hover:bg-gray-700'
                     }`}
                     onClick={() => setSelectedGeneration(generation)}
                   >
@@ -657,7 +530,7 @@ export default function Home() {
             )}
           </div>
         </div>
-
+        {/* Overlay when sidebar is open on mobile */}
         {isSidebarOpen && (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
@@ -665,8 +538,9 @@ export default function Home() {
             aria-hidden="true"
           />
         )}
-
+        {/* Main Content Area */}
         <div className="flex-1 flex flex-col w-full md:w-auto">
+          {/* Desktop Header */}
           <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
             <Navigation />
             {profile && (
@@ -689,12 +563,117 @@ export default function Home() {
               </div>
             )}
           </div>
-
+          {/* Content Area */}
           <div className="flex-1 overflow-auto p-4">
             {selectedGeneration ? (
               <div className="max-w-4xl mx-auto">
                 <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
                   {/* Generation Details */}
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <h2 className="text-lg md:text-xl font-bold break-words">
+                        {selectedGeneration.prompt}
+                      </h2>
+                      <div className="text-sm text-gray-400">
+                        {formatDate(selectedGeneration.createdAt)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedGeneration(null)}
+                      className="text-gray-400 hover:text-white p-2"
+                      aria-label="Close"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                  <div className="border-t border-gray-800 pt-4">
+                    <div className="text-sm text-gray-300 mb-4">
+                      {getStatusMessage(selectedGeneration.state)}
+                    </div>
+                    {selectedGeneration.videoUrl ? (
+                      <div className="space-y-4">
+                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+                          <video
+                            key={selectedGeneration.videoUrl}
+                            className="absolute top-0 left-0 w-full h-full object-contain"
+                            controls
+                            autoPlay
+                            loop
+                            playsInline
+                            src={selectedGeneration.videoUrl}
+                          />
+                        </div>
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                          >
+                            <span>Copy URL</span>
+                          </button>
+                          <a
+                            href={selectedGeneration.videoUrl}
+                            download
+                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                          >
+                            <span>Download</span>
+                          </a>
+                          <button
+                            onClick={() => {
+                              setNoteContent(
+                                `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
+                              );
+                              setShowNostrModal(true);
+                            }}
+                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                          >
+                            <span>Share</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : selectedGeneration.state === 'failed' ? (
+                      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+                        Generation failed. Please try again.
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <div className="relative h-48 md:h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="space-y-4 text-center">
+                              <div className="inline-flex items-center space-x-2">
+                                <svg
+                                  className="animate-spin h-6 w-6 text-purple-500"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  ></circle>
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  ></path>
+                                </svg>
+                                <span className="text-purple-400 font-medium">
+                                  AI is dreaming...
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-400">
+                                This usually takes 1-2 minutes
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -703,67 +682,114 @@ export default function Home() {
                   onSubmit={generateVideo}
                   className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
                 >
-                  {/* Prompt Input */}
-                  {/* Video Options */}
+                  <textarea
+                    id="prompt-input"
+                    name="prompt"
+                    className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+                    rows={4}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Describe your video idea..."
+                    disabled={loading}
+                  />
                   <div className="space-y-4">
-                    <div className="relative">
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Start Image (Optional)
-                      </label>
-                      <div className="flex items-center gap-4">
-                        <label className="flex-1">
-                          <div
-                            className={`
-                              flex items-center justify-center w-full h-32 
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Loop Video</label>
+                      <Switch
+                        checked={isLooping}
+                        onCheckedChange={setIsLooping}
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => {
+                          setIsExtending(checked);
+                          if (checked) clearStartImage();
+                        }}
+                        disabled={loading}
+                      />
+                    </div>
+                    {isExtending ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">
+                          Select Video to Extend
+                        </label>
+                        <select
+                          className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                          value={selectedVideoId || ''}
+                          onChange={(e) => setSelectedVideoId(e.target.value)}
+                          disabled={loading}
+                        >
+                          <option value="">Select a video...</option>
+                          {generations
+                            .filter(g => g.state === 'completed')
+                            .map((gen) => (
+                              <option key={gen.id} value={gen.id}>
+                                {gen.prompt}
+                              </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Start Image (Optional)
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <label className="flex-1">
+                            <div className={`flex items-center justify-center w-full h-32 
                               border-2 border-dashed border-gray-700 rounded-lg 
                               cursor-pointer hover:border-purple-500
-                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                            `}
-                          >
-                            {startImageUrl ? (
-                              <div className="relative w-full h-full">
-                                <img
-                                  src={startImageUrl}
-                                  alt="Start frame"
-                                  className="w-full h-full object-cover rounded-lg"
-                                />
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    clearStartImage();
-                                  }}
-                                  className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-                                >
-                                  <X size={16} />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center">
-                                <Upload size={24} className="text-gray-500" />
-                                <span className="mt-2 text-sm text-gray-500">
-                                  {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleImageUpload(file);
-                            }}
-                            className="hidden"
-                            disabled={loading}
-                          />
-                        </label>
+                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                              {startImageUrl ? (
+                                <div className="relative w-full h-full">
+                                  <img
+                                    src={startImageUrl}
+                                    alt="Start frame"
+                                    className="w-full h-full object-cover rounded-lg"
+                                  />
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      clearStartImage();
+                                    }}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <Upload size={24} className="text-gray-500" />
+                                  <span className="mt-2 text-sm text-gray-500">
+                                    {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleImageUpload(file);
+                              }}
+                              className="hidden"
+                              disabled={loading}
+                            />
+                          </label>
+                        </div>
                       </div>
-                    </div>
-
+                    )}
+                  </div>
+                  <div className="flex justify-end">
                     <button
                       type="submit"
                       disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
-                      className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200 flex justify-end"
+                      className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                     >
                       {loading ? (
                         <span className="flex items-center space-x-2">
@@ -793,22 +819,20 @@ export default function Home() {
                         'Generate Video'
                       )}
                     </button>
-
-                    {error && (
-                      <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                        <p className="font-medium">Error</p>
-                        <p className="text-sm">{error}</p>
-                      </div>
-                    )}
                   </div>
+                  {error && (
+                    <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                      <p className="font-medium">Error</p>
+                      <p className="text-sm">{error}</p>
+                    </div>
+                  )}
                 </form>
               </div>
             )}
           </div>
         </div>
       </div>
-
-      {/* Modals */}
+      {/* Payment Modal */}
       {paymentRequest && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
           <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
@@ -835,7 +859,6 @@ export default function Home() {
                 includeMargin={true}
               />
             </div>
-
             <div className="space-y-2">
               <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
                 <input
@@ -857,7 +880,6 @@ export default function Home() {
                 Waiting for payment confirmation...
               </div>
             </div>
-
             <button
               onClick={() => {
                 setPaymentRequest(null);
@@ -871,7 +893,7 @@ export default function Home() {
           </div>
         </div>
       )}
-
+      {/* Nostr Note Modal */}
       {showNostrModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
           <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
@@ -915,21 +937,12 @@ export default function Home() {
           </div>
         </div>
       )}
-
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
         pubkey={pubkey}
         onSettingsChange={setUserSettings}
       />
-
-      {toast && (
-        <Toast
-          title={toast.title || "Default Title"}
-          description={toast.description || "Default Description"}
-          onClose={hideToast}
-        />
-      )}
-    </>
+    </div>
   );
 }
