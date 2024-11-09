@@ -2,9 +2,24 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
-import { Menu, X, Copy, Check, Settings, Upload, RefreshCw } from 'lucide-react';
-import { Switch } from "../components/ui/switch";
-import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
+import { 
+  Menu, 
+  X, 
+  Copy, 
+  Check, 
+  Settings, 
+  Upload, 
+  RefreshCw, 
+  Download,
+  Share2, 
+  AlertCircle 
+} from 'lucide-react';
+import { Switch } from "@/components/ui/switch";
+import { toast } from "@/components/ui/use-toast";
+import { 
+  isPromptSafe, 
+  getPromptFeedback 
+} from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
@@ -25,36 +40,42 @@ interface Profile {
   about?: string;
 }
 
-// Declare the global window.nostr interface
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent(event: any): Promise<any>;
-    };
-  }
+/*interface NostrWindow extends Window {
+  nostr?: {
+    getPublicKey(): Promise<string>;
+    signEvent(event: any): Promise<any>;
+  };
 }
 
-// Utility functions
+declare global {
+  interface Window extends NostrWindow {}
+}
+*/
+
+// Constants
+const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
+const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
+const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
+const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+// Utility Functions
 const formatDate = (dateString: string) => {
   try {
     const date = new Date(dateString);
-    if (!isNaN(date.getTime())) {
-      const now = new Date();
-      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (isNaN(date.getTime())) return 'Just now';
+    
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-      if (diffInSeconds < 60) return 'Just now';
-      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
 
-      return new Intl.DateTimeFormat('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(date);
-    }
-    return 'Just now';
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
   } catch (e) {
     console.error('Date formatting error:', e);
     return 'Just now';
@@ -96,8 +117,124 @@ const getStatusMessage = (state: string) => {
       return 'Processing...';
   }
 };
+
+const downloadVideo = async (url: string, filename: string) => {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename || 'animal-sunset-video.mp4';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+    
+    toast({
+      title: "Download started",
+      description: "Your video is being downloaded",
+      duration: 2000
+    });
+  } catch (err) {
+    console.error('Download failed:', err);
+    toast({
+      title: "Download failed",
+      description: "Please try again",
+      variant: "destructive"
+    });
+  }
+};
+
+const publishToNostr = async (
+  videoUrl: string, 
+  prompt: string, 
+  isPublic: boolean,
+  eventId: string,
+  pubkey: string
+): Promise<void> => {
+  if (!window.nostr) {
+    throw new Error('Nostr extension not found');
+  }
+
+  try {
+    // Animal Kind Event (75757)
+    const animalEvent: Partial<Event> = {
+      kind: 75757,
+      pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['title', prompt],
+        ['r', videoUrl],
+        ['type', 'animal-sunset']
+      ],
+      content: videoUrl,
+    };
+
+    animalEvent.id = getEventHash(animalEvent as Event);
+    const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
+
+    // History Event (8008135)
+    const historyEvent: Partial<Event> = {
+      kind: 8008135,
+      pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['text-to-speech', prompt],
+        ['r', videoUrl],
+        ['e', signedAnimalEvent.id],
+        ['public', isPublic.toString()]
+      ],
+      content: JSON.stringify({
+        prompt,
+        videoUrl,
+        createdAt: new Date().toISOString(),
+        state: 'completed',
+        public: isPublic
+      }),
+    };
+
+    historyEvent.id = getEventHash(historyEvent as Event);
+    const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
+
+    const relayConnections = DEFAULT_RELAY_URLS.map((url) => relayInit(url));
+
+    await Promise.all(
+      relayConnections.map((relay) => {
+        return new Promise<void>((resolve, reject) => {
+          relay.on('connect', async () => {
+            try {
+              await relay.publish(signedAnimalEvent);
+              await relay.publish(signedHistoryEvent);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          });
+
+          relay.on('error', () => {
+            reject(new Error(`Failed to connect to relay ${relay.url}`));
+          });
+
+          relay.connect();
+        });
+      })
+    );
+
+    relayConnections.forEach(relay => relay.close());
+
+    toast({
+      title: "Published to Nostr",
+      description: "Your video has been shared successfully",
+      duration: 2000
+    });
+  } catch (err) {
+    console.error('Error publishing to Nostr:', err);
+    throw err;
+  }
+};
 export default function Home() {
-  // State variables
+  // State Management
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -109,19 +246,13 @@ export default function Home() {
   const [hasCopied, setHasCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-
-  // Payment state
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
-
-  // Luma features state
   const [isLooping, setIsLooping] = useState(true);
   const [startImageUrl, setStartImageUrl] = useState<string | null>(null);
   const [isExtending, setIsExtending] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-
-  // Nostr state
   const [showNostrModal, setShowNostrModal] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
@@ -165,14 +296,22 @@ export default function Home() {
 
     loadProfile();
   }, [pubkey]);
-
-  // Core functions
+  // Core Functions
   const connectNostr = async () => {
     try {
       const key = await getNostrPublicKey();
       setPubkey(key);
+      toast({
+        title: "Connected",
+        description: "Successfully connected to Nostr",
+      });
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
+      toast({
+        variant: "destructive",
+        title: "Connection failed",
+        description: "Please install a Nostr extension",
+      });
     }
   };
 
@@ -193,12 +332,21 @@ export default function Home() {
       
       if (result.status === 'success') {
         setStartImageUrl(result.data[0].url);
+        toast({
+          title: "Image uploaded",
+          description: "Start image has been set",
+        });
         return result.data[0].url;
       } else {
         throw new Error('Upload failed');
       }
     } catch (err) {
       setError('Failed to upload image. Please try again.');
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: "Please try again",
+      });
       return null;
     } finally {
       setUploadingImage(false);
@@ -210,9 +358,18 @@ export default function Home() {
       try {
         await navigator.clipboard.writeText(paymentRequest);
         setHasCopied(true);
+        toast({
+          title: "Copied",
+          description: "Invoice copied to clipboard",
+        });
         setTimeout(() => setHasCopied(false), 2000);
       } catch (err) {
         console.error('Failed to copy invoice:', err);
+        toast({
+          variant: "destructive",
+          title: "Copy failed",
+          description: "Please try again",
+        });
       }
     }
   };
@@ -220,65 +377,166 @@ export default function Home() {
   const copyVideoUrl = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
+      toast({
+        title: "Copied",
+        description: "Video URL copied to clipboard",
+        duration: 2000
+      });
     } catch (err) {
       console.error('Failed to copy:', err);
+      toast({
+        variant: "destructive",
+        title: "Copy failed",
+        description: "Please try again",
+      });
     }
   };
 
-  const clearStartImage = () => {
-    setStartImageUrl(null);
-  };
-
-  // Payment handling
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
-    let isPaid = false;
-    const invoiceExpirationTime = Date.now() + 600000; // 10 minutes from now
-
-    while (!isPaid) {
-      if (Date.now() > invoiceExpirationTime) {
-        setError('Invoice has expired. Please try again.');
-        setPaymentRequest(null);
-        setPaymentHash(null);
-        setLoading(false);
-        return false;
-      }
-
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < INVOICE_EXPIRY) {
       try {
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ paymentHash }),
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          await new Promise(resolve => setTimeout(resolve, 5000));
           continue;
         }
 
         const data = await response.json();
-        isPaid = data.paid === true;
-
-        if (!isPaid) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+        if (data.paid) {
+          toast({
+            title: "Payment received",
+            description: "Starting video generation",
+          });
+          return true;
         }
+
+        await new Promise(resolve => setTimeout(resolve, 5000));
       } catch (err) {
         console.error('Error checking payment status:', err);
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
 
-    return true;
+    toast({
+      variant: "destructive",
+      title: "Payment expired",
+      description: "Please try again",
+    });
+    return false;
   };
-  // Generate video function
+
+  const pollForCompletion = async (generationId: string) => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/check-status?id=${generationId}`);
+        if (!response.ok) {
+          throw new Error('Failed to check status');
+        }
+
+        const data = await response.json();
+
+        if (data.state === 'completed' && data.assets?.video) {
+          setGenerations((prevGenerations) => {
+            const updatedGenerations = prevGenerations.map((g) =>
+              g.id === generationId 
+                ? { ...g, state: 'completed', videoUrl: data.assets.video, createdAt: data.created_at }
+                : g
+                );
+
+            localStorage.setItem('generations', JSON.stringify(updatedGenerations));
+            return updatedGenerations;
+          });
+
+          setSelectedGeneration((prevSelected) => {
+            if (prevSelected?.id === generationId) {
+              return {
+                ...prevSelected,
+                state: 'completed',
+                videoUrl: data.assets.video,
+                createdAt: data.created_at,
+              };
+            }
+            return prevSelected;
+          });
+
+          // Publish to Nostr when video is ready
+          if (userSettings.publicGenerations) {
+            try {
+              await publishToNostr(
+                data.assets.video,
+                prompt,
+                userSettings.publicGenerations,
+                generationId,
+                pubkey!
+              );
+            } catch (error) {
+              console.error('Failed to publish to Nostr:', error);
+              toast({
+                variant: "destructive",
+                title: "Publishing failed",
+                description: "Failed to share to Nostr",
+              });
+            }
+          }
+
+          setLoading(false);
+          return true;
+        }
+
+        // Update generation state
+        setGenerations((prevGenerations) => {
+          const updatedGenerations = prevGenerations.map((g) =>
+            g.id === generationId ? { ...g, state: data.state, createdAt: data.created_at } : g
+          );
+          return updatedGenerations;
+        });
+
+        setSelectedGeneration((prevSelected) => {
+          if (prevSelected?.id === generationId) {
+            return {
+              ...prevSelected,
+              state: data.state,
+              createdAt: data.created_at,
+            };
+          }
+          return prevSelected;
+        });
+
+        return false;
+      } catch (err) {
+        console.error('Status check error:', err);
+        return true;
+      }
+    };
+
+    const poll = async () => {
+      const shouldStop = await checkStatus();
+      if (!shouldStop) {
+        setTimeout(poll, GENERATION_POLL_INTERVAL);
+      }
+    };
+
+    poll();
+  };
+
   const generateVideo = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt || !pubkey) return;
 
     if (!isPromptSafe(prompt)) {
       setError(getPromptFeedback(prompt));
+      toast({
+        variant: "destructive",
+        title: "Invalid prompt",
+        description: getPromptFeedback(prompt),
+      });
       return;
     }
 
@@ -286,13 +544,13 @@ export default function Home() {
     setError('');
 
     try {
-      // Handle LNBits payment
+      // Create Lightning invoice
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount: 1000 }),
+        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
       });
 
       if (!invoiceResponse.ok) {
@@ -315,7 +573,7 @@ export default function Home() {
       setPaymentRequest(null);
       setPaymentHash(null);
 
-      // Prepare generation request with new options
+      // Prepare generation request
       const generationBody: any = { 
         prompt,
         loop: isLooping
@@ -328,6 +586,7 @@ export default function Home() {
         generationBody.startImageUrl = startImageUrl;
       }
 
+      // Generate video
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -361,6 +620,11 @@ export default function Home() {
       setSelectedGeneration(newGeneration);
       setPrompt('');
       pollForCompletion(data.id);
+
+      toast({
+        title: "Generation started",
+        description: "Your video is being generated",
+      });
     } catch (err) {
       console.error('Generation error:', err);
       setError(
@@ -368,240 +632,15 @@ export default function Home() {
           ? err.message
           : 'Failed to generate video. Please try again.'
       );
+      toast({
+        variant: "destructive",
+        title: "Generation failed",
+        description: err instanceof Error ? err.message : "Please try again",
+      });
       setLoading(false);
     }
   };
-
-  const pollForCompletion = async (generationId: string) => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch(`/api/check-status?id=${generationId}`);
-        if (!response.ok) {
-          throw new Error('Failed to check status');
-        }
-
-        const data = await response.json();
-
-        if (data.state === 'completed' && data.assets?.video) {
-          setGenerations((prevGenerations) => {
-            const existingGeneration = prevGenerations.find(
-              (g) => g.id === generationId
-            );
-
-            if (!existingGeneration) {
-              console.error('Generation not found in state');
-              return prevGenerations;
-            }
-
-            const updatedGeneration = {
-              ...existingGeneration,
-              state: 'completed',
-              videoUrl: data.assets.video,
-              createdAt: data.created_at,
-            };
-
-            const updatedGenerations = prevGenerations.map((g) =>
-              g.id === generationId ? updatedGeneration : g
-            );
-
-            localStorage.setItem('generations', JSON.stringify(updatedGenerations));
-
-            return updatedGenerations;
-          });
-
-          setSelectedGeneration((prevSelected) => {
-            if (prevSelected?.id === generationId) {
-              return {
-                ...prevSelected,
-                state: 'completed',
-                videoUrl: data.assets.video,
-                createdAt: data.created_at,
-              };
-            }
-            return prevSelected;
-          });
-
-          return true;
-        }
-
-        setGenerations((prevGenerations) => {
-          const existingGeneration = prevGenerations.find(
-            (g) => g.id === generationId
-          );
-
-          if (!existingGeneration) {
-            console.error('Generation not found in state');
-            return prevGenerations;
-          }
-
-          const updatedGeneration = {
-            ...existingGeneration,
-            state: data.state,
-            createdAt: data.created_at,
-          };
-
-          return prevGenerations.map((g) =>
-            g.id === generationId ? updatedGeneration : g
-          );
-        });
-
-        setSelectedGeneration((prevSelected) => {
-          if (prevSelected?.id === generationId) {
-            return {
-              ...prevSelected,
-              state: data.state,
-              createdAt: data.created_at,
-            };
-          }
-          return prevSelected;
-        });
-
-        return false;
-      } catch (err) {
-        console.error('Status check error:', err);
-        return true;
-      }
-    };
-
-    const poll = async () => {
-      const shouldStop = await checkStatus();
-      if (!shouldStop) {
-        setTimeout(poll, 2000);
-      }
-    };
-
-    poll();
-  };
-
-  const publishNote = async () => {
-    if (!pubkey || !window.nostr || !selectedGeneration) {
-      setPublishError('Not connected or no video selected.');
-      return;
-    }
-
-    setPublishing(true);
-    setPublishError('');
-
-    let relayConnections: ReturnType<typeof relayInit>[] = [];
-
-    try {
-      if (userSettings.publicGenerations) {
-        // First publish the animal kind (75757)
-        const animalEvent: Partial<Event> = {
-          kind: 75757,
-          pubkey,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ['title', selectedGeneration.prompt],
-            ['r', selectedGeneration.videoUrl!],
-            ['type', 'animal-sunset']
-          ],
-          content: selectedGeneration.videoUrl!,
-        };
-
-        animalEvent.id = getEventHash(animalEvent as Event);
-        const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
-
-        // History event (8008135)
-        const historyEvent: Partial<Event> = {
-          kind: 8008135,
-          pubkey,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ['text-to-speech', selectedGeneration.prompt],
-            ['r', selectedGeneration.videoUrl!],
-            ['e', signedAnimalEvent.id],
-            ['public', 'true']
-          ],
-          content: JSON.stringify({
-            prompt: selectedGeneration.prompt,
-            videoUrl: selectedGeneration.videoUrl,
-            createdAt: selectedGeneration.createdAt,
-            state: selectedGeneration.state,
-            public: true
-          }),
-        };
-
-        historyEvent.id = getEventHash(historyEvent as Event);
-        const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
-
-        const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-        relayConnections = relayUrls.map((url) => relayInit(url));
-
-        await Promise.all(
-          relayConnections.map((relay) => {
-            return new Promise<void>((resolve, reject) => {
-              relay.on('connect', async () => {
-                try {
-                  await relay.publish(signedAnimalEvent);
-                  await relay.publish(signedHistoryEvent);
-                  resolve();
-                } catch (error) {
-                  reject(error);
-                }
-              });
-
-              relay.on('error', () => {
-                reject(new Error(`Failed to connect to relay ${relay.url}`));
-              });
-
-              relay.connect();
-            });
-          })
-        );
-      } else {
-        // If private, only publish history event
-        const historyEvent: Partial<Event> = {
-          kind: 8008135,
-          pubkey,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ['text-to-speech', selectedGeneration.prompt],
-            ['r', selectedGeneration.videoUrl!],
-            ['public', 'false']
-          ],
-          content: JSON.stringify({
-            prompt: selectedGeneration.prompt,
-            videoUrl: selectedGeneration.videoUrl,
-            createdAt: selectedGeneration.createdAt,
-            state: selectedGeneration.state,
-            public: false
-          }),
-        };
-
-        historyEvent.id = getEventHash(historyEvent as Event);
-        const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
-
-        const relay = relayInit('wss://relay.damus.io');
-        await new Promise<void>((resolve, reject) => {
-          relay.on('connect', async () => {
-            try {
-              await relay.publish(signedHistoryEvent);
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          });
-
-          relay.on('error', () => {
-            reject(new Error('Failed to connect to relay'));
-          });
-
-          relay.connect();
-        });
-      }
-
-      setShowNostrModal(false);
-    } catch (err) {
-      console.error('Error publishing note:', err);
-      setPublishError(
-        err instanceof Error ? err.message : 'Failed to publish note. Please try again.'
-      );
-    } finally {
-      relayConnections.forEach((relay) => relay.close());
-      setPublishing(false);
-    }
-  };
+  // Render
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -670,6 +709,7 @@ export default function Home() {
         )}
       </div>
 
+      {/* Main Layout */}
       <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
         {/* Sidebar */}
         <div 
@@ -706,7 +746,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Overlay when sidebar is open on mobile */}
+        {/* Overlay */}
         {isSidebarOpen && (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
@@ -715,7 +755,7 @@ export default function Home() {
           />
         )}
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <div className="flex-1 flex flex-col w-full md:w-auto">
           {/* Desktop Header */}
           <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
@@ -765,6 +805,7 @@ export default function Home() {
                     </button>
                   </div>
 
+                  {/* Video Display */}
                   <div className="border-t border-gray-800 pt-4">
                     <div className="text-sm text-gray-300 mb-4">
                       {getStatusMessage(selectedGeneration.state)}
@@ -788,17 +829,18 @@ export default function Home() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
+                            <Copy size={16} />
                             <span>Copy URL</span>
                           </button>
-                          <a
-                            href={selectedGeneration.videoUrl}
-                            download
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                          <button
+                            onClick={() => downloadVideo(selectedGeneration.videoUrl!, `animal-sunset-${selectedGeneration.id}.mp4`)}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
+                            <Download size={16} />
                             <span>Download</span>
-                          </a>
+                          </button>
                           <button
                             onClick={() => {
                               setNoteContent(
@@ -806,15 +848,16 @@ export default function Home() {
                               );
                               setShowNostrModal(true);
                             }}
-                            className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
+                            <Share2 size={16} />
                             <span>Share</span>
                           </button>
                         </div>
                       </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                        Generation failed. Please try again.
+                      Generation failed. Please try again.
                       </div>
                     ) : (
                       <div className="space-y-6">
@@ -822,26 +865,7 @@ export default function Home() {
                           <div className="absolute inset-0 flex items-center justify-center">
                             <div className="space-y-4 text-center">
                               <div className="inline-flex items-center space-x-2">
-                                <svg
-                                  className="animate-spin h-6 w-6 text-purple-500"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                  ></circle>
-                                  <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                  ></path>
-                                </svg>
+                                <RefreshCw className="animate-spin h-6 w-6 text-purple-500" />
                                 <span className="text-purple-400 font-medium">
                                   AI is dreaming...
                                 </span>
@@ -889,14 +913,15 @@ export default function Home() {
                     {/* Extend Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                      <Switch
-                        checked={isExtending}
-                        onCheckedChange={(checked) => {
-                          setIsExtending(checked);
-                          if (checked) clearStartImage();
-                        }}
-                        disabled={loading}
-                      />
+                       <Switch
+  checked={isExtending}
+  onCheckedChange={(checked) => { 
+    setIsExtending(checked); 
+    if (checked) setStartImageUrl(null);
+  }}
+  disabled={loading}
+/>
+
                     </div>
 
                     {/* Conditional Content */}
@@ -922,7 +947,6 @@ export default function Home() {
                         </select>
                       </div>
                     ) : (
-                      /* Start Image Upload */
                       <div className="relative">
                         <label className="block text-sm font-medium text-gray-300 mb-2">
                           Start Image (Optional)
@@ -945,7 +969,7 @@ export default function Home() {
                                   <button
                                     onClick={(e) => {
                                       e.preventDefault();
-                                      clearStartImage();
+                                      setStartImageUrl(null);
                                     }}
                                     className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
                                   >
@@ -985,26 +1009,7 @@ export default function Home() {
                     >
                       {loading ? (
                         <span className="flex items-center space-x-2">
-                          <svg
-                            className="animate-spin h-5 w-5"
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            ></circle>
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            ></path>
-                          </svg>
+                          <RefreshCw className="animate-spin h-5 w-5" />
                           <span>Generating...</span>
                         </span>
                       ) : (
@@ -1125,8 +1130,23 @@ export default function Home() {
                 Cancel
               </button>
               <button
-                onClick={publishNote}
-                disabled={publishing}
+                onClick={() => {
+                  if (selectedGeneration?.videoUrl) {
+                    publishToNostr(
+                      selectedGeneration.videoUrl,
+                      selectedGeneration.prompt,
+                      userSettings.publicGenerations,
+                      selectedGeneration.id,
+                      pubkey!
+                    ).then(() => {
+                      setShowNostrModal(false);
+                      setNoteContent('');
+                    }).catch((error) => {
+                      setPublishError(error.message);
+                    });
+                  }
+                }}
+                disabled={publishing || !selectedGeneration?.videoUrl}
                 className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
               >
                 {publishing ? 'Publishing...' : 'Publish'}
