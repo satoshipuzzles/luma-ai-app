@@ -42,7 +42,6 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
             <X size={20} />
           </button>
         </div>
-
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">
@@ -66,8 +65,24 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
               </div>
             </label>
           </div>
-        </div>
 
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">
+              Default Relay
+              <p className="text-xs text-gray-400">
+                Your preferred Nostr relay
+              </p>
+            </label>
+            <select
+              value={settings.defaultRelay}
+              onChange={(e) => handleSettingChange('defaultRelay', e.target.value)}
+              className="bg-gray-700 rounded-lg px-3 py-1 text-sm"
+            >
+              <option value="wss://relay.nostrfreaks.com">Nostr Freaks</option>
+              <option value="wss://relay.damus.io">Damus</option>
+            </select>
+          </div>
+        </div>
         <div className="mt-6">
           <button
             onClick={onClose}
