@@ -1,5 +1,14 @@
 import { Event, getEventHash, nip19, generatePrivateKey, getPublicKey } from 'nostr-tools';
 
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: any): Promise<any>;
+    }
+  }
+}
+
 const SUNSET_RELAY_URL = 'wss://sunset.nostrfreaks.com';
 
 export const createAnimalKind = async (
