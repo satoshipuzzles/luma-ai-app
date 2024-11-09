@@ -656,7 +656,8 @@ export default function Home() {
         <meta property="og:url" content="https://animalsunset.com" />
         <meta property="og:type" content="website" />
       </Head>
-
+  </div>
+);
       {/* Mobile Header */}
       <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
         <button
