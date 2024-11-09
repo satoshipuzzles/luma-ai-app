@@ -643,7 +643,7 @@ export default function Home() {
   }
 
   // Main Content after connecting with Nostr
- return (
+return (
   <>
     {/* Mobile Header */}
     <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
@@ -950,61 +950,67 @@ export default function Home() {
                       </select>
                     </div>
                   ) : (
-                <>
-                   {/* Start Image Upload */}
-<div className="relative">
-  <label className="block text-sm font-medium text-gray-300 mb-2">
-    Start Image (Optional)
-  </label>
-  <div className="flex items-center gap-4">
-    <label className="flex-1">
-      <div className={`
-        flex items-center justify-center w-full h-32 
-        border-2 border-dashed border-gray-700 rounded-lg 
-        cursor-pointer hover:border-purple-500
-        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-      `}>
-        {startImageUrl ? (
-          <div className="relative w-full h-full">
-            <img
-              src={startImageUrl}
-              alt="Start frame"
-              className="w-full h-full object-cover rounded-lg"
-            />
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                clearStartImage();
-              }}
-              className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center">
-            <Upload size={24} className="text-gray-500" />
-            <span className="mt-2 text-sm text-gray-500">
-              {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
-            </span>
-          </div>
-        )}
-      </div>
-      <input
-        type="file"
-        accept="image/*"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleImageUpload(file);
-        }}
-        className="hidden"
-        disabled={loading}
-      />
-    </label>
-  </div>
-</div>
+                    /* Start Image Upload */
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Start Image (Optional)
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex-1">
+                          <div className={`
+                            flex items-center justify-center w-full h-32 
+                            border-2 border-dashed border-gray-700 rounded-lg 
+                            cursor-pointer hover:border-purple-500
+                            ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                          `}>
+                            {startImageUrl ? (
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={startImageUrl}
+                                  alt="Start frame"
+                                  className="w-full h-full object-cover rounded-lg"
+                                />
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    clearStartImage();
+                                  }}
+                                  className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center">
+                                <Upload size={24} className="text-gray-500" />
+                                <span className="mt-2 text-sm text-gray-500">
+                                  {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleImageUpload(file);
+                            }}
+                            className="hidden"
+                            disabled={loading}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-<div className="flex justify-end">
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
+                    className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibol
+                  <div className="flex justify-end">
   <button
     type="submit"
     disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
@@ -1046,8 +1052,6 @@ export default function Home() {
     <p className="text-sm">{error}</p>
   </div>
 )}
-</> 
-);              
 </form>
 </div>
 )}
