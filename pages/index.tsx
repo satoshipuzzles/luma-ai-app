@@ -913,14 +913,15 @@ export default function Home() {
                     {/* Extend Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                      <Switch
-                        checked={isExtending}
-                        onCheckedChange={(checked) => {
-                          setIsExtending(checked);
-                          if (checked) setStartImageUrl();
-                        }}
-                        disabled={loading}
-                      />
+                       <Switch
+  checked={isExtending}
+  onCheckedChange={(checked) => { 
+    setIsExtending(checked); 
+    if (checked) setStartImageUrl(null);
+  }}
+  disabled={loading}
+/>
+
                     </div>
 
                     {/* Conditional Content */}
