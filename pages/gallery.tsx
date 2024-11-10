@@ -100,7 +100,60 @@ const buildCommentThread = (comments: AnimalKind[]): CommentThread[] => {
   return rootThreads;
 };
 
-export default function Gallery() {
+// Comment Thread Component
+const CommentThreadComponent = ({ 
+  thread, 
+  onReply, 
+  level 
+}: { 
+  thread: CommentThread; 
+  onReply: (parentId: string) => void;
+  level: number;
+}) => {
+  if (level >= 6) return null; // Limit nesting depth
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start space-x-3">
+        <img
+          src={thread.profile?.picture || "/default-avatar.png"}
+          alt="Profile"
+          className="w-8 h-8 rounded-full"
+        />
+        <div className="flex-1">
+          <div className={`bg-[#2a2a2a] rounded-lg p-3 space-y-1`}>
+            <div className="font-medium text-gray-300">
+              {thread.profile?.name || formatPubkey(thread.event.pubkey)}
+            </div>
+            <div className="text-sm text-gray-200">
+              {thread.event.content}
+            </div>
+          </div>
+          <button
+            onClick={() => onReply(thread.event.id)}
+            className="text-sm text-gray-400 hover:text-white mt-1 ml-3"
+          >
+            Reply
+          </button>
+        </div>
+      </div>
+      
+      {thread.replies.length > 0 && (
+        <div className={`ml-8 space-y-2 border-l-2 border-gray-800 pl-4`}>
+          {thread.replies.map(reply => (
+            <CommentThreadComponent
+              key={reply.id}
+              thread={reply}
+              onReply={onReply}
+              level={level + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+function Gallery() {
   const { pubkey, profile, connect } = useNostr();
   
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -380,8 +433,7 @@ export default function Gallery() {
           )}
         </div>
       </div>
-
-      {/* Main Content */}
+{/* Main Content */}
       <div className="max-w-4xl mx-auto py-8 px-4">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Animal Gallery</h1>
@@ -429,7 +481,7 @@ export default function Gallery() {
                   </div>
                 </div>
 
-{/* Video */}
+                {/* Video */}
                 <div className="relative pt-[56.25%] bg-black">
                   <video
                     src={post.event.content}
@@ -631,59 +683,5 @@ export default function Gallery() {
     </div>
   );
 }
-
-// Comment Thread Component
-const CommentThreadComponent = ({ 
-  thread, 
-  onReply, 
-  level 
-}: { 
-  thread: CommentThread; 
-  onReply: (parentId: string) => void;
-  level: number;
-}) => {
-  if (level >= 6) return null; // Limit nesting depth
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-start space-x-3">
-        <img
-          src={thread.profile?.picture || "/default-avatar.png"}
-          alt="Profile"
-          className="w-8 h-8 rounded-full"
-        />
-        <div className="flex-1">
-          <div className={`bg-[#2a2a2a] rounded-lg p-3 space-y-1`}>
-            <div className="font-medium text-gray-300">
-              {thread.profile?.name || formatPubkey(thread.event.pubkey)}
-            </div>
-            <div className="text-sm text-gray-200">
-              {thread.event.content}
-            </div>
-          </div>
-          <button
-            onClick={() => onReply(thread.event.id)}
-            className="text-sm text-gray-400 hover:text-white mt-1 ml-3"
-          >
-            Reply
-          </button>
-        </div>
-      </div>
-      
-      {thread.replies.length > 0 && (
-        <div className={`ml-8 space-y-2 border-l-2 border-gray-800 pl-4`}>
-          {thread.replies.map(reply => (
-            <CommentThreadComponent
-              key={reply.id}
-              thread={reply}
-              onReply={onReply}
-              level={level + 1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 export default Gallery;
