@@ -1,4 +1,10 @@
-import { relayInit, getEventHash, Event, SimplePool } from 'nostr-tools';
+import {
+  SimplePool,
+  getEventHash,
+  type Event,
+  validateEvent,
+  verifySignature
+} from 'nostr-tools';
 
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
 export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
@@ -18,16 +24,24 @@ export async function publishToRelays(event: Partial<Event>, relays: string[] = 
   finalEvent.id = getEventHash(finalEvent as Event);
   const signedEvent = await window.nostr.signEvent(finalEvent as Event);
 
-  await Promise.all(
-    relays.map(async (relay) => {
-      try {
-        const pub = pool.publish([relay], signedEvent);
-        await pub;
-      } catch (error) {
-        console.error(`Failed to publish to ${relay}:`, error);
-      }
-    })
-  );
+  if (!validateEvent(signedEvent) || !verifySignature(signedEvent)) {
+    throw new Error('Invalid event signature');
+  }
+
+  try {
+    await Promise.all(
+      relays.map(async (relay) => {
+        try {
+          await pool.publish([relay], signedEvent);
+        } catch (error) {
+          console.error(`Failed to publish to ${relay}:`, error);
+        }
+      })
+    );
+  } catch (error) {
+    console.error('Failed to publish event:', error);
+    throw error;
+  }
 }
 
 export async function publishVideo(videoUrl: string, prompt: string, isPublic: boolean): Promise<void> {
@@ -122,8 +136,13 @@ export async function shareToNostr(content: string, videoUrl: string): Promise<v
       ['t', 'animalsunset'],
       ['r', videoUrl]
     ],
-    content,
+    content: content.trim(),
   };
 
   await publishToRelays(event);
+}
+
+// Helper function to fetch multiple events
+export async function fetchEvents(filter: any): Promise<Event[]> {
+  return await pool.list([DEFAULT_RELAY], filter);
 }
