@@ -326,7 +326,7 @@ const handleComment = async () => {
     setProcessingAction('comment');
 
     if (selectedPost) {
-      let parentId: number | null = null;
+      let parentId: number | undefined = undefined;
       if (commentParentId) {
         const parsedParentId = parseInt(commentParentId);
         if (!isNaN(parsedParentId)) {
@@ -334,7 +334,7 @@ const handleComment = async () => {
         }
       }
 
-      await publishComment(selectedPost.event.id, newComment, parentId !== null ? parentId : undefined);
+      await publishComment(selectedPost.event.id, newComment, parentId);
 
       // Refresh posts to show new comment
       await fetchPosts();
