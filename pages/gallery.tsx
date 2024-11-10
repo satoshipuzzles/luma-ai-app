@@ -3,26 +3,44 @@ import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, NostrEvent } from '../types/nostr';
-import { fetchProfile, formatPubkey, getLightningAddress } from '../lib/nostr';
+import { useNostr } from '../contexts/NostrContext';
+import { 
+  publishToRelays, 
+  fetchLightningDetails, 
+  createZapInvoice, 
+  publishComment,
+  shareToNostr,
+  DEFAULT_RELAY 
+} from '../lib/nostr';
 import { 
   Download, 
   MessageSquare, 
   Zap, 
   X, 
   Share2, 
-  RefreshCw 
+  RefreshCw,
+  Globe,
+  Send
 } from 'lucide-react';
-
-interface Profile {
-  name?: string;
-  picture?: string;
-  about?: string;
-}
 
 interface VideoPost {
   event: AnimalKind;
-  profile?: Profile;
+  profile?: {
+    name?: string;
+    picture?: string;
+    about?: string;
+  };
   comments: AnimalKind[];
+}
+
+interface CommentThread {
+  id: string;
+  event: AnimalKind;
+  profile?: {
+    name?: string;
+    picture?: string;
+  };
+  replies: CommentThread[];
 }
 
 // Utility function for downloading videos
@@ -47,22 +65,62 @@ const downloadVideo = async (url: string, filename: string) => {
   } catch (err) {
     console.error('Download failed:', err);
     toast({
+      variant: "destructive",
       title: "Download failed",
       description: "Please try again",
-      variant: "destructive"
     });
   }
 };
 
+const formatPubkey = (pubkey: string) => {
+  return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`;
+};
+
+// Recursive function to build comment threads
+const buildCommentThread = (comments: AnimalKind[]): CommentThread[] => {
+  const threadMap = new Map<string, CommentThread>();
+  const rootThreads: CommentThread[] = [];
+
+  // First pass: create thread objects
+  comments.forEach(comment => {
+    threadMap.set(comment.id, {
+      id: comment.id,
+      event: comment,
+      replies: [],
+      profile: undefined
+    });
+  });
+
+  // Second pass: build hierarchy
+  comments.forEach(comment => {
+    const replyTo = comment.tags.find(tag => tag[0] === 'e')?.[1];
+    if (replyTo && threadMap.has(replyTo)) {
+      const parentThread = threadMap.get(replyTo)!;
+      const commentThread = threadMap.get(comment.id)!;
+      parentThread.replies.push(commentThread);
+    } else {
+      const commentThread = threadMap.get(comment.id)!;
+      rootThreads.push(commentThread);
+    }
+  });
+
+  return rootThreads;
+};
+
 export default function Gallery() {
-  // Keep existing state variables
+  const { pubkey, profile, connect } = useNostr();
+  
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newComment, setNewComment] = useState('');
   const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
   const [showCommentModal, setShowCommentModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentParentId, setCommentParentId] = useState<string | null>(null);
   const [sendingZap, setSendingZap] = useState(false);
+  const [processingAction, setProcessingAction] = useState<string | null>(null);
+  const [shareText, setShareText] = useState('');
 
   useEffect(() => {
     fetchPosts();
@@ -70,65 +128,69 @@ export default function Gallery() {
 
   const fetchPosts = async () => {
     try {
+      setLoading(true);
       const response = await fetch('/api/nostr/fetch-events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          relay: 'wss://relay.nostrfreaks.com',
-          filter: {
-            kinds: [75757],
-            limit: 50
-          }
+          relay: DEFAULT_RELAY,
+          filters: [
+            { kinds: [75757], limit: 50 }, // Main posts
+            { kinds: [75757], limit: 200, '#e': [] }, // Comments
+            { kinds: [0], limit: 100 } // Profiles
+          ]
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch posts');
-      }
+      if (!response.ok) throw new Error('Failed to fetch posts');
 
       const events = await response.json() as AnimalKind[];
+      
+      // Separate posts and comments
+      const mainPosts = events.filter(e => !e.tags.find(t => t[0] === 'e'));
+      const comments = events.filter(e => e.tags.find(t => t[0] === 'e'));
       
       // Group comments with their parent posts
       const postsMap = new Map<string, VideoPost>();
       
-      for (const event of events) {
-        const replyTo = event.tags.find(tag => tag[0] === 'e')?.[1];
-        
-        if (!replyTo) {
-          // This is a main post
-          postsMap.set(event.id, {
-            event,
-            comments: [],
-            profile: undefined
-          });
-        } else {
-          // This is a comment
-          const parentPost = postsMap.get(replyTo);
-          if (parentPost) {
-            parentPost.comments.push(event);
-          }
-        }
+      for (const post of mainPosts) {
+        postsMap.set(post.id, {
+          event: post,
+          comments: comments.filter(c => 
+            c.tags.find(t => t[0] === 'e')?.[1] === post.id
+          ),
+          profile: undefined
+        });
       }
 
       // Fetch profiles for all authors
       const posts = Array.from(postsMap.values());
-      await Promise.all(posts.map(async post => {
+      const profileEvents = events.filter(e => e.kind === 0);
+      const profileMap = new Map();
+      
+      profileEvents.forEach(e => {
         try {
-          const profileEvent = await fetchProfile(post.event.pubkey);
-          if (profileEvent) {
-            const profileContent = JSON.parse(profileEvent.content);
-            post.profile = {
-              name: profileContent.name,
-              picture: profileContent.picture,
-              about: profileContent.about
-            };
-          }
+          const content = JSON.parse(e.content);
+          profileMap.set(e.pubkey, {
+            name: content.name,
+            picture: content.picture,
+            about: content.about
+          });
         } catch (error) {
-          console.error('Error fetching profile:', error);
+          console.error('Error parsing profile:', error);
         }
-      }));
+      });
+
+      // Attach profiles to posts and comments
+      posts.forEach(post => {
+        post.profile = profileMap.get(post.event.pubkey);
+        post.comments.forEach(comment => {
+          comment.profile = profileMap.get(comment.pubkey);
+        });
+      });
 
       setPosts(posts);
+      
       toast({
         title: "Gallery updated",
         description: `Loaded ${posts.length} videos`,
@@ -147,33 +209,36 @@ export default function Gallery() {
   };
 
   const handleZap = async (post: VideoPost) => {
-    setSendingZap(true);
+    if (!pubkey) {
+      toast({
+        title: "Connect Required",
+        description: "Please connect your Nostr account first",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
-      const lnAddress = await getLightningAddress(post.event.pubkey);
-      if (!lnAddress) {
+      setSendingZap(true);
+      setProcessingAction('zap');
+      
+      const lnDetails = await fetchLightningDetails(post.event.pubkey);
+      if (!lnDetails?.lud16 && !lnDetails?.lnurl) {
         throw new Error('No lightning address found for this user');
       }
 
-      const response = await fetch('/api/create-lnbits-invoice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: 1000,
-          lnAddress
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create invoice');
-      }
-
-      const { payment_request, payment_hash } = await response.json();
+      const lnAddress = lnDetails.lud16 || lnDetails.lnurl;
+      const amount = 1000; // 1000 sats
+      const comment = `Zap for your Animal Sunset video!`;
       
-      // Show success toast
+      const paymentRequest = await createZapInvoice(lnAddress, amount, comment);
+      
+      // Create and copy invoice to clipboard
+      await navigator.clipboard.writeText(paymentRequest);
+      
       toast({
-        title: "Zap sent!",
-        description: "Thank you for supporting the creator",
-        duration: 2000
+        title: "Invoice copied!",
+        description: "Lightning invoice has been copied to your clipboard",
       });
     } catch (error) {
       console.error('Error sending zap:', error);
@@ -184,8 +249,100 @@ export default function Gallery() {
       });
     } finally {
       setSendingZap(false);
+      setProcessingAction(null);
     }
   };
+
+  const handleComment = async () => {
+    if (!pubkey || !selectedPost) return;
+
+    try {
+      setProcessingAction('comment');
+      
+      await publishComment(
+        newComment,
+        commentParentId || selectedPost.event.id,
+        75757 // Same kind as parent
+      );
+
+      setShowCommentModal(false);
+      setNewComment('');
+      setCommentParentId(null);
+      
+      // Refresh posts to show new comment
+      await fetchPosts();
+
+      toast({
+        title: "Comment posted",
+        description: "Your comment has been published",
+      });
+    } catch (error) {
+      console.error('Error posting comment:', error);
+      toast({
+        variant: "destructive",
+        title: "Comment failed",
+        description: "Failed to post comment",
+      });
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
+  const handleShare = async (post: VideoPost) => {
+    if (!pubkey) {
+      toast({
+        title: "Connect Required",
+        description: "Please connect your Nostr account first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setProcessingAction('share');
+      await shareToNostr(
+        shareText || `Check out this Animal Sunset video!\n\n${post.event.prompt}\n`,
+        post.event.content
+      );
+      
+      setShowShareModal(false);
+      setShareText('');
+      
+      toast({
+        title: "Shared successfully",
+        description: "Your note has been published to Nostr",
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+      toast({
+        variant: "destructive",
+        title: "Share failed",
+        description: "Failed to share to Nostr",
+      });
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
+  // Render login prompt if not connected
+  if (!pubkey) {
+    return (
+      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full p-6 space-y-6">
+          <h1 className="text-3xl font-bold text-center">Animal Gallery 🌞🦒</h1>
+          <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
+            <p className="text-gray-300 text-center">Connect with Nostr to interact with the gallery</p>
+            <button
+              onClick={connect}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
+            >
+              Connect with Nostr
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -207,8 +364,20 @@ export default function Gallery() {
 
       {/* Navigation Header */}
       <div className="bg-[#1a1a1a] p-4 border-b border-gray-800">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
           <Navigation />
+          {profile && (
+            <div className="flex items-center space-x-2">
+              {profile.picture && (
+                <img
+                  src={profile.picture}
+                  alt="Profile"
+                  className="w-8 h-8 rounded-full"
+                />
+              )}
+              <span>{profile.name || formatPubkey(pubkey)}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -273,10 +442,13 @@ export default function Gallery() {
               <div className="p-4 flex flex-wrap items-center gap-4">
                 <button
                   onClick={() => handleZap(post)}
-                  disabled={sendingZap}
+                  disabled={sendingZap || processingAction === 'zap'}
                   className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Zap size={20} />
+                  {processingAction === 'zap' ? ( <RefreshCw className="animate-spin h-5 w-5" />
+                  ) : (
+                    <Zap size={20} />
+                  )}
                   <span>Zap</span>
                 </button>
 
@@ -292,6 +464,18 @@ export default function Gallery() {
                 </button>
 
                 <button
+                  onClick={() => {
+                    setSelectedPost(post);
+                    setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n`);
+                    setShowShareModal(true);
+                  }}
+                  className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                >
+                  <Share2 size={20} />
+                  <span>Share</span>
+                </button>
+
+                <button
                   onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
                   className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
                 >
@@ -304,22 +488,17 @@ export default function Gallery() {
               {post.comments.length > 0 && (
                 <div className="border-t border-gray-800">
                   <div className="p-4 space-y-4">
-                    {post.comments.map(comment => (
-                      <div key={comment.id} className="flex items-start space-x-3">
-                        <img
-                          src="/default-avatar.png"
-                          alt="Commenter"
-                          className="w-8 h-8 rounded-full"
-                        />
-                        <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
-                          <div className="font-medium text-gray-300 mb-1">
-                            {formatPubkey(comment.pubkey)}
-                          </div>
-                          <div className="text-sm text-gray-200">
-                            {comment.content}
-                          </div>
-                        </div>
-                      </div>
+                    {buildCommentThread(post.comments).map(thread => (
+                      <CommentThreadComponent
+                        key={thread.id}
+                        thread={thread}
+                        onReply={(parentId) => {
+                          setSelectedPost(post);
+                          setCommentParentId(parentId);
+                          setShowCommentModal(true);
+                        }}
+                        level={0}
+                      />
                     ))}
                   </div>
                 </div>
@@ -334,9 +513,14 @@ export default function Gallery() {
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
           <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Add Comment</h2>
+              <h2 className="text-xl font-bold">
+                {commentParentId ? 'Reply to Comment' : 'Add Comment'}
+              </h2>
               <button
-                onClick={() => setShowCommentModal(false)}
+                onClick={() => {
+                  setShowCommentModal(false);
+                  setCommentParentId(null);
+                }}
                 className="text-gray-400 hover:text-white"
               >
                 <X size={20} />
@@ -353,26 +537,81 @@ export default function Gallery() {
 
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setShowCommentModal(false)}
+                onClick={() => {
+                  setShowCommentModal(false);
+                  setCommentParentId(null);
+                }}
                 className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={async () => {
-                  // TODO: Implement comment publishing via Nostr
-                  setShowCommentModal(false);
-                  setNewComment('');
-                  toast({
-                    title: "Comment posted",
-                    description: "Your comment has been published",
-                    duration: 2000
-                  });
-                }}
-                disabled={!newComment.trim()}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+                onClick={handleComment}
+                disabled={!newComment.trim() || processingAction === 'comment'}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
               >
-                Post Comment
+                {processingAction === 'comment' ? (
+                  <>
+                    <RefreshCw className="animate-spin h-5 w-5" />
+                    <span>Posting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    <span>Post Comment</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Modal */}
+      {showShareModal && selectedPost && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">Share to Nostr</h2>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <textarea
+              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+              rows={4}
+              value={shareText}
+              onChange={(e) => setShareText(e.target.value)}
+              placeholder="Add a note..."
+            />
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleShare(selectedPost)}
+                disabled={!shareText.trim() || processingAction === 'share'}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {processingAction === 'share' ? (
+                  <>
+                    <RefreshCw className="animate-spin h-5 w-5" />
+                    <span>Sharing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe size={16} />
+                    <span>Share to Nostr</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -381,3 +620,57 @@ export default function Gallery() {
     </div>
   );
 }
+
+// Comment Thread Component
+const CommentThreadComponent = ({ 
+  thread, 
+  onReply, 
+  level 
+}: { 
+  thread: CommentThread; 
+  onReply: (parentId: string) => void;
+  level: number;
+}) => {
+  if (level >= 6) return null; // Limit nesting depth
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start space-x-3">
+        <img
+          src={thread.profile?.picture || "/default-avatar.png"}
+          alt="Profile"
+          className="w-8 h-8 rounded-full"
+        />
+        <div className="flex-1">
+          <div className={`bg-[#2a2a2a] rounded-lg p-3 space-y-1`}>
+            <div className="font-medium text-gray-300">
+              {thread.profile?.name || formatPubkey(thread.event.pubkey)}
+            </div>
+            <div className="text-sm text-gray-200">
+              {thread.event.content}
+            </div>
+          </div>
+          <button
+            onClick={() => onReply(thread.event.id)}
+            className="text-sm text-gray-400 hover:text-white mt-1 ml-3"
+          >
+            Reply
+          </button>
+        </div>
+      </div>
+      
+      {thread.replies.length > 0 && (
+        <div className={`ml-8 space-y-2 border-l-2 border-gray-800 pl-4`}>
+          {thread.replies.map(reply => (
+            <CommentThreadComponent
+              key={reply.id}
+              thread={reply}
+              onReply={onReply}
+              level={level + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
