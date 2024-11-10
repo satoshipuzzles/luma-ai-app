@@ -26,7 +26,12 @@ import {
 interface VideoPost {
   event: AnimalKind;
   profile?: Profile;
-  comments: AnimalKind[];
+  comments: Array<CommentPost>;
+}
+
+interface CommentPost {
+  event: AnimalKind;
+  profile?: Profile;
 }
 
 interface CommentThread {
@@ -70,29 +75,29 @@ const formatPubkey = (pubkey: string) => {
 };
 
 // Recursive function to build comment threads
-const buildCommentThread = (comments: AnimalKind[]): CommentThread[] => {
+const buildCommentThread = (comments: CommentPost[]): CommentThread[] => {
   const threadMap = new Map<string, CommentThread>();
   const rootThreads: CommentThread[] = [];
 
   // First pass: create thread objects
   comments.forEach(comment => {
-    threadMap.set(comment.id, {
-      id: comment.id,
-      event: comment,
-      replies: [],
-      profile: undefined
+    threadMap.set(comment.event.id, {
+      id: comment.event.id,
+      event: comment.event,
+      profile: comment.profile,
+      replies: []
     });
   });
 
   // Second pass: build hierarchy
   comments.forEach(comment => {
-    const replyTo = comment.tags.find(tag => tag[0] === 'e')?.[1];
+    const replyTo = comment.event.tags.find(tag => tag[0] === 'e')?.[1];
     if (replyTo && threadMap.has(replyTo)) {
       const parentThread = threadMap.get(replyTo)!;
-      const commentThread = threadMap.get(comment.id)!;
+      const commentThread = threadMap.get(comment.event.id)!;
       parentThread.replies.push(commentThread);
     } else {
-      const commentThread = threadMap.get(comment.id)!;
+      const commentThread = threadMap.get(comment.event.id)!;
       rootThreads.push(commentThread);
     }
   });
@@ -205,21 +210,7 @@ function Gallery() {
       const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
       const comments = events.filter(e => isAnimalKindWithTag(e, true));
       
-      // Group comments with their parent posts
-      const postsMap = new Map<string, VideoPost>();
-      
-      for (const post of mainPosts) {
-        postsMap.set(post.id, {
-          event: post,
-          comments: comments.filter(c => 
-            c.tags.find(t => t[0] === 'e')?.[1] === post.id
-          ),
-          profile: undefined
-        });
-      }
-
-      // Fetch profiles for all authors
-      const posts = Array.from(postsMap.values());
+      // Create profile map first
       const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
       const profileMap = new Map<string, Profile>();
       
@@ -238,16 +229,20 @@ function Gallery() {
         }
       });
 
-      // Attach profiles to posts and comments
-      posts.forEach(post => {
-        post.profile = profileMap.get(post.event.pubkey);
-        post.comments.forEach(comment => {
-          const commentProfile = profileMap.get(comment.pubkey);
-          if (commentProfile) {
-            comment.profile = commentProfile;
-          }
-        });
-      });
+      // Convert comments to CommentPosts with profiles
+      const commentPosts = comments.map(comment => ({
+        event: comment,
+        profile: profileMap.get(comment.pubkey)
+      }));
+
+      // Create VideoPosts with profiles and comments
+      const posts: VideoPost[] = mainPosts.map(post => ({
+        event: post,
+        profile: profileMap.get(post.pubkey),
+        comments: commentPosts.filter(c => 
+          c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
+        )
+      }));
 
       setPosts(posts);
       
@@ -267,6 +262,7 @@ function Gallery() {
       setLoading(false);
     }
   };
+
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -311,22 +307,6 @@ function Gallery() {
       setProcessingAction(null);
     }
   };
-
-  const handleComment = async () => {
-    if (!pubkey || !selectedPost) return;
-
-    try {
-      setProcessingAction('comment');
-      
-      await publishComment(
-        newComment,
-        commentParentId || selectedPost.event.id,
-        75757 // Same kind as parent
-      );
-
-      setShowCommentModal(false);
-      setNewComment('');
-      setCommentParentId(null);
       
       // Refresh posts to show new comment
       await fetchPosts();
