@@ -328,9 +328,9 @@ const handleComment = async () => {
     if (selectedPost) {
       let parentId: number | undefined;
       if (commentParentId) {
-        parentId = parseInt(commentParentId);
-        if (isNaN(parentId)) {
-          parentId = undefined;
+        const parsedParentId = parseInt(commentParentId);
+        if (!isNaN(parsedParentId)) {
+          parentId = parsedParentId;
         }
       }
 
