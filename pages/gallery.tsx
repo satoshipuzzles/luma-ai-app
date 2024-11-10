@@ -153,6 +153,7 @@ const CommentThreadComponent = ({
     </div>
   );
 };
+
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
   
@@ -194,9 +195,15 @@ function Gallery() {
 
       const events = await response.json() as NostrEvent[];
       
+      // Helper function to check if event is AnimalKind with specific tag condition
+      const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
+        if (event.kind !== 75757) return false;
+        return event.tags.some(t => t[0] === 'e') === hasETag;
+      };
+
       // Separate posts and comments
-      const mainPosts = events.filter((e): e is AnimalKind => e.kind === 75757 && !e.tags.find(t => t[0] === 'e'));
-      const comments = events.filter((e): e is AnimalKind => e.kind === 75757 && e.tags.find(t => t[0] === 'e'));
+      const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
+      const comments = events.filter(e => isAnimalKindWithTag(e, true));
       
       // Group comments with their parent posts
       const postsMap = new Map<string, VideoPost>();
@@ -260,7 +267,6 @@ function Gallery() {
       setLoading(false);
     }
   };
-
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -353,10 +359,10 @@ function Gallery() {
 
     try {
       setProcessingAction('share');
-      await shareToNostr(
-        shareText || `Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n`,
-        post.event.content
-      );
+      const note = shareText || 
+        `Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
+        
+      await shareToNostr(note, post.event.content);
       
       setShowShareModal(false);
       setShareText('');
@@ -433,7 +439,8 @@ function Gallery() {
           )}
         </div>
       </div>
-{/* Main Content */}
+
+     {/* Main Content */}
       <div className="max-w-4xl mx-auto py-8 px-4">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Animal Gallery</h1>
