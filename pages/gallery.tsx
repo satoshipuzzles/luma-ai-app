@@ -322,40 +322,41 @@ function Gallery() {
     }
   };
 
-  const handleComment = async () => {
-    try {
-      setProcessingAction('comment');
+const handleComment = async () => {
+  try {
+    setProcessingAction('comment');
 
-      if (selectedPost) {
-        // Your comment posting logic here
-        await publishComment(selectedPost.event.id, newComment, commentParentId);
+    if (selectedPost) {
+      // Your comment posting logic here
+      const parentId = commentParentId ? parseInt(commentParentId) : undefined;
+      await publishComment(selectedPost.event.id, newComment, parentId);
 
-        // Refresh posts to show new comment
-        await fetchPosts();
+      // Refresh posts to show new comment
+      await fetchPosts();
 
-        toast({
-          title: "Comment posted",
-          description: "Your comment has been published",
-        });
-      } else {
-        console.error('No selected post found');
-        toast({
-          variant: "destructive",
-          title: "Comment failed",
-          description: "No post selected",
-        });
-      }
-    } catch (error) {
-      console.error('Error posting comment:', error);
+      toast({
+        title: "Comment posted",
+        description: "Your comment has been published",
+      });
+    } else {
+      console.error('No selected post found');
       toast({
         variant: "destructive",
         title: "Comment failed",
-        description: "Failed to post comment",
+        description: "No post selected",
       });
-    } finally {
-      setProcessingAction(null);
     }
-  };
+  } catch (error) {
+    console.error('Error posting comment:', error);
+    toast({
+      variant: "destructive",
+      title: "Comment failed",
+      description: "Failed to post comment",
+    });
+  } finally {
+    setProcessingAction(null);
+  }
+};
 
   const handleShare = async (post: VideoPost) => {
     if (!pubkey) {
