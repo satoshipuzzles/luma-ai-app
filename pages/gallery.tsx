@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind, NostrEvent } from '../types/nostr';
+import { NostrEvent, AnimalKind, ProfileKind, Profile } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
 import { 
   publishToRelays, 
@@ -25,21 +25,14 @@ import {
 
 interface VideoPost {
   event: AnimalKind;
-  profile?: {
-    name?: string;
-    picture?: string;
-    about?: string;
-  };
+  profile?: Profile;
   comments: AnimalKind[];
 }
 
 interface CommentThread {
   id: string;
   event: AnimalKind;
-  profile?: {
-    name?: string;
-    picture?: string;
-  };
+  profile?: Profile;
   replies: CommentThread[];
 }
 
@@ -123,8 +116,10 @@ export default function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    fetchPosts();
-  }, []);
+    if (pubkey) {
+      fetchPosts();
+    }
+  }, [pubkey]);
 
   const fetchPosts = async () => {
     try {
@@ -144,11 +139,11 @@ export default function Gallery() {
 
       if (!response.ok) throw new Error('Failed to fetch posts');
 
-      const events = await response.json() as AnimalKind[];
+      const events = await response.json() as NostrEvent[];
       
       // Separate posts and comments
-      const mainPosts = events.filter(e => !e.tags.find(t => t[0] === 'e'));
-      const comments = events.filter(e => e.tags.find(t => t[0] === 'e'));
+      const mainPosts = events.filter((e): e is AnimalKind => e.kind === 75757 && !e.tags.find(t => t[0] === 'e'));
+      const comments = events.filter((e): e is AnimalKind => e.kind === 75757 && e.tags.find(t => t[0] === 'e'));
       
       // Group comments with their parent posts
       const postsMap = new Map<string, VideoPost>();
@@ -165,16 +160,18 @@ export default function Gallery() {
 
       // Fetch profiles for all authors
       const posts = Array.from(postsMap.values());
-      const profileEvents = events.filter(e => e.kind === 0);
-      const profileMap = new Map();
+      const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
+      const profileMap = new Map<string, Profile>();
       
       profileEvents.forEach(e => {
         try {
-          const content = JSON.parse(e.content);
+          const profile = JSON.parse(e.content);
           profileMap.set(e.pubkey, {
-            name: content.name,
-            picture: content.picture,
-            about: content.about
+            name: profile.name,
+            picture: profile.picture,
+            about: profile.about,
+            lud06: profile.lud06,
+            lud16: profile.lud16
           });
         } catch (error) {
           console.error('Error parsing profile:', error);
@@ -185,7 +182,10 @@ export default function Gallery() {
       posts.forEach(post => {
         post.profile = profileMap.get(post.event.pubkey);
         post.comments.forEach(comment => {
-          comment.profile = profileMap.get(comment.pubkey);
+          const commentProfile = profileMap.get(comment.pubkey);
+          if (commentProfile) {
+            comment.profile = commentProfile;
+          }
         });
       });
 
@@ -301,7 +301,7 @@ export default function Gallery() {
     try {
       setProcessingAction('share');
       await shareToNostr(
-        shareText || `Check out this Animal Sunset video!\n\n${post.event.prompt}\n`,
+        shareText || `Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n`,
         post.event.content
       );
       
@@ -400,112 +400,123 @@ export default function Gallery() {
           </button>
         </div>
 
-        <div className="space-y-8">
-          {posts.map(post => (
-            <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
-              {/* Author Info */}
-              <div className="p-4 flex items-center space-x-3">
-                <img
-                  src={post.profile?.picture || '/default-avatar.png'}
-                  alt="Profile"
-                  className="w-10 h-10 rounded-full object-cover"
-                />
-                <div>
-                  <div className="font-medium">
-                    {post.profile?.name || formatPubkey(post.event.pubkey)}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    {new Date(post.event.created_at * 1000).toLocaleDateString()}
-                  </div>
-                </div>
-              </div>
-
-              {/* Video */}
-              <div className="relative pt-[56.25%] bg-black">
-                <video
-                  src={post.event.content}
-                  className="absolute top-0 left-0 w-full h-full object-contain"
-                  controls
-                  loop
-                  playsInline
-                />
-              </div>
-
-              {/* Title */}
-              <div className="p-4 pb-2">
-                <p className="text-lg font-medium">
-                  {post.event.tags.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="p-4 flex flex-wrap items-center gap-4">
-                <button
-                  onClick={() => handleZap(post)}
-                  disabled={sendingZap || processingAction === 'zap'}
-                  className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {processingAction === 'zap' ? ( <RefreshCw className="animate-spin h-5 w-5" />
-                  ) : (
-                    <Zap size={20} />
-                  )}
-                  <span>Zap</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSelectedPost(post);
-                    setShowCommentModal(true);
-                  }}
-                  className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                >
-                  <MessageSquare size={20} />
-                  <span>{post.comments.length}</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSelectedPost(post);
-                    setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n`);
-                    setShowShareModal(true);
-                  }}
-                  className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                >
-                  <Share2 size={20} />
-                  <span>Share</span>
-                </button>
-
-                <button
-                  onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-                  className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
-                >
-                  <Download size={20} />
-                  <span>Download</span>
-                </button>
-              </div>
-
-              {/* Comments */}
-              {post.comments.length > 0 && (
-                <div className="border-t border-gray-800">
-                  <div className="p-4 space-y-4">
-                    {buildCommentThread(post.comments).map(thread => (
-                      <CommentThreadComponent
-                        key={thread.id}
-                        thread={thread}
-                        onReply={(parentId) => {
-                          setSelectedPost(post);
-                          setCommentParentId(parentId);
-                          setShowCommentModal(true);
-                        }}
-                        level={0}
-                      />
-                    ))}
+        {error ? (
+          <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+            {error}
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="text-center text-gray-400 py-8">
+            No videos found in the gallery yet.
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {posts.map(post => (
+              <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
+                {/* Author Info */}
+                <div className="p-4 flex items-center space-x-3">
+                  <img
+                    src={post.profile?.picture || '/default-avatar.png'}
+                    alt="Profile"
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                  <div>
+                    <div className="font-medium">
+                      {post.profile?.name || formatPubkey(post.event.pubkey)}
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      {new Date(post.event.created_at * 1000).toLocaleDateString()}
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+
+{/* Video */}
+                <div className="relative pt-[56.25%] bg-black">
+                  <video
+                    src={post.event.content}
+                    className="absolute top-0 left-0 w-full h-full object-contain"
+                    controls
+                    loop
+                    playsInline
+                  />
+                </div>
+
+                {/* Title */}
+                <div className="p-4 pb-2">
+                  <p className="text-lg font-medium">
+                    {post.event.tags.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="p-4 flex flex-wrap items-center gap-4">
+                  <button
+                    onClick={() => handleZap(post)}
+                    disabled={sendingZap || processingAction === 'zap'}
+                    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {processingAction === 'zap' ? (
+                      <RefreshCw className="animate-spin h-5 w-5" />
+                    ) : (
+                      <Zap size={20} />
+                    )}
+                    <span>Zap</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSelectedPost(post);
+                      setShowCommentModal(true);
+                    }}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                  >
+                    <MessageSquare size={20} />
+                    <span>{post.comments.length}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSelectedPost(post);
+                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n`);
+                      setShowShareModal(true);
+                    }}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                  >
+                    <Share2 size={20} />
+                    <span>Share</span>
+                  </button>
+
+                  <button
+                    onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
+                  >
+                    <Download size={20} />
+                    <span>Download</span>
+                  </button>
+                </div>
+
+                {/* Comments */}
+                {post.comments.length > 0 && (
+                  <div className="border-t border-gray-800">
+                    <div className="p-4 space-y-4">
+                      {buildCommentThread(post.comments).map(thread => (
+                        <CommentThreadComponent
+                          key={thread.id}
+                          thread={thread}
+                          onReply={(parentId) => {
+                            setSelectedPost(post);
+                            setCommentParentId(parentId);
+                            setShowCommentModal(true);
+                          }}
+                          level={0}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Comment Modal */}
@@ -674,3 +685,5 @@ const CommentThreadComponent = ({
     </div>
   );
 };
+
+export default Gallery;
