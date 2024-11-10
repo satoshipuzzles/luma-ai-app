@@ -321,7 +321,6 @@ function Gallery() {
       setProcessingAction(null);
     }
   };
-
 const handleComment = async () => {
   try {
     setProcessingAction('comment');
@@ -329,7 +328,7 @@ const handleComment = async () => {
     if (selectedPost) {
       // Your comment posting logic here
       const parentId = commentParentId ? parseInt(commentParentId) : undefined;
-      await publishComment(selectedPost.event.id, newComment, parentId);
+      await publishComment(selectedPost.event.id, newComment, parentId !== undefined ? parentId : null);
 
       // Refresh posts to show new comment
       await fetchPosts();
