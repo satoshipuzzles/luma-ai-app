@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { relayInit, getEventHash, Event } from 'nostr-tools';
+import { relayInit } from 'nostr-tools';
 import { 
   Menu, 
   X, 
@@ -22,7 +22,10 @@ import {
 } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
+import { ShareDialog } from '../components/ShareDialog';
+import { useNostr } from '../contexts/NostrContext';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { DEFAULT_RELAY } from '../lib/nostr';
 
 // Types
 interface StoredGeneration {
@@ -34,29 +37,10 @@ interface StoredGeneration {
   pubkey: string;
 }
 
-interface Profile {
-  name?: string;
-  picture?: string;
-  about?: string;
-}
-
-/*interface NostrWindow extends Window {
-  nostr?: {
-    getPublicKey(): Promise<string>;
-    signEvent(event: any): Promise<any>;
-  };
-}
-
-declare global {
-  interface Window extends NostrWindow {}
-}
-*/
-
-// Constants
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
-const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
@@ -80,13 +64,6 @@ const formatDate = (dateString: string) => {
     console.error('Date formatting error:', e);
     return 'Just now';
   }
-};
-
-const getNostrPublicKey = async () => {
-  if (!window.nostr) {
-    throw new Error('Nostr extension not found. Please install a NIP-07 browser extension.');
-  }
-  return await window.nostr.getPublicKey();
 };
 
 const saveGeneration = (generation: StoredGeneration) => {
@@ -146,97 +123,11 @@ const downloadVideo = async (url: string, filename: string) => {
   }
 };
 
-const publishToNostr = async (
-  videoUrl: string, 
-  prompt: string, 
-  isPublic: boolean,
-  eventId: string,
-  pubkey: string
-): Promise<void> => {
-  if (!window.nostr) {
-    throw new Error('Nostr extension not found');
-  }
-
-  try {
-    // Animal Kind Event (75757)
-    const animalEvent: Partial<Event> = {
-      kind: 75757,
-      pubkey,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['title', prompt],
-        ['r', videoUrl],
-        ['type', 'animal-sunset']
-      ],
-      content: videoUrl,
-    };
-
-    animalEvent.id = getEventHash(animalEvent as Event);
-    const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
-
-    // History Event (8008135)
-    const historyEvent: Partial<Event> = {
-      kind: 8008135,
-      pubkey,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['text-to-speech', prompt],
-        ['r', videoUrl],
-        ['e', signedAnimalEvent.id],
-        ['public', isPublic.toString()]
-      ],
-      content: JSON.stringify({
-        prompt,
-        videoUrl,
-        createdAt: new Date().toISOString(),
-        state: 'completed',
-        public: isPublic
-      }),
-    };
-
-    historyEvent.id = getEventHash(historyEvent as Event);
-    const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
-
-    const relayConnections = DEFAULT_RELAY_URLS.map((url) => relayInit(url));
-
-    await Promise.all(
-      relayConnections.map((relay) => {
-        return new Promise<void>((resolve, reject) => {
-          relay.on('connect', async () => {
-            try {
-              await relay.publish(signedAnimalEvent);
-              await relay.publish(signedHistoryEvent);
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          });
-
-          relay.on('error', () => {
-            reject(new Error(`Failed to connect to relay ${relay.url}`));
-          });
-
-          relay.connect();
-        });
-      })
-    );
-
-    relayConnections.forEach(relay => relay.close());
-
-    toast({
-      title: "Published to Nostr",
-      description: "Your video has been shared successfully",
-      duration: 2000
-    });
-  } catch (err) {
-    console.error('Error publishing to Nostr:', err);
-    throw err;
-  }
-};
 export default function Home() {
+  // Get Nostr context
+  const { pubkey, profile, connect } = useNostr();
+
   // State Management
-  const [pubkey, setPubkey] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
@@ -253,10 +144,7 @@ export default function Home() {
   const [isExtending, setIsExtending] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [showNostrModal, setShowNostrModal] = useState(false);
-  const [noteContent, setNoteContent] = useState('');
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState('');
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   // Effects
   useEffect(() => {
@@ -278,42 +166,6 @@ export default function Home() {
       setIsSidebarOpen(false);
     }
   }, [selectedGeneration]);
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      if (pubkey) {
-        try {
-          const response = await fetch(`/api/nostr/profile?pubkey=${pubkey}`);
-          if (response.ok) {
-            const profileData = await response.json();
-            setProfile(profileData);
-          }
-        } catch (error) {
-          console.error('Error loading profile:', error);
-        }
-      }
-    };
-
-    loadProfile();
-  }, [pubkey]);
-  // Core Functions
-  const connectNostr = async () => {
-    try {
-      const key = await getNostrPublicKey();
-      setPubkey(key);
-      toast({
-        title: "Connected",
-        description: "Successfully connected to Nostr",
-      });
-    } catch (err) {
-      setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
-      toast({
-        variant: "destructive",
-        title: "Connection failed",
-        description: "Please install a Nostr extension",
-      });
-    }
-  };
 
   const handleImageUpload = async (file: File) => {
     try {
@@ -448,8 +300,7 @@ export default function Home() {
               g.id === generationId 
                 ? { ...g, state: 'completed', videoUrl: data.assets.video, createdAt: data.created_at }
                 : g
-                );
-
+            );
             localStorage.setItem('generations', JSON.stringify(updatedGenerations));
             return updatedGenerations;
           });
@@ -465,26 +316,6 @@ export default function Home() {
             }
             return prevSelected;
           });
-
-          // Publish to Nostr when video is ready
-          if (userSettings.publicGenerations) {
-            try {
-              await publishToNostr(
-                data.assets.video,
-                prompt,
-                userSettings.publicGenerations,
-                generationId,
-                pubkey!
-              );
-            } catch (error) {
-              console.error('Failed to publish to Nostr:', error);
-              toast({
-                variant: "destructive",
-                title: "Publishing failed",
-                description: "Failed to share to Nostr",
-              });
-            }
-          }
 
           setLoading(false);
           return true;
@@ -640,7 +471,8 @@ export default function Home() {
       setLoading(false);
     }
   };
-  // Render
+
+  // Render login screen if not connected
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -649,7 +481,7 @@ export default function Home() {
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
             <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
             <button
-              onClick={connectNostr}
+              onClick={connect}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
             >
               Connect with Nostr
@@ -842,12 +674,7 @@ export default function Home() {
                             <span>Download</span>
                           </button>
                           <button
-                            onClick={() => {
-                              setNoteContent(
-                                `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
-                              );
-                              setShowNostrModal(true);
-                            }}
+                            onClick={() => setShowShareDialog(true)}
                             className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
                             <Share2 size={16} />
@@ -857,7 +684,7 @@ export default function Home() {
                       </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                      Generation failed. Please try again.
+                        Generation failed. Please try again.
                       </div>
                     ) : (
                       <div className="space-y-6">
@@ -913,15 +740,14 @@ export default function Home() {
                     {/* Extend Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                       <Switch
-  checked={isExtending}
-  onCheckedChange={(checked) => { 
-    setIsExtending(checked); 
-    if (checked) setStartImageUrl(null);
-  }}
-  disabled={loading}
-/>
-
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => { 
+                          setIsExtending(checked); 
+                          if (checked) setStartImageUrl(null);
+                        }}
+                        disabled={loading}
+                      />
                     </div>
 
                     {/* Conditional Content */}
@@ -992,6 +818,7 @@ export default function Home() {
                                 const file = e.target.files?.[0];
                                 if (file) handleImageUpload(file);
                               }}
+                              className="
                               className="hidden"
                               disabled={loading}
                             />
@@ -1096,64 +923,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* Nostr Note Modal */}
-      {showNostrModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Share on Nostr</h2>
-              <button
-                onClick={() => setShowNostrModal(false)}
-                className="text-gray-400 hover:text-white"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-              rows={4}
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              placeholder="Write your note..."
-            />
-            {publishError && (
-              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                {publishError}
-              </div>
-            )}
-            <div className="flex flex-col md:flex-row gap-2">
-              <button
-                onClick={() => setShowNostrModal(false)}
-                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (selectedGeneration?.videoUrl) {
-                    publishToNostr(
-                      selectedGeneration.videoUrl,
-                      selectedGeneration.prompt,
-                      userSettings.publicGenerations,
-                      selectedGeneration.id,
-                      pubkey!
-                    ).then(() => {
-                      setShowNostrModal(false);
-                      setNoteContent('');
-                    }).catch((error) => {
-                      setPublishError(error.message);
-                    });
-                  }
-                }}
-                disabled={publishing || !selectedGeneration?.videoUrl}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                {publishing ? 'Publishing...' : 'Publish'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Share Dialog */}
+      {showShareDialog && selectedGeneration && (
+        <ShareDialog
+          isOpen={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          videoUrl={selectedGeneration.videoUrl!}
+          prompt={selectedGeneration.prompt}
+          isPublic={userSettings.publicGenerations}
+        />
       )}
 
       {/* Settings Modal */}
@@ -1166,3 +944,5 @@ export default function Home() {
     </div>
   );
 }
+
+export default Home;
