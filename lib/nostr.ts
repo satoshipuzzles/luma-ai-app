@@ -1,103 +1,123 @@
-import { relayInit, Event } from 'nostr-tools';
+import { relayInit, getEventHash, Event, SimplePool } from 'nostr-tools';
 
-const DEFAULT_RELAY = 'wss://relay.damus.io';
+export const DEFAULT_RELAY = 'wss://relay.damus.io';
+export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
 
-export async function publishEvent(event: Partial<Event>, relayUrl: string = DEFAULT_RELAY): Promise<void> {
-  const relay = relayInit(relayUrl);
-  
-  return new Promise((resolve, reject) => {
-    relay.on('connect', async () => {
+const pool = new SimplePool();
+
+export async function publishToRelays(event: Partial<Event>, relays: string[] = [DEFAULT_RELAY, ...BACKUP_RELAYS]): Promise<void> {
+  if (!window.nostr) {
+    throw new Error('Nostr extension not found');
+  }
+
+  const finalEvent = {
+    ...event,
+    created_at: Math.floor(Date.now() / 1000),
+  };
+
+  finalEvent.id = getEventHash(finalEvent as Event);
+  const signedEvent = await window.nostr.signEvent(finalEvent as Event);
+
+  await Promise.all(
+    relays.map(async (relay) => {
       try {
-        const signedEvent = await window.nostr.signEvent(event as Event);
-        await relay.publish(signedEvent);
-        resolve();
+        const pub = pool.publish([relay], signedEvent);
+        await pub;
       } catch (error) {
-        reject(error);
-      } finally {
-        relay.close();
+        console.error(`Failed to publish to ${relay}:`, error);
       }
-    });
-
-    relay.on('error', () => {
-      reject(new Error(`Failed to connect to relay ${relayUrl}`));
-    });
-
-    relay.connect();
-  });
+    })
+  );
 }
 
-export async function fetchLightningAddress(pubkey: string): Promise<string | null> {
+export async function publishVideo(videoUrl: string, prompt: string, isPublic: boolean): Promise<void> {
+  // Animal Kind Event (75757)
+  const animalEvent: Partial<Event> = {
+    kind: 75757,
+    tags: [
+      ['title', prompt],
+      ['r', videoUrl],
+      ['type', 'animal-sunset']
+    ],
+    content: videoUrl,
+  };
+  
+  await publishToRelays(animalEvent);
+
+  // History Event (8008135)
+  const historyEvent: Partial<Event> = {
+    kind: 8008135,
+    tags: [
+      ['text-to-speech', prompt],
+      ['r', videoUrl],
+      ['e', animalEvent.id!],
+      ['public', isPublic.toString()]
+    ],
+    content: JSON.stringify({
+      prompt,
+      videoUrl,
+      createdAt: new Date().toISOString(),
+      state: 'completed',
+      public: isPublic
+    }),
+  };
+
+  await publishToRelays(historyEvent);
+}
+
+export async function fetchLightningDetails(pubkey: string): Promise<{ lnurl?: string, lud16?: string } | null> {
+  const profileEvent = await pool.get(
+    [DEFAULT_RELAY],
+    { kinds: [0], authors: [pubkey] }
+  );
+
+  if (!profileEvent) return null;
+
   try {
-    const relay = relayInit(DEFAULT_RELAY);
-    
-    return new Promise((resolve) => {
-      relay.on('connect', () => {
-        const sub = relay.sub([
-          {
-            kinds: [0],
-            authors: [pubkey],
-          },
-        ]);
-
-        sub.on('event', (event) => {
-          try {
-            const profile = JSON.parse(event.content);
-            if (profile.lud16 || profile.lud06) {
-              resolve(profile.lud16 || profile.lud06);
-              sub.unsub();
-              relay.close();
-            }
-          } catch (error) {
-            console.error('Error parsing profile:', error);
-          }
-        });
-
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          sub.unsub();
-          relay.close();
-          resolve(null);
-        }, 5000);
-      });
-
-      relay.connect();
-    });
+    const profile = JSON.parse(profileEvent.content);
+    return {
+      lnurl: profile.lud06,
+      lud16: profile.lud16
+    };
   } catch (error) {
-    console.error('Error fetching lightning address:', error);
+    console.error('Error parsing profile:', error);
     return null;
   }
 }
 
-export async function createZapInvoice(lnAddress: string, amount: number): Promise<{ payment_request: string, payment_hash: string }> {
-  // Extract username and domain from Lightning Address
+export async function createZapInvoice(lnAddress: string, amount: number, comment?: string): Promise<string> {
   const [username, domain] = lnAddress.split('@');
   
-  // Fetch LN URL callback from .well-known
+  // Fetch LNURL pay endpoint
   const response = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
-  const lnurlData = await response.json();
+  const { callback, maxSendable, minSendable } = await response.json();
   
-  // Create invoice using callback URL
-  const callbackResponse = await fetch(`${lnurlData.callback}?amount=${amount * 1000}`);
-  const { pr: payment_request, payment_hash } = await callbackResponse.json();
+  if (amount < minSendable || amount > maxSendable) {
+    throw new Error('Amount out of bounds');
+  }
+
+  // Get payment request
+  const callbackResponse = await fetch(
+    `${callback}?amount=${amount}&comment=${encodeURIComponent(comment || '')}`
+  );
+  const { pr: paymentRequest } = await callbackResponse.json();
   
-  return { payment_request, payment_hash };
+  return paymentRequest;
 }
 
 export async function publishComment(content: string, parentId: string, kind: number): Promise<void> {
   const event: Partial<Event> = {
     kind,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [['e', parentId]], // Reference to parent event
+    tags: [['e', parentId, '', 'reply']],
     content,
   };
 
-  await publishEvent(event);
+  await publishToRelays(event);
 }
 
 export async function shareToNostr(content: string, videoUrl: string): Promise<void> {
   const event: Partial<Event> = {
     kind: 1,
-    created_at: Math.floor(Date.now() / 1000),
     tags: [
       ['t', 'animalsunset'],
       ['r', videoUrl]
@@ -105,5 +125,5 @@ export async function shareToNostr(content: string, videoUrl: string): Promise<v
     content,
   };
 
-  await publishEvent(event);
+  await publishToRelays(event);
 }
