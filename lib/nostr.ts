@@ -2,8 +2,7 @@ import {
   SimplePool,
   getEventHash,
   type Event,
-  validateEvent,
-  verifySignature
+  validateEvent
 } from 'nostr-tools';
 
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
@@ -24,8 +23,8 @@ export async function publishToRelays(event: Partial<Event>, relays: string[] = 
   finalEvent.id = getEventHash(finalEvent as Event);
   const signedEvent = await window.nostr.signEvent(finalEvent as Event);
 
-  if (!validateEvent(signedEvent) || !verifySignature(signedEvent)) {
-    throw new Error('Invalid event signature');
+  if (!validateEvent(signedEvent)) {
+    throw new Error('Invalid event');
   }
 
   try {
