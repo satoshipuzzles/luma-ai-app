@@ -325,17 +325,26 @@ function Gallery() {
   const handleComment = async () => {
     try {
       setProcessingAction('comment');
-      
-      // Your comment posting logic here
-      await publishComment(selectedPost.event.id, newComment, commentParentId);
-      
-      // Refresh posts to show new comment
-      await fetchPosts();
 
-      toast({
-        title: "Comment posted",
-        description: "Your comment has been published",
-      });
+      if (selectedPost) {
+        // Your comment posting logic here
+        await publishComment(selectedPost.event.id, newComment, commentParentId);
+
+        // Refresh posts to show new comment
+        await fetchPosts();
+
+        toast({
+          title: "Comment posted",
+          description: "Your comment has been published",
+        });
+      } else {
+        console.error('No selected post found');
+        toast({
+          variant: "destructive",
+          title: "Comment failed",
+          description: "No post selected",
+        });
+      }
     } catch (error) {
       console.error('Error posting comment:', error);
       toast({
@@ -440,7 +449,8 @@ function Gallery() {
           )}
         </div>
       </div>
-{/* Main Content */}
+
+  {/* Main Content */}
 <div className="max-w-4xl mx-auto py-8 px-4">
   <div className="flex justify-between items-center mb-8">
     <h1 className="text-3xl font-bold">Animal Gallery</h1>
@@ -636,7 +646,6 @@ function Gallery() {
     </div>
   </div>
 )}
-
 {/* Share Modal */}
 {showShareModal && selectedPost && (
   <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
