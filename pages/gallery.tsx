@@ -277,36 +277,38 @@ function Gallery() {
       setSendingZap(true);
       setProcessingAction('zap');
       
-      const lnDetails = await fetchLightningDetails(post.event.pubkey);
-      if (!lnDetails?.lud16 && !lnDetails?.lnurl) {
-        throw new Error('No lightning address found for this user');
-      }
+     const lnDetails = await fetchLightningDetails(post.event.pubkey);
+if (!lnDetails?.lud16 && !lnDetails?.lnurl) {
+  throw new Error('No lightning address found for this user');
+}
 
-      const lnAddress = lnDetails.lud16 || lnDetails.lnurl;
-      const amount = 1000; // 1000 sats
-      const comment = `Zap for your Animal Sunset video!`;
-      
-      const paymentRequest = await createZapInvoice(lnAddress, amount, comment);
-      
-      // Create and copy invoice to clipboard
-      await navigator.clipboard.writeText(paymentRequest);
-      
-      toast({
-        title: "Invoice copied!",
-        description: "Lightning invoice has been copied to your clipboard",
-      });
-    } catch (error) {
-      console.error('Error sending zap:', error);
-      toast({
-        variant: "destructive",
-        title: "Zap failed",
-        description: error instanceof Error ? error.message : "Failed to send zap",
-      });
-    } finally {
-      setSendingZap(false);
-      setProcessingAction(null);
-    }
-  };
+const lnAddress = lnDetails.lud16 || lnDetails.lnurl;
+
+if (lnAddress) {
+  const amount = 1000; // 1000 sats
+  const comment = `Zap for your Animal Sunset video!`;
+  
+  try {
+    const paymentRequest = await createZapInvoice(lnAddress, amount, comment);
+    
+    // Create and copy invoice to clipboard
+    await navigator.clipboard.writeText(paymentRequest);
+    
+    toast({
+      title: "Invoice copied!",
+      description: "Lightning invoice has been copied to your clipboard",
+    });
+  } catch (error) {
+    console.error('Error sending zap:', error);
+    toast({
+      variant: "destructive",
+      title: "Zap failed",
+      description: error instanceof Error ? error.message : "Failed to send zap",
+    });
+  }
+} else {
+  throw new Error('No lightning address found for this user');
+}
       
       // Refresh posts to show new comment
       await fetchPosts();
