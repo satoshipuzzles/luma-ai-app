@@ -327,8 +327,15 @@ const handleComment = async () => {
 
     if (selectedPost) {
       // Your comment posting logic here
-      const parentId = commentParentId ? parseInt(commentParentId) : undefined;
-      await publishComment(selectedPost.event.id, newComment, parentId !== undefined ? parentId : null);
+      let parentId: number | null = null;
+      if (commentParentId) {
+        const parsedParentId = parseInt(commentParentId);
+        if (!isNaN(parsedParentId)) {
+          parentId = parsedParentId;
+        }
+      }
+
+      await publishComment(selectedPost.event.id, newComment, parentId);
 
       // Refresh posts to show new comment
       await fetchPosts();
@@ -356,7 +363,6 @@ const handleComment = async () => {
     setProcessingAction(null);
   }
 };
-
   const handleShare = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
