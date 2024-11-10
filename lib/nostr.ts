@@ -79,11 +79,12 @@ export async function publishVideo(videoUrl: string, prompt: string, isPublic: b
 }
 
 export async function fetchLightningDetails(pubkey: string): Promise<{ lnurl?: string, lud16?: string } | null> {
-  const profileEvent = await pool.get(
+  const events = await pool.querySync(
     [DEFAULT_RELAY],
     { kinds: [0], authors: [pubkey] }
   );
 
+  const profileEvent = events[0];
   if (!profileEvent) return null;
 
   try {
@@ -143,5 +144,5 @@ export async function shareToNostr(content: string, videoUrl: string): Promise<v
 
 // Helper function to fetch multiple events
 export async function fetchEvents(filter: any): Promise<Event[]> {
-  return await pool.list([DEFAULT_RELAY], filter);
+  return await pool.querySync([DEFAULT_RELAY], filter);
 }
