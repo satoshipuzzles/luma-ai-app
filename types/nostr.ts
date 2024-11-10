@@ -11,16 +11,25 @@ export interface NostrEvent {
 export interface AnimalKind extends NostrEvent {
   kind: 75757;
   content: string; // This will be the video URL
-  tags: Array<['p', string] | ['e', string] | ['title', string]>; // p for author, e for reply
+  tags: Array<['title' | 'r' | 'type' | 'e' | 'p', string]>;
+}
+
+export interface HistoryKind extends NostrEvent {
+  kind: 8008135;
+  tags: Array<['text-to-speech' | 'r' | 'e' | 'public', string]>;
+}
+
+export interface ProfileKind extends NostrEvent {
+  kind: 0;
+  content: string; // JSON string of profile data
 }
 
 export interface Profile {
   name?: string;
   picture?: string;
   about?: string;
+  lud06?: string;  // LNURL
+  lud16?: string;  // Lightning Address
 }
 
-export interface NostrProfile extends NostrEvent {
-  kind: 0;
-  content: string; // JSON string of ProfileContent
-}
+export type NostrEventKind = AnimalKind | HistoryKind | ProfileKind;
