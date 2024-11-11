@@ -683,14 +683,15 @@ const handleComment = async () => {
               <span>Sharing...</span>
             </>
           ) : (
-            <>
-              <Globe size={16} />
-              <span>Share to Nostr</span>
-            </>
-          )}
-        </button>
-      </div>
-    </div>
-  </div>
+  <>
+  <Globe size={16} />
+  <span>Share to Nostr</span>
+</>
 )}
-</div> {}
+</button>
+</div>
+</div>
+</div>
+)}
+</div>
+
