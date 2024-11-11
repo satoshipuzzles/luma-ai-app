@@ -9,8 +9,10 @@ export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
 
 const pool = new SimplePool();
 
+type UnsignedEvent = Omit<Event, 'id' | 'sig' | 'pubkey' | 'created_at'>;
+
 export async function publishToRelays(
-  event: Partial<Event>,
+  event: UnsignedEvent,
   relays: string[] = [DEFAULT_RELAY, ...BACKUP_RELAYS]
 ): Promise<void> {
   if (typeof window === 'undefined' || !window.nostr) {
@@ -49,7 +51,7 @@ export async function publishVideo(
   isPublic: boolean
 ): Promise<void> {
   // Animal Kind Event (75757)
-  const animalEvent: Partial<Event> = {
+  const animalEvent: UnsignedEvent = {
     kind: 75757,
     tags: [
       ['title', prompt],
@@ -62,7 +64,7 @@ export async function publishVideo(
   await publishToRelays(animalEvent);
 
   // History Event (8008135)
-  const historyEvent: Partial<Event> = {
+  const historyEvent: UnsignedEvent = {
     kind: 8008135,
     tags: [
       ['text-to-speech', prompt],
@@ -131,7 +133,7 @@ export async function publishComment(
   parentId: string,
   kind: number = 1
 ): Promise<void> {
-  const event: Partial<Event> = {
+  const event: UnsignedEvent = {
     kind,
     tags: [['e', parentId, '', 'reply']],
     content,
@@ -144,7 +146,7 @@ export async function shareToNostr(
   content: string,
   videoUrl: string
 ): Promise<void> {
-  const event: Partial<Event> = {
+  const event: UnsignedEvent = {
     kind: 1,
     tags: [
       ['t', 'animalsunset'],
