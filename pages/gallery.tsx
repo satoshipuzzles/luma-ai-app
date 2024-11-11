@@ -671,6 +671,11 @@ const handleComment = async () => {
           className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
         >
           Cancel
+               <button
+          onClick={() => setShowShareModal(false)}
+          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+        >
+          Cancel
         </button>
         <button
           onClick={() => handleShare(selectedPost)}
@@ -693,4 +698,10 @@ const handleComment = async () => {
     </div>
   </div>
 )}
+
+{/* Closing the main div for the Gallery component */}
 </div>
+  );
+}
+
+export default Gallery;
