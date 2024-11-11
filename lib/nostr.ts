@@ -54,11 +54,12 @@ export async function publishToRelays(
     const publishPromises: Promise<void>[] = pubs.map((pub) => {
       return new Promise<void>((resolve, reject) => {
         if (!pub) {
+          // Handle the case where pub is null
           reject(new Error('Failed to publish to relay'));
           return;
         }
         pub.on('ok', () => resolve());
-        pub.on('failed', (err: any) => reject(err));
+        pub.on('failed', () => reject(new Error('Publish failed')));
       });
     });
 
@@ -69,6 +70,9 @@ export async function publishToRelays(
     throw error;
   }
 }
+
+// ... rest of your code remains unchanged
+
 export async function publishVideo(
   videoUrl: string,
   prompt: string,
