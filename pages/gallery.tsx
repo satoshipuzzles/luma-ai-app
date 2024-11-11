@@ -693,4 +693,4 @@ const handleComment = async () => {
     </div>
   </div>
 )}
-</div> {/* Closing for the main div of the gallery page */}
+</div> {}
