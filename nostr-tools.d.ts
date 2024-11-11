@@ -1,6 +1,9 @@
 // nostr-tools.d.ts
 
 declare module 'nostr-tools/pool' {
+  import { Event } from 'nostr-tools/event';
+  import { Pub } from 'nostr-tools/relay';
+
   export class SimplePool {
     constructor();
 
@@ -15,11 +18,11 @@ declare module 'nostr-tools/pool' {
       unsub: () => void;
     };
 
-    publish(relays: string[], event: any): Promise<void[]>;
+    publish(relays: string[], event: Event): Pub[];
 
-    list(relays: string[], filters: any[]): Promise<any[]>;
+    list(relays: string[], filters: any[]): Promise<Event[]>;
 
-    get(relays: string[], filter: any): Promise<any | null>;
+    get(relays: string[], filter: any): Promise<Event | null>;
 
     close(relays?: string[]): void;
 
@@ -27,24 +30,34 @@ declare module 'nostr-tools/pool' {
   }
 }
 
-declare module 'nostr-tools/pure' {
-  export function getEventHash(event: any): string;
-  export function validateEvent(event: any): boolean;
-  export function generateSecretKey(): Uint8Array;
-  export function getPublicKey(privateKey: Uint8Array): string;
-  export function finalizeEvent(eventTemplate: any, privateKey: Uint8Array): any;
+declare module 'nostr-tools/relay' {
+  import { Event } from 'nostr-tools/event';
 
-  // Add other functions and types as needed
+  export class Pub {
+    on(type: 'ok' | 'seen' | 'failed', callback: () => void): void;
+    off(type: 'ok' | 'seen' | 'failed', callback: () => void): void;
+  }
 }
 
 declare module 'nostr-tools/event' {
   export interface Event {
-    id?: string; // Made optional for initial creation
+    id?: string;
     pubkey: string;
     created_at: number;
     kind: number;
-    tags?: string[][]; // Made optional as per Nostr protocol
+    tags?: string[][];
     content: string;
-    sig?: string; // Made optional for initial creation
+    sig?: string;
   }
+}
+
+declare module 'nostr-tools/pure' {
+  import { Event } from 'nostr-tools/event';
+
+  export function getEventHash(event: Event): string;
+  export function validateEvent(event: Event): boolean;
+  export function verifySignature(event: Event): boolean;
+  export function signEvent(event: Event, privateKey: string): Event;
+
+  // Add other functions and types as needed
 }
