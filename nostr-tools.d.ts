@@ -7,12 +7,30 @@ declare module 'nostr-tools/pool' {
     subscribe(
       relays: string[],
       filters: any[],
-      opts?: any
+      opts?: {
+        onEvent?: (event: any) => void;
+        onEose?: (relay: string) => void;
+      }
     ): {
       unsub: () => void;
     };
 
-    close(relays: string[]): void;
+    publish(
+      relays: string[],
+      event: any
+    ): Promise<void[]>;
+
+    list(
+      relays: string[],
+      filters: any[]
+    ): Promise<any[]>;
+
+    get(
+      relays: string[],
+      filter: any
+    ): Promise<any | null>;
+
+    close(relays?: string[]): void;
 
     // Add other methods as needed
   }
@@ -29,5 +47,13 @@ declare module 'nostr-tools/pure' {
 }
 
 declare module 'nostr-tools/event' {
-  export type Event = any; // Define more specific types if possible
+  export interface Event {
+    id: string;
+    pubkey: string;
+    created_at: number;
+    kind: number;
+    tags: string[][];
+    content: string;
+    sig: string;
+  }
 }
