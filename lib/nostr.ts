@@ -4,7 +4,10 @@ export {};
 
 declare global {
   interface Window {
-    nostr?: any; // Adjusted to be optional
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: any): Promise<any>;
+    };
   }
 }
 
