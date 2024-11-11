@@ -326,7 +326,7 @@ const handleComment = async () => {
     setProcessingAction('comment');
 
     if (selectedPost) {
-      await publishComment(selectedPost.event.id, newComment, relay);
+      await publishComment(selectedPost.event.id, newComment, null);
 
       // Refresh posts to show new comment
       await fetchPosts();
