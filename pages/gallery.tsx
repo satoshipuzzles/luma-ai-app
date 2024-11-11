@@ -665,43 +665,28 @@ const handleComment = async () => {
         placeholder="Add a note..."
       />
 
-      <div className="flex justify-end space-x-3">
-        <button
-          onClick={() => setShowShareModal(false)}
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-        >
-          Cancel
-               <button
-          onClick={() => setShowShareModal(false)}
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => handleShare(selectedPost)}
-          disabled={!shareText.trim() || processingAction === 'share'}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-        >
-          {processingAction === 'share' ? (
-            <>
-              <RefreshCw className="animate-spin h-5 w-5" />
-              <span>Sharing...</span>
-            </>
-          ) : (
-            <>
-              <Globe size={16} />
-              <span>Share to Nostr</span>
-            </>
-          )}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-{/* Closing the main div for the Gallery component */}
+     <div className="flex justify-end space-x-3">
+  <button
+    onClick={() => setShowShareModal(false)}
+    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+  >
+    Cancel
+  </button>
+  <button
+    onClick={() => handleShare(selectedPost)}
+    disabled={!shareText.trim() || processingAction === 'share'}
+    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+  >
+    {processingAction === 'share' ? (
+      <>
+        <RefreshCw className="animate-spin h-5 w-5" />
+        <span>Sharing...</span>
+      </>
+    ) : (
+      <>
+        <Globe size={16} />
+        <span>Share to Nostr</span>
+      </>
+    )}
+  </button>
 </div>
-  );
-}
-
-export default Gallery;
