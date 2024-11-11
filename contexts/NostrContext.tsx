@@ -1,24 +1,16 @@
 // contexts/NostrContext.tsx
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { SimplePool } from 'nostr-tools/pool'; // Added import
-import { Event } from 'nostr-tools/event'; // Added import
+import { SimplePool } from 'nostr-tools/pool';
+import { Event } from 'nostr-tools/event';
 
-// Define the WindowNostr interface directly
-interface WindowNostr {
-  getPublicKey(): Promise<string>;
-  signEvent(event: Event): Promise<Event>;
-  getRelays?(): Promise<{ [url: string]: any }>;
-  nip04?: {
-    encrypt(pubkey: string, plaintext: string): Promise<string>;
-    decrypt(pubkey: string, ciphertext: string): Promise<string>;
-  };
-}
-
-// Extend the Window interface to include 'nostr'
 declare global {
-  interface Window {
-    nostr?: WindowNostr;
+  interface Nostr {
+    getRelays?(): Promise<{ [url: string]: any }>;
+    nip04?: {
+      encrypt(pubkey: string, plaintext: string): Promise<string>;
+      decrypt(pubkey: string, ciphertext: string): Promise<string>;
+    };
   }
 }
 
@@ -35,20 +27,21 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
 
-  const pool = new SimplePool(); // Initialize the pool inside the component
+  const pool = new SimplePool();
 
   useEffect(() => {
-    // Check for existing pubkey in localStorage
-    const storedPubkey = localStorage.getItem('nostr_pubkey');
-    if (storedPubkey) {
-      setPubkey(storedPubkey);
-      fetchProfile(storedPubkey);
+    if (typeof window !== 'undefined') {
+      // Check for existing pubkey in localStorage
+      const storedPubkey = localStorage.getItem('nostr_pubkey');
+      if (storedPubkey) {
+        setPubkey(storedPubkey);
+        fetchProfile(storedPubkey);
+      }
     }
   }, []);
 
   const fetchProfile = async (pk: string) => {
     try {
-      // Use nostr-tools to fetch the profile from relays
       const relays = ['wss://relay.damus.io']; // Adjust the relay list as needed
       const events = await pool.list(relays, [{ kinds: [0], authors: [pk] }]);
       const profileEvent = events[0];
@@ -62,7 +55,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   };
 
   const connect = async () => {
-    if (!window.nostr) {
+    if (typeof window === 'undefined' || !window.nostr) {
       throw new Error('Nostr extension not found');
     }
     const key = await window.nostr.getPublicKey();
@@ -74,7 +67,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const disconnect = () => {
     setPubkey(null);
     setProfile(null);
-    localStorage.removeItem('nostr_pubkey');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('nostr_pubkey');
+    }
   };
 
   return (
