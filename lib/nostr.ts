@@ -3,6 +3,7 @@
 import { SimplePool } from 'nostr-tools/pool';
 import { getEventHash, validateEvent } from 'nostr-tools/pure';
 import { Event } from 'nostr-tools/event';
+import { Pub } from 'nostr-tools/relay'; // Import Pub
 
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
 export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
@@ -35,7 +36,20 @@ export async function publishToRelays(
 
   try {
     // Publish to all relays simultaneously
-    const publishPromises = pool.publish(relays, signedEvent);
+    const pubs = pool.publish(relays, signedEvent); // pubs is an array of Pub objects
+
+    // Create an array of promises that resolve when each pub confirms publication
+    const publishPromises = pubs.map((pub) => {
+      return new Promise<void>((resolve, reject) => {
+        if (!pub) {
+          // Handle the case where pub is null
+          reject(new Error('Failed to publish to relay'));
+          return;
+        }
+        pub.on('ok', () => resolve());
+        pub.on('failed', (err: any) => reject(err));
+      });
+    });
 
     // Wait until the event is published to at least one relay
     await Promise.any(publishPromises);
