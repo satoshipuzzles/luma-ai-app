@@ -5,6 +5,12 @@ import { getEventHash, validateEvent } from 'nostr-tools/pure';
 import { Event } from 'nostr-tools/event';
 import { Pub } from 'nostr-tools/relay';
 
+declare global {
+  interface Window {
+    nostr: any;
+  }
+}
+
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
 export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
 
@@ -21,9 +27,10 @@ export async function publishToRelays(
   }
 
   // Include the pubkey in the event before hashing and signing
+  const pubkey = await window.nostr.getPublicKey();
   const finalEvent: Event = {
     ...event,
-    pubkey: await window.nostr.getPublicKey(),
+    pubkey,
     created_at: Math.floor(Date.now() / 1000),
   };
 
@@ -36,7 +43,7 @@ export async function publishToRelays(
 
   try {
     // Publish to all relays simultaneously
-    const pubs = pool.publish(relays, signedEvent); // pubs is an array of Pub objects
+    const pubs: Pub[] = pool.publish(relays, signedEvent); // pubs is an array of Pub objects
 
     // Create an array of promises that resolve when each pub confirms publication
     const publishPromises: Promise<void>[] = pubs.map((pub) => {
