@@ -48,13 +48,12 @@ export async function publishToRelays(
 
   try {
     // Publish to all relays simultaneously
-    const pubs: Pub[] = pool.publish(relays, signedEvent); // pubs is an array of Pub objects
+    const pubs: Pub[] = pool.publish(relays, signedEvent);
 
     // Create an array of promises that resolve when each pub confirms publication
     const publishPromises: Promise<void>[] = pubs.map((pub) => {
       return new Promise<void>((resolve, reject) => {
         if (!pub) {
-          // Handle the case where pub is null
           reject(new Error('Failed to publish to relay'));
           return;
         }
@@ -70,7 +69,6 @@ export async function publishToRelays(
     throw error;
   }
 }
-
 export async function publishVideo(
   videoUrl: string,
   prompt: string,
