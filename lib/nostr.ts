@@ -1,15 +1,17 @@
 // lib/nostr.ts
 
+export {};
+
+declare global {
+  interface Window {
+    nostr?: any; // Adjusted to be optional
+  }
+}
+
 import { SimplePool } from 'nostr-tools/pool';
 import { getEventHash, validateEvent } from 'nostr-tools/pure';
 import { Event } from 'nostr-tools/event';
 import { Pub } from 'nostr-tools/relay';
-
-declare global {
-  interface Window {
-    nostr: any;
-  }
-}
 
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
 export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
