@@ -1,6 +1,3 @@
-You're absolutely right - let me show you the complete, working code exactly as it should appear in the file, with all JSX and existing functionality maintained. Since this is a large file, I'll share it as a single complete piece that you can directly use.
-
-```typescript
 // pages/gallery.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -46,7 +43,6 @@ interface CommentThread {
   replies: CommentThread[];
 }
 
-// Utility function for downloading videos
 const downloadVideo = async (url: string, filename: string) => {
   try {
     const response = await fetch(url);
@@ -79,7 +75,6 @@ const formatPubkey = (pubkey: string) => {
   return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`;
 };
 
-// Recursive function to build comment threads
 const buildCommentThread = (comments: CommentPost[]): CommentThread[] => {
   const threadMap = new Map<string, CommentThread>();
   const rootThreads: CommentThread[] = [];
@@ -107,7 +102,6 @@ const buildCommentThread = (comments: CommentPost[]): CommentThread[] => {
 
   return rootThreads;
 };
-
 const CommentThreadComponent = ({ 
   thread, 
   onReply, 
@@ -176,7 +170,6 @@ function Gallery() {
   const [sendingZap, setSendingZap] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
-
   useEffect(() => {
     if (pubkey) {
       fetchPosts();
@@ -332,7 +325,6 @@ function Gallery() {
       setLoading(false);
     }
   };
-
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -457,7 +449,6 @@ function Gallery() {
       setProcessingAction(null);
     }
   };
-
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -467,9 +458,7 @@ function Gallery() {
             <p className="text-gray-300 text-center">Connect with Nostr to interact with the gallery</p>
             <button
               onClick={connect}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-
-```
-className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
             >
               Connect with Nostr
             </button>
