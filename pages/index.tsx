@@ -818,7 +818,6 @@ export default function Home() {
                                 const file = e.target.files?.[0];
                                 if (file) handleImageUpload(file);
                               }}
-                              className="
                               className="hidden"
                               disabled={loading}
                             />
