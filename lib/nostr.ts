@@ -3,7 +3,7 @@
 import { SimplePool } from 'nostr-tools/pool';
 import { getEventHash, validateEvent } from 'nostr-tools/pure';
 import { Event } from 'nostr-tools/event';
-import { Pub } from 'nostr-tools/relay'; // Import Pub
+import { Pub } from 'nostr-tools/relay';
 
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
 export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
@@ -39,7 +39,7 @@ export async function publishToRelays(
     const pubs = pool.publish(relays, signedEvent); // pubs is an array of Pub objects
 
     // Create an array of promises that resolve when each pub confirms publication
-    const publishPromises = pubs.map((pub) => {
+    const publishPromises: Promise<void>[] = pubs.map((pub) => {
       return new Promise<void>((resolve, reject) => {
         if (!pub) {
           // Handle the case where pub is null
@@ -58,8 +58,6 @@ export async function publishToRelays(
     throw error;
   }
 }
-
-// ... rest of your code remains the same
 
 export async function publishVideo(
   videoUrl: string,
