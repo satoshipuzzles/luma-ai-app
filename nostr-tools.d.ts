@@ -15,20 +15,11 @@ declare module 'nostr-tools/pool' {
       unsub: () => void;
     };
 
-    publish(
-      relays: string[],
-      event: any
-    ): Promise<void[]>;
+    publish(relays: string[], event: any): Promise<void[]>;
 
-    list(
-      relays: string[],
-      filters: any[]
-    ): Promise<any[]>;
+    list(relays: string[], filters: any[]): Promise<any[]>;
 
-    get(
-      relays: string[],
-      filter: any
-    ): Promise<any | null>;
+    get(relays: string[], filter: any): Promise<any | null>;
 
     close(relays?: string[]): void;
 
@@ -48,12 +39,12 @@ declare module 'nostr-tools/pure' {
 
 declare module 'nostr-tools/event' {
   export interface Event {
-    id?: string; // Made optional
+    id?: string; // Made optional for initial creation
     pubkey: string;
     created_at: number;
     kind: number;
-    tags: string[][];
+    tags?: string[][]; // Made optional as per Nostr protocol
     content: string;
-    sig?: string; // Made optional
+    sig?: string; // Made optional for initial creation
   }
 }
