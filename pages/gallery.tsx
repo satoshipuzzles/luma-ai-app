@@ -1,7 +1,7 @@
 // pages/gallery.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { relayInit } from 'nostr-tools';
+import { SimplePool } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { NostrEvent, AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -102,6 +102,7 @@ const buildCommentThread = (comments: CommentPost[]): CommentThread[] => {
 
   return rootThreads;
 };
+
 const CommentThreadComponent = ({ 
   thread, 
   onReply, 
@@ -154,10 +155,10 @@ const CommentThreadComponent = ({
     </div>
   );
 };
-
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const [relay, setRelay] = useState<any>(null);
+  const pool = new SimplePool();
+  const relays = [DEFAULT_RELAY];
   
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,22 +171,26 @@ function Gallery() {
   const [sendingZap, setSendingZap] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
+
   useEffect(() => {
     if (pubkey) {
       fetchPosts();
     }
+    return () => {
+      pool.close(relays);
+    };
   }, [pubkey]);
 
   useEffect(() => {
-    if (!pubkey || !relay) return;
+    if (!pubkey) return;
 
-    const sub = relay.sub([
+    const sub = pool.sub(relays, [
       { kinds: [75757], since: Math.floor(Date.now() / 1000) }
     ]);
 
     sub.on('event', async (event: NostrEvent) => {
       if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-        const profileSub = relay.sub([
+        const profileSub = pool.sub(relays, [
           { kinds: [0], authors: [event.pubkey], limit: 1 }
         ]);
 
@@ -200,7 +205,7 @@ function Gallery() {
         });
 
         await new Promise(resolve => setTimeout(resolve, 1000));
-        profileSub.unsub();
+        profileSub.unsubscribe();
 
         setPosts(prev => [{
           event: event as AnimalKind,
@@ -216,58 +221,24 @@ function Gallery() {
     });
 
     return () => {
-      sub.unsub();
+      sub.unsubscribe();
     };
-  }, [pubkey, relay]);
-
-  useEffect(() => {
-    return () => {
-      if (relay) {
-        relay.close();
-      }
-    };
-  }, [relay]);
+  }, [pubkey]);
 
   const fetchPosts = async () => {
     try {
       setLoading(true);
-      const relayConnection = relayInit(DEFAULT_RELAY);
 
-      relayConnection.on('error', () => {
-        throw new Error('Failed to connect to relay');
-      });
-
-      await relayConnection.connect();
-      setRelay(relayConnection);
-
-      const events = await new Promise<NostrEvent[]>((resolve) => {
-        const events: NostrEvent[] = [];
-        const seen = new Set<string>();
-
-        const sub = relayConnection.sub([
+      const events = await Promise.race([
+        pool.list(relays, [
           { kinds: [75757], limit: 50 },             // Main posts
           { kinds: [75757], limit: 200, '#e': [] },  // Comments
           { kinds: [0], limit: 100 }                 // Profiles
-        ]);
-
-        const timeout = setTimeout(() => {
-          sub.unsub();
-          resolve(events);
-        }, 5000);
-
-        sub.on('event', (event: NostrEvent) => {
-          if (!seen.has(event.id)) {
-            seen.add(event.id);
-            events.push(event);
-          }
-        });
-
-        sub.on('eose', () => {
-          clearTimeout(timeout);
-          sub.unsub();
-          resolve(events);
-        });
-      });
+        ]),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        )
+      ]);
 
       const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
         if (event.kind !== 75757) return false;
@@ -325,6 +296,7 @@ function Gallery() {
       setLoading(false);
     }
   };
+
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
