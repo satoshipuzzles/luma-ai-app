@@ -1,9 +1,6 @@
-import {
-  SimplePool,
-  getEventHash,
-  type Event,
-  validateEvent
-} from 'nostr-tools';
+// lib/nostr.ts
+import { SimplePool } from 'nostr-tools/pool';
+import { getEventHash, validateEvent, Event } from 'nostr-tools/pure';
 
 export const DEFAULT_RELAY = 'wss://relay.damus.io';
 export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
