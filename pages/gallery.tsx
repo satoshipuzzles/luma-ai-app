@@ -155,6 +155,7 @@ const CommentThreadComponent = ({
     </div>
   );
 };
+
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
   const pool = new SimplePool();
@@ -184,44 +185,51 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    const sub = pool.sub(relays, [
-      { kinds: [75757], since: Math.floor(Date.now() / 1000) }
-    ]);
+    let sub: { unsub: () => void } | undefined;
 
-    sub.on('event', async (event: NostrEvent) => {
-      if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-        const profileSub = pool.sub(relays, [
-          { kinds: [0], authors: [event.pubkey], limit: 1 }
-        ]);
+    const startSubscription = () => {
+      sub = pool.sub(relays, [
+        { kinds: [75757], since: Math.floor(Date.now() / 1000) }
+      ], {
+        onevent(event: NostrEvent) {
+          if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+            // Get profile for the new post's author
+            pool.get(relays, {
+              kinds: [0],
+              authors: [event.pubkey]
+            }).then(profileEvent => {
+              let profile: Profile | undefined;
+              
+              if (profileEvent) {
+                try {
+                  profile = JSON.parse(profileEvent.content);
+                } catch (error) {
+                  console.error('Error parsing profile:', error);
+                }
+              }
 
-        let profile: Profile | undefined;
-        
-        profileSub.on('event', (profileEvent: ProfileKind) => {
-          try {
-            profile = JSON.parse(profileEvent.content);
-          } catch (error) {
-            console.error('Error parsing profile:', error);
+              setPosts(prev => [{
+                event: event as AnimalKind,
+                profile,
+                comments: []
+              }, ...prev]);
+
+              toast({
+                title: "New video",
+                description: "A new video has been added to the gallery",
+              });
+            });
           }
-        });
+        }
+      });
+    };
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        profileSub.unsubscribe();
-
-        setPosts(prev => [{
-          event: event as AnimalKind,
-          profile,
-          comments: []
-        }, ...prev]);
-
-        toast({
-          title: "New video",
-          description: "A new video has been added to the gallery",
-        });
-      }
-    });
+    startSubscription();
 
     return () => {
-      sub.unsubscribe();
+      if (sub) {
+        sub.unsub();
+      }
     };
   }, [pubkey]);
 
@@ -231,11 +239,11 @@ function Gallery() {
 
       const events = await Promise.race([
         pool.list(relays, [
-          { kinds: [75757], limit: 50 },             // Main posts
-          { kinds: [75757], limit: 200, '#e': [] },  // Comments
-          { kinds: [0], limit: 100 }                 // Profiles
+          { kinds: [75757], limit: 50 },
+          { kinds: [75757], limit: 200, '#e': [] },
+          { kinds: [0], limit: 100 }
         ]),
-        new Promise((_, reject) => 
+        new Promise<never>((_, reject) => 
           setTimeout(() => reject(new Error('Timeout')), 5000)
         )
       ]);
@@ -421,6 +429,7 @@ function Gallery() {
       setProcessingAction(null);
     }
   };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -454,7 +463,7 @@ function Gallery() {
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-        <title>Gallery | Animal Sunset 🌞🦒</title>
+       <title>Gallery | Animal Sunset 🌞🦒</title>
         <meta name="description" content="Discover AI-generated animal videos" />
       </Head>
 
