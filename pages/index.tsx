@@ -944,4 +944,4 @@ export default function Home() {
   );
 }
 
-export Home;
+export default Home;
