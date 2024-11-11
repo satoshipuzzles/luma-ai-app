@@ -1,7 +1,7 @@
 // pages/gallery.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool } from 'nostr-tools';
+import { SimplePool } from 'nostr-tools/pool';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { NostrEvent, AnimalKind, ProfileKind, Profile } from '../types/nostr';
