@@ -1,4 +1,5 @@
 // lib/nostr.ts
+
 import { SimplePool } from 'nostr-tools/pool';
 import { getEventHash, validateEvent } from 'nostr-tools/pure';
 import { Event } from 'nostr-tools/event';
@@ -12,7 +13,7 @@ export async function publishToRelays(
   event: Partial<Event>,
   relays: string[] = [DEFAULT_RELAY, ...BACKUP_RELAYS]
 ): Promise<void> {
-  if (!window.nostr) {
+  if (typeof window === 'undefined' || !window.nostr) {
     throw new Error('Nostr extension not found');
   }
 
@@ -84,9 +85,7 @@ export async function publishVideo(
 export async function fetchLightningDetails(
   pubkey: string
 ): Promise<{ lnurl?: string; lud16?: string } | null> {
-  const events = await pool.list([DEFAULT_RELAY], [
-    { kinds: [0], authors: [pubkey] },
-  ]);
+  const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
 
   const profileEvent = events[0];
   if (!profileEvent) return null;
@@ -111,9 +110,7 @@ export async function createZapInvoice(
   const [username, domain] = lnAddress.split('@');
 
   // Fetch LNURL pay endpoint
-  const response = await fetch(
-    `https://${domain}/.well-known/lnurlp/${username}`
-  );
+  const response = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
   const { callback, maxSendable, minSendable } = await response.json();
 
   if (amount < minSendable || amount > maxSendable) {
