@@ -54,6 +54,9 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ... rest of your code remains the same
+}
+
   const connect = async () => {
     if (typeof window === 'undefined' || !window.nostr) {
       throw new Error('Nostr extension not found');
