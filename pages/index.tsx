@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { relay } from 'nostr-tools';
+import { Relay } from 'nostr-tools/relay';
 import { 
   Menu, 
   X, 
