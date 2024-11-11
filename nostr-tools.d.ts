@@ -48,12 +48,12 @@ declare module 'nostr-tools/pure' {
 
 declare module 'nostr-tools/event' {
   export interface Event {
-    id: string;
+    id?: string; // Made optional
     pubkey: string;
     created_at: number;
     kind: number;
     tags: string[][];
     content: string;
-    sig: string;
+    sig?: string; // Made optional
   }
 }
