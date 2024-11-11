@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import Link from 'next/link';  // Next.js link
-import { useRouter } from 'next/router'; // Next.js router
+import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { ChevronDown } from 'lucide-react';
 
 export const Navigation = () => {
