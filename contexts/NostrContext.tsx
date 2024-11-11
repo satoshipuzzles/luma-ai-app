@@ -1,4 +1,14 @@
+// contexts/NostrContext.tsx
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { WindowNostr } from 'nostr-tools/nip07';
+
+// Extend the Window interface to include 'nostr'
+declare global {
+  interface Window {
+    nostr?: WindowNostr;
+  }
+}
 
 interface NostrContextType {
   pubkey: string | null;
@@ -24,9 +34,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (pk: string) => {
     try {
-      const response = await fetch(`/api/nostr/profile?pubkey=${pk}`);
-      if (response.ok) {
-        const profileData = await response.json();
+      // Use nostr-tools to fetch the profile from relays
+      const relays = ['wss://relay.damus.io']; // You can adjust the relay list as needed
+      const events = await pool.list(relays, [{ kinds: [0], authors: [pk] }]);
+      const profileEvent = events[0];
+      if (profileEvent) {
+        const profileData = JSON.parse(profileEvent.content);
         setProfile(profileData);
       }
     } catch (error) {
