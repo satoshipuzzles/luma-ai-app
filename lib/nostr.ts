@@ -59,6 +59,8 @@ export async function publishToRelays(
   }
 }
 
+// ... rest of your code remains the same
+
 export async function publishVideo(
   videoUrl: string,
   prompt: string,
