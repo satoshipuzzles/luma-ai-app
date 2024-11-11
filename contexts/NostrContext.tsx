@@ -24,6 +24,7 @@ interface NostrContextType {
 const NostrContext = createContext<NostrContextType | null>(null);
 
 export function NostrProvider({ children }: { children: React.ReactNode }) {
+  // State declarations
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
 
@@ -42,7 +43,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (pk: string) => {
     try {
-      const relays = ['wss://relay.damus.io']; // Adjust the relay list as needed
+      const relays = ['wss://relay.damus.io'];
       const events = await pool.list(relays, [{ kinds: [0], authors: [pk] }]);
       const profileEvent = events[0];
       if (profileEvent) {
@@ -54,15 +55,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ... rest of your code remains the same
-}
-
+  // Ensure `connect` is inside `NostrProvider`
   const connect = async () => {
     if (typeof window === 'undefined' || !window.nostr) {
       throw new Error('Nostr extension not found');
     }
     const key = await window.nostr.getPublicKey();
-    setPubkey(key);
+    setPubkey(key); // `setPubkey` should be accessible here
     localStorage.setItem('nostr_pubkey', key);
     await fetchProfile(key);
   };
