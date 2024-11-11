@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "module": "esnext",
-    "moduleResolution": "node16", // Updated to node16 for improved compatibility
+    "moduleResolution": "node16", // Updated module resolution
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
@@ -20,7 +20,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"] // Adjusted for project structure
+      "@/*": ["./*"]
     }
   },
   "include": [
