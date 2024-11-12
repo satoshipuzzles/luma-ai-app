@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
+import { SimplePool, Filter, Event as NostrEvent, relayInit } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -42,15 +42,8 @@ interface CommentThread {
   replies: CommentThread[];
 }
 
-// Define our own subscription interface
-interface NostrSubscription {
-  on: (event: 'event' | 'eose', listener: (event?: NostrEvent) => void) => void;
-  unsub: () => void;
-}
-
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool();
   const relays = [DEFAULT_RELAY];
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -69,36 +62,40 @@ function Gallery() {
     if (pubkey) {
       fetchPosts();
     }
-    return () => {
-      pool.close(relays);
-    };
   }, [pubkey]);
 
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub: NostrSubscription | undefined;
-    
-    try {
-      sub = pool.subscribe([[DEFAULT_RELAY]], [
+    const setupRelay = async () => {
+      const relay = relayInit(DEFAULT_RELAY);
+      await relay.connect();
+
+      relay.on('connect', () => {
+        console.log(`Connected to ${relay.url}`);
+      });
+
+      relay.on('error', () => {
+        console.log(`Failed to connect to ${relay.url}`);
+      });
+
+      const sub = relay.sub([
         { kinds: [75757], since: Math.floor(Date.now() / 1000) }
       ]);
 
       sub.on('event', (event: NostrEvent) => {
         if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
           // Get profile for the new post's author
-          pool.get([DEFAULT_RELAY], {
+          relay.sub([{
             kinds: [0],
             authors: [event.pubkey]
-          }).then(profileEvent => {
+          }]).on('event', (profileEvent: NostrEvent) => {
             let profile: Profile | undefined;
 
-            if (profileEvent) {
-              try {
-                profile = JSON.parse(profileEvent.content);
-              } catch (error) {
-                console.error('Error parsing profile:', error);
-              }
+            try {
+              profile = JSON.parse(profileEvent.content);
+            } catch (error) {
+              console.error('Error parsing profile:', error);
             }
 
             setPosts(prev => [{
@@ -115,46 +112,44 @@ function Gallery() {
         }
       });
 
-      sub.on('eose', () => {
-        // Handle end of subscription
-      });
-    } catch (error) {
-      console.error('Error setting up subscription:', error);
-    }
-
-    return () => {
-      if (sub) {
-        try {
-          sub.unsub();
-        } catch (error) {
-          console.error('Error unsubscribing:', error);
-        }
-      }
+      return () => {
+        sub.unsub();
+        relay.close();
+      };
     };
+
+    setupRelay();
   }, [pubkey]);
 
   const fetchPosts = async () => {
     try {
       setLoading(true);
 
+      const relay = relayInit(DEFAULT_RELAY);
+      await relay.connect();
+
       let events: NostrEvent[] = [];
 
-      const sub = pool.subscribe([[DEFAULT_RELAY]], [
+      const sub = relay.sub([
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
-      ]) as NostrSubscription;
+      ]);
 
       sub.on('event', (event: NostrEvent) => {
         events.push(event);
       });
 
+      // Wait for end of stored events
       await new Promise<void>((resolve) => {
         sub.on('eose', () => {
           sub.unsub();
           resolve();
         });
       });
+
+      // Close relay connection
+      relay.close();
 
       // Process events
       const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
