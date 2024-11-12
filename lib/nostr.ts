@@ -6,7 +6,7 @@ declare global {
   interface Window {
     nostr?: {
       getPublicKey(): Promise<string>;
-      signEvent(event: any): Promise<any>;
+      signEvent(event: any): Promise<Event>;
     };
   }
 }
@@ -26,7 +26,7 @@ type UnsignedEvent = Omit<Event, 'id' | 'sig' | 'pubkey' | 'created_at'>;
 export async function publishToRelays(
   event: UnsignedEvent,
   relays: string[] = [DEFAULT_RELAY, ...BACKUP_RELAYS]
-): Promise<void> {
+): Promise<Event> {
   if (typeof window === 'undefined' || !window.nostr) {
     throw new Error('Nostr extension not found');
   }
@@ -65,13 +65,14 @@ export async function publishToRelays(
 
     // Wait until the event is published to at least one relay
     await Promise.any(publishPromises);
+
+    // Return the signed event
+    return signedEvent;
   } catch (error) {
     console.error('Failed to publish event:', error);
     throw error;
   }
 }
-
-// ... rest of your code remains unchanged
 
 export async function publishVideo(
   videoUrl: string,
@@ -89,15 +90,16 @@ export async function publishVideo(
     content: videoUrl,
   };
 
-  await publishToRelays(animalEvent);
+  // Get the signed event, which includes the 'id'
+  const signedAnimalEvent = await publishToRelays(animalEvent);
 
-  // History Event (8008135)
+  // Now you can access the 'id' property
   const historyEvent: UnsignedEvent = {
     kind: 8008135,
     tags: [
       ['text-to-speech', prompt],
       ['r', videoUrl],
-      ['e', animalEvent.id!],
+      ['e', signedAnimalEvent.id],
       ['public', isPublic.toString()],
     ],
     content: JSON.stringify({
