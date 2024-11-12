@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import { useSystem } from '@snort/system';
+import { useNdk } from '@ndk/react';
 import {
   Download,
   MessageSquare,
@@ -28,12 +28,34 @@ interface CommentPost {
 }
 
 const downloadVideo = async (url: string, filename: string) => {
-  // ...
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+    toast({
+      title: "Download started",
+      description: "Your video is being downloaded",
+    });
+  } catch (error) {
+    console.error('Download failed:', error);
+    toast({
+      variant: "destructive",
+      title: "Download failed",
+      description: "Please try again",
+    });
+  }
 };
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const { getPostsForKind, publishToRelays, getProfileForPubkey } = useSystem();
+  const { getPostsForKind, publishToRelay, getProfileForPubkey } = useNdk();
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +163,7 @@ function Gallery() {
 
     try {
       setProcessingAction('comment');
-      await publishToRelays({
+      await publishToRelay({
         kind: 75757,
         content: newComment,
         tags: [['e', selectedPost.event.id, '', 'reply']]
@@ -181,7 +203,7 @@ function Gallery() {
     try {
       setProcessingAction('share');
       const note = shareText || `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
-      await publishToRelays({
+      await publishToRelay({
         kind: 1,
         content: note.trim(),
         tags: [
@@ -268,7 +290,7 @@ function Gallery() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Animal Gallery</h1>
           <button
-            onClick={fetchPosts}
+            onClick={() => fetchPosts()}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
           >
             <RefreshCw size={16} />
@@ -288,218 +310,218 @@ function Gallery() {
           <div className="space-y-8">
             {posts.map(post => (
               <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
-               <div className="p-4 flex items-center space-x-3">
-  <img
-    src={post.profile?.picture || '/default-avatar.png'}
-    alt="Profile"
-    className="w-10 h-10 rounded-full object-cover"
-  />
-  <div>
-    <div className="font-medium">
-      {post.profile?.name || "Anonymous"}
-    </div>
-    <div className="text-sm text-gray-400">
-      {new Date(post.event.created_at * 1000).toLocaleDateString()}
-    </div>
-  </div>
-</div>
+                <div className="p-4 flex items-center space-x-3">
+                  <img
+                    src={post.profile?.picture || '/default-avatar.png'}
+                    alt="Profile"
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                  <div>
+                    <div className="font-medium">
+                      {post.profile?.name || "Anonymous"}
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      {new Date(post.event.created_at * 1000).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
 
-<div className="relative pt-[56.25%] bg-black">
-  <video
-    src={post.event.content}
-    className="absolute top-0 left-0 w-full h-full object-contain"
-    controls
-    loop
-    playsInline
-  />
-</div>
+                <div className="relative pt-[56.25%] bg-black">
+                  <video
+                    src={post.event.content}
+                    className="absolute top-0 left-0 w-full h-full object-contain"
+                    controls
+                    loop
+                    playsInline
+                  />
+                </div>
 
-<div className="p-4 pb-2">
-  <p className="text-lg font-medium">
-    {post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
-  </p>
-</div>
+                <div className="p-4 pb-2">
+                  <p className="text-lg font-medium">
+                    {post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+                  </p>
+                </div>
 
-<div className="p-4 flex flex-wrap items-center gap-4">
-  <button
-    onClick={() => handleZap(post)}
-    disabled={sendingZap || processingAction === 'zap'}
-    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    {processingAction === 'zap' ? (
-      <RefreshCw className="animate-spin h-5 w-5" />
-    ) : (
-      <Zap size={20} />
-    )}
-    <span>Zap</span>
-  </button>
+                <div className="p-4 flex flex-wrap items-center gap-4">
+                  <button
+                    onClick={() => handleZap(post)}
+                    disabled={sendingZap || processingAction === 'zap'}
+                    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {processingAction === 'zap' ? (
+                      <RefreshCw className="animate-spin h-5 w-5" />
+                    ) : (
+                      <Zap size={20} />
+                    )}
+                    <span>Zap</span>
+                  </button>
 
-  <button
-    onClick={() => {
-      setSelectedPost(post);
-      setShowCommentModal(true);
-    }}
-    className="flex items-center space-x-2 text-gray-400 hover:text-white"
-  >
-    <MessageSquare size={20} />
-    <span>{post.comments.length}</span>
-  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedPost(post);
+                      setShowCommentModal(true);
+                    }}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                  >
+                    <MessageSquare size={20} />
+                    <span>{post.comments.length}</span>
+                  </button>
 
-  <button
-    onClick={() => {
-      setSelectedPost(post);
-      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
-      setShowShareModal(true);
-    }}
-    className="flex items-center space-x-2 text-gray-400 hover:text-white"
-  >
-    <Share2 size={20} />
-    <span>Share</span>
-  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedPost(post);
+                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
+                      setShowShareModal(true);
+                    }}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                  >
+                    <Share2 size={20} />
+                    <span>Share</span>
+                  </button>
 
-  <button
-    onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
-  >
-    <Download size={20} />
-    <span>Download</span>
-  </button>
-</div>
+                  <button
+                    onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
+                  >
+                    <Download size={20} />
+                    <span>Download</span>
+                  </button>
+                </div>
 
-{post.comments.length > 0 && (
-  <div className="border-t border-gray-800">
-    <div className="p-4 space-y-4">
-      {post.comments.map(comment => (
-        <div key={comment.event.id} className="flex items-start space-x-3">
-          <img
-            src={comment.profile?.picture || '/default-avatar.png'}
-            alt="Commenter"
-            className="w-8 h-8 rounded-full"
-          />
-          <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
-            <div className="font-medium text-gray-300 mb-1">
-              {comment.profile?.name || "Anonymous"}
-            </div>
-            <div className="text-sm text-gray-200">
-              {comment.event.content}
-            </div>
+                {post.comments.length > 0 && (
+                  <div className="border-t border-gray-800">
+                    <div className="p-4 space-y-4">
+                      {post.comments.map(comment => (
+                        <div key={comment.event.id} className="flex items-start space-x-3">
+                          <img
+                            src={comment.profile?.picture || '/default-avatar.png'}
+                            alt="Commenter"
+                            className="w-8 h-8 rounded-full"
+                          />
+                          <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
+                            <div className="font-medium text-gray-300 mb-1">
+                              {comment.profile?.name || "Anonymous"}
+                            </div>
+                            <div className="text-sm text-gray-200">
+                              {comment.event.content}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-</div>
-))}
-</div>
-}
-
-{showCommentModal && selectedPost && (
-<div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-  <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-    <div className="flex justify-between items-center">
-      <h2 className="text-xl font-bold">
-        {commentParentId ? 'Reply to Comment' : 'Add Comment'}
-      </h2>
-      <button
-        onClick={() => {
-          setShowCommentModal(false);
-          setCommentParentId(null);
-        }}
-        className="text-gray-400 hover:text-white"
-      >
-        <X size={20} />
-      </button>
-    </div>
-
-    <textarea
-      className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-      rows={4}
-      value={newComment}
-      onChange={(e) => setNewComment(e.target.value)}
-      placeholder="Write your comment..."
-    />
-
-    <div className="flex justify-end space-x-3">
-      <button
-        onClick={() => {
-          setShowCommentModal(false);
-          setCommentParentId(null);
-        }}
-        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-      >
-        Cancel
-      </button>
-      <button
-        onClick={handleComment}
-        disabled={!newComment.trim() || processingAction === 'comment'}
-        className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-      >
-        {processingAction === 'comment' ? (
-          <>
-            <RefreshCw className="animate-spin h-5 w-5" />
-            <span>Posting...</span>
-          </>
-        ) : (
-          <>
-            <Send size={16} />
-            <span>Post Comment</span>
-          </>
         )}
-      </button>
+      </div>
+{showCommentModal && selectedPost && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">
+          {commentParentId ? 'Reply to Comment' : 'Add Comment'}
+        </h2>
+        <button
+          onClick={() => {
+            setShowCommentModal(false);
+            setCommentParentId(null);
+          }}
+          className="text-gray-400 hover:text-white"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <textarea
+        className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+        rows={4}
+        value={newComment}
+        onChange={(e) => setNewComment(e.target.value)}
+        placeholder="Write your comment..."
+      />
+
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={() => {
+            setShowCommentModal(false);
+            setCommentParentId(null);
+          }}
+          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleComment}
+          disabled={!newComment.trim() || processingAction === 'comment'}
+          className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {processingAction === 'comment' ? (
+            <>
+              <RefreshCw className="animate-spin h-5 w-5" />
+              <span>Posting...</span>
+            </>
+          ) : (
+            <>
+              <Send size={16} />
+              <span>Post Comment</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   </div>
-</div>
 )}
 
 {showShareModal && selectedPost && (
-<div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-  <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-    <div className="flex justify-between items-center">
-      <h2 className="text-xl font-bold">Share to Nostr</h2>
-      <button
-        onClick={() => setShowShareModal(false)}
-        className="text-gray-400 hover:text-white"
-      >
-        <X size={20} />
-      </button>
-    </div>
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Share to Nostr</h2>
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="text-gray-400 hover:text-white"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
-    <textarea
-      className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-      rows={4}
-      value={shareText}
-      onChange={(e) => setShareText(e.target.value)}
-      placeholder="Add a note..."
-    />
+      <textarea
+        className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+        rows={4}
+        value={shareText}
+        onChange={(e) => setShareText(e.target.value)}
+        placeholder="Add a note..."
+      />
 
-    <div className="flex justify-end space-x-3">
-      <button
-        onClick={() => setShowShareModal(false)}
-        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-      >
-        Cancel
-      </button>
-      <button
-        onClick={() => handleShare(selectedPost)}
-        disabled={!shareText.trim() || processingAction === 'share'}
-        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-      >
-        {processingAction === 'share' ? (
-          <>
-            <RefreshCw className="animate-spin h-5 w-5" />
-            <span>Sharing...</span>
-          </>
-        ) : (
-          <>
-            <Globe size={16} />
-            <span>Share to Nostr</span>
-          </>
-        )}
-      </button>
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => handleShare(selectedPost)}
+          disabled={!shareText.trim() || processingAction === 'share'}
+          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {processingAction === 'share' ? (
+            <>
+              <RefreshCw className="animate-spin h-5 w-5" />
+              <span>Sharing...</span>
+            </>
+          ) : (
+            <>
+              <Globe size={16} />
+              <span>Share to Nostr</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   </div>
-</div>
 )}
 </div>
 );
