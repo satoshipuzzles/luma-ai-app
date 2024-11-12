@@ -4,7 +4,7 @@ import { SimplePool } from 'nostr-tools/pool';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
-import { DEFAULT_RELAY } from '../lib/nostr';
+import { DEFAULT_RELAY, fetchLightningDetails, createZapInvoice, publishComment, shareToNostr } from '../lib/nostr';
 import { useNostr } from '../contexts/NostrContext';
 import {
   Download,
@@ -130,10 +130,11 @@ function Gallery() {
           event,
           profile: profileMap.get(event.pubkey),
           comments: commentEvents
-            .filter(comment => 
-              comment.kind === 75757 && 
-              comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
-            )
+            .filter(comment => {
+              if (!comment.tags || !Array.isArray(comment.tags)) return false;
+              return comment.kind === 75757 && 
+                comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id);
+            })
             .map(comment => ({
               event: comment as AnimalKind,
               profile: profileMap.get(comment.pubkey)
@@ -264,7 +265,7 @@ function Gallery() {
     try {
       setProcessingAction('share');
       const note = shareText ||
-        `Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
+        `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
 
       await shareToNostr(note, post.event.content);
 
@@ -320,7 +321,7 @@ function Gallery() {
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-        <title>Gallery | Animal Sunset 🌞🦒</title>
+      <title>Gallery | Animal Sunset 🌞🦒</title>
         <meta name="description" content="Discover AI-generated animal videos" />
       </Head>
 
@@ -394,7 +395,7 @@ function Gallery() {
 
                 <div className="p-4 pb-2">
                   <p className="text-lg font-medium">
-                    {post.event.tags.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+                    {post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
                   </p>
                 </div>
 
@@ -426,7 +427,7 @@ function Gallery() {
                   <button
                     onClick={() => {
                       setSelectedPost(post);
-                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n`);
+                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
                       setShowShareModal(true);
                     }}
                     className="flex items-center space-x-2 text-gray-400 hover:text-white"
@@ -437,9 +438,7 @@ function Gallery() {
 
                   <button
                     onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml
-
--auto"
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
                   >
                     <Download size={20} />
                     <span>Download</span>
