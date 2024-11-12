@@ -1,10 +1,10 @@
 // pages/gallery.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool } from 'nostr-tools/pool';
+import { SimplePool, Filter, Event as NostrEvent, RelayOptions, Sub } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { NostrEvent, AnimalKind, ProfileKind, Profile } from '../types/nostr';
+import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
 import { 
   publishToRelays, 
@@ -185,43 +185,48 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub: { unsub: () => void } | undefined;
+    let sub: Sub | undefined;
 
     const startSubscription = () => {
-      sub = pool.sub(relays, [
-        { kinds: [75757], since: Math.floor(Date.now() / 1000) }
-      ], {
-        onevent(event: NostrEvent) {
-          if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-            // Get profile for the new post's author
-            pool.get(relays, {
-              kinds: [0],
-              authors: [event.pubkey]
-            }).then(profileEvent => {
-              let profile: Profile | undefined;
-              
-              if (profileEvent) {
-                try {
-                  profile = JSON.parse(profileEvent.content);
-                } catch (error) {
-                  console.error('Error parsing profile:', error);
+      sub = pool.subscribe(
+        relays,
+        [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }],
+        {
+          onEvent(event: NostrEvent) {
+            if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+              // Get profile for the new post's author
+              pool.get(relays, {
+                kinds: [0],
+                authors: [event.pubkey]
+              }).then(profileEvent => {
+                let profile: Profile | undefined;
+                
+                if (profileEvent) {
+                  try {
+                    profile = JSON.parse(profileEvent.content);
+                  } catch (error) {
+                    console.error('Error parsing profile:', error);
+                  }
                 }
-              }
 
-              setPosts(prev => [{
-                event: event as AnimalKind,
-                profile,
-                comments: []
-              }, ...prev]);
+                setPosts(prev => [{
+                  event: event as AnimalKind,
+                  profile,
+                  comments: []
+                }, ...prev]);
 
-              toast({
-                title: "New video",
-                description: "A new video has been added to the gallery",
+                toast({
+                  title: "New video",
+                  description: "A new video has been added to the gallery",
+                });
               });
-            });
+            }
+          },
+          onEose() {
+            // Handle end of subscription
           }
         }
-      });
+      );
     };
 
     startSubscription();
@@ -368,7 +373,11 @@ function Gallery() {
       setProcessingAction('comment');
 
       if (selectedPost) {
-        await publishComment(selectedPost.event.id, newComment, commentParentId || undefined);
+        await publishComment(
+          newComment,
+          commentParentId || selectedPost.event.id,
+          1 // Kind for comments
+        );
 
         setShowCommentModal(false);
         setNewComment('');
