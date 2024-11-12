@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
+import { SimplePool, Filter, Event as NostrEvent, Sub } from 'nostr-tools'; // Added Sub type
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -71,13 +71,17 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    const subscription = pool.listenToEvents({
-      relays,
-      filter: [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }],
-      onEvent: (event: NostrEvent) => {
+    let sub: Sub | undefined;
+    
+    try {
+      sub = pool.sub([DEFAULT_RELAY], [
+        { kinds: [75757], since: Math.floor(Date.now() / 1000) }
+      ]);
+
+      sub.on('event', (event: NostrEvent) => {
         if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
           // Get profile for the new post's author
-          pool.get(relays, {
+          pool.get([DEFAULT_RELAY], {
             kinds: [0],
             authors: [event.pubkey]
           }).then(profileEvent => {
@@ -103,14 +107,23 @@ function Gallery() {
             });
           });
         }
-      },
-      onEose: () => {
+      });
+
+      sub.on('eose', () => {
         // Handle end of subscription
-      }
-    });
+      });
+    } catch (error) {
+      console.error('Error setting up subscription:', error);
+    }
 
     return () => {
-      subscription.stop();
+      if (sub) {
+        try {
+          sub.unsub();
+        } catch (error) {
+          console.error('Error unsubscribing:', error);
+        }
+      }
     };
   }, [pubkey]);
 
@@ -120,68 +133,68 @@ function Gallery() {
 
       let events: NostrEvent[] = [];
 
-      const subscription = pool.listenToEvents({
-        relays,
-        filter: [
-          { kinds: [75757], limit: 50 },
-          { kinds: [75757], limit: 200, '#e': [] },
-          { kinds: [0], limit: 100 }
-        ],
-        onEvent: (event: NostrEvent) => {
-          events.push(event);
-        },
-        onEose: () => {
-          // Process events
-          const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
-            if (event.kind !== 75757) return false;
-            return event.tags.some(t => t[0] === 'e') === hasETag;
-          };
+      const sub = pool.sub([DEFAULT_RELAY], [
+        { kinds: [75757], limit: 50 },
+        { kinds: [75757], limit: 200, '#e': [] },
+        { kinds: [0], limit: 100 }
+      ]);
 
-          const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
-          const comments = events.filter(e => isAnimalKindWithTag(e, true));
-          const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
+      sub.on('event', (event: NostrEvent) => {
+        events.push(event);
+      });
 
-          const profileMap = new Map<string, Profile>();
-          profileEvents.forEach(e => {
-            try {
-              const profile = JSON.parse(e.content);
-              profileMap.set(e.pubkey, {
-                name: profile.name,
-                picture: profile.picture,
-                about: profile.about,
-                lud06: profile.lud06,
-                lud16: profile.lud16
-              });
-            } catch (error) {
-              console.error('Error parsing profile:', error);
-            }
+      await new Promise<void>((resolve) => {
+        sub.on('eose', () => {
+          sub.unsub();
+          resolve();
+        });
+      });
+
+      // Process events
+      const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
+        if (event.kind !== 75757) return false;
+        return event.tags.some(t => t[0] === 'e') === hasETag;
+      };
+
+      const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
+      const comments = events.filter(e => isAnimalKindWithTag(e, true));
+      const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
+
+      const profileMap = new Map<string, Profile>();
+      profileEvents.forEach(e => {
+        try {
+          const profile = JSON.parse(e.content);
+          profileMap.set(e.pubkey, {
+            name: profile.name,
+            picture: profile.picture,
+            about: profile.about,
+            lud06: profile.lud06,
+            lud16: profile.lud16
           });
-
-          const commentPosts = comments.map(comment => ({
-            event: comment as AnimalKind,
-            profile: profileMap.get(comment.pubkey)
-          }));
-
-          const posts: VideoPost[] = mainPosts.map(post => ({
-            event: post as AnimalKind,
-            profile: profileMap.get(post.pubkey),
-            comments: commentPosts.filter(c =>
-              c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
-            )
-          }));
-
-          setPosts(posts);
-
-          toast({
-            title: "Gallery updated",
-            description: `Loaded ${posts.length} videos`,
-          });
-
-          subscription.stop();
-          setLoading(false);
+        } catch (error) {
+          console.error('Error parsing profile:', error);
         }
       });
 
+      const commentPosts = comments.map(comment => ({
+        event: comment as AnimalKind,
+        profile: profileMap.get(comment.pubkey)
+      }));
+
+      const posts: VideoPost[] = mainPosts.map(post => ({
+        event: post as AnimalKind,
+        profile: profileMap.get(post.pubkey),
+        comments: commentPosts.filter(c =>
+          c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
+        )
+      }));
+
+      setPosts(posts);
+
+      toast({
+        title: "Gallery updated",
+        description: `Loaded ${posts.length} videos`,
+      });
     } catch (error) {
       console.error('Error fetching posts:', error);
       setError(error instanceof Error ? error.message : 'Failed to load gallery');
@@ -190,6 +203,7 @@ function Gallery() {
         title: "Failed to load gallery",
         description: "Please try refreshing the page",
       });
+    } finally {
       setLoading(false);
     }
   };
