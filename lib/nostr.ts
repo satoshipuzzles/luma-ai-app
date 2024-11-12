@@ -94,13 +94,18 @@ export async function publishVideo(
   // Get the signed event, which includes the 'id'
   const signedAnimalEvent = await publishToRelays(animalEvent);
 
-  // Now you can access the 'id' property
+  // Ensure 'id' is not undefined
+  if (!signedAnimalEvent.id) {
+    throw new Error('Signed animal event does not have an id');
+  }
+
+  // Now you can access the 'id' property safely
   const historyEvent: UnsignedEvent = {
     kind: 8008135,
     tags: [
       ['text-to-speech', prompt],
       ['r', videoUrl],
-      ['e', signedAnimalEvent.id],
+      ['e', signedAnimalEvent.id], // 'id' is now guaranteed to be a string
       ['public', isPublic.toString()],
     ],
     content: JSON.stringify({
@@ -114,7 +119,6 @@ export async function publishVideo(
 
   await publishToRelays(historyEvent);
 }
-
   // Fetch LNURL pay endpoint
   const response = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
   const { callback, maxSendable, minSendable } = await response.json();
