@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
+import { Pool, Filter, Event as NostrEvent } from 'nostr-tools'; // Changed import to use Pool
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -26,31 +26,6 @@ import {
   Send
 } from 'lucide-react';
 
-// Define the Subscription interface
-interface Subscription {
-  unsub(): void;
-}
-
-// Use declaration merging to augment 'SimplePool'
-declare module 'nostr-tools' {
-  interface SimplePool {
-    list(relays: string[], filters: Filter[]): Promise<NostrEvent[]>;
-    sub(
-      relays: string[],
-      filters: Filter[],
-      handlers?: {
-        onEvent?: (event: NostrEvent) => void;
-        onEose?: () => void;
-      }
-    ): Subscription;
-    get(
-      relays: string[],
-      filter: Filter
-    ): Promise<NostrEvent | null>;
-    close(relays: string[]): void;
-  }
-}
-
 interface VideoPost {
   event: AnimalKind;
   profile?: Profile;
@@ -69,122 +44,9 @@ interface CommentThread {
   replies: CommentThread[];
 }
 
-const downloadVideo = async (url: string, filename: string) => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename || 'animal-sunset-video.mp4';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-
-    toast({
-      title: "Download started",
-      description: "Your video is being downloaded",
-      duration: 2000
-    });
-  } catch (err) {
-    console.error('Download failed:', err);
-    toast({
-      variant: "destructive",
-      title: "Download failed",
-      description: "Please try again",
-    });
-  }
-};
-
-const formatPubkey = (pubkey: string) => {
-  return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`;
-};
-
-const buildCommentThread = (comments: CommentPost[]): CommentThread[] => {
-  const threadMap = new Map<string, CommentThread>();
-  const rootThreads: CommentThread[] = [];
-
-  comments.forEach(comment => {
-    threadMap.set(comment.event.id, {
-      id: comment.event.id,
-      event: comment.event,
-      profile: comment.profile,
-      replies: []
-    });
-  });
-
-  comments.forEach(comment => {
-    const replyTo = comment.event.tags.find(tag => tag[0] === 'e')?.[1];
-    if (replyTo && threadMap.has(replyTo)) {
-      const parentThread = threadMap.get(replyTo)!;
-      const commentThread = threadMap.get(comment.event.id)!;
-      parentThread.replies.push(commentThread);
-    } else {
-      const commentThread = threadMap.get(comment.event.id)!;
-      rootThreads.push(commentThread);
-    }
-  });
-
-  return rootThreads;
-};
-
-const CommentThreadComponent = ({
-  thread,
-  onReply,
-  level
-}: {
-  thread: CommentThread;
-  onReply: (parentId: string) => void;
-  level: number;
-}) => {
-  if (level >= 6) return null;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-start space-x-3">
-        <img
-          src={thread.profile?.picture || "/default-avatar.png"}
-          alt="Profile"
-          className="w-8 h-8 rounded-full"
-        />
-        <div className="flex-1">
-          <div className="bg-[#2a2a2a] rounded-lg p-3 space-y-1">
-            <div className="font-medium text-gray-300">
-              {thread.profile?.name || formatPubkey(thread.event.pubkey)}
-            </div>
-            <div className="text-sm text-gray-200">
-              {thread.event.content}
-            </div>
-          </div>
-          <button
-            onClick={() => onReply(thread.event.id)}
-            className="text-sm text-gray-400 hover:text-white mt-1 ml-3"
-          >
-            Reply
-          </button>
-        </div>
-      </div>
-
-      {thread.replies.length > 0 && (
-        <div className="ml-8 space-y-2 border-l-2 border-gray-800 pl-4">
-          {thread.replies.map(reply => (
-            <CommentThreadComponent
-              key={reply.id}
-              thread={reply}
-              onReply={onReply}
-              level={level + 1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool();
+  const pool = new Pool(); // Use Pool instead of SimplePool
   const relays = [DEFAULT_RELAY];
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -211,56 +73,48 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub: Subscription | undefined;
+    let sub = pool.subscribe(
+      relays,
+      [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }]
+    );
 
-    const startSubscription = () => {
-      sub = pool.sub(
-        relays,
-        [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }],
-        {
-          onEvent(event: NostrEvent) {
-            if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-              // Get profile for the new post's author
-              pool.get(relays, {
-                kinds: [0],
-                authors: [event.pubkey]
-              }).then(profileEvent => {
-                let profile: Profile | undefined;
+    sub.on('event', (event: NostrEvent) => {
+      if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+        // Get profile for the new post's author
+        pool.get(relays, {
+          kinds: [0],
+          authors: [event.pubkey]
+        }).then(profileEvent => {
+          let profile: Profile | undefined;
 
-                if (profileEvent) {
-                  try {
-                    profile = JSON.parse(profileEvent.content);
-                  } catch (error) {
-                    console.error('Error parsing profile:', error);
-                  }
-                }
-
-                setPosts(prev => [{
-                  event: event as AnimalKind,
-                  profile,
-                  comments: []
-                }, ...prev]);
-
-                toast({
-                  title: "New video",
-                  description: "A new video has been added to the gallery",
-                });
-              });
+          if (profileEvent) {
+            try {
+              profile = JSON.parse(profileEvent.content);
+            } catch (error) {
+              console.error('Error parsing profile:', error);
             }
-          },
-          onEose() {
-            // Handle end of subscription
           }
-        }
-      );
-    };
 
-    startSubscription();
+          setPosts(prev => [{
+            event: event as AnimalKind,
+            profile,
+            comments: []
+          }, ...prev]);
+
+          toast({
+            title: "New video",
+            description: "A new video has been added to the gallery",
+          });
+        });
+      }
+    });
+
+    sub.on('eose', () => {
+      // Handle end of subscription
+    });
 
     return () => {
-      if (sub) {
-        sub.unsub();
-      }
+      sub.unsub();
     };
   }, [pubkey]);
 
@@ -268,17 +122,26 @@ function Gallery() {
     try {
       setLoading(true);
 
-      const events = await Promise.race([
-        pool.list(relays, [
-          { kinds: [75757], limit: 50 },
-          { kinds: [75757], limit: 200, '#e': [] },
-          { kinds: [0], limit: 100 }
-        ]),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout')), 5000)
-        )
+      let events: NostrEvent[] = [];
+
+      const sub = pool.subscribe(relays, [
+        { kinds: [75757], limit: 50 },
+        { kinds: [75757], limit: 200, '#e': [] },
+        { kinds: [0], limit: 100 }
       ]);
 
+      sub.on('event', (event: NostrEvent) => {
+        events.push(event);
+      });
+
+      await new Promise<void>((resolve) => {
+        sub.on('eose', () => {
+          sub.unsub();
+          resolve();
+        });
+      });
+
+      // Now process events
       const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
         if (event.kind !== 75757) return false;
         return event.tags.some(t => t[0] === 'e') === hasETag;
