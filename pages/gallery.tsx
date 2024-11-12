@@ -7,24 +7,49 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import { 
-  publishToRelays, 
-  fetchLightningDetails, 
-  createZapInvoice, 
+import {
+  publishToRelays,
+  fetchLightningDetails,
+  createZapInvoice,
   publishComment,
   shareToNostr,
-  DEFAULT_RELAY 
+  DEFAULT_RELAY
 } from '../lib/nostr';
-import { 
-  Download, 
-  MessageSquare, 
-  Zap, 
-  X, 
-  Share2, 
+import {
+  Download,
+  MessageSquare,
+  Zap,
+  X,
+  Share2,
   RefreshCw,
   Globe,
   Send
 } from 'lucide-react';
+
+// Define the Subscription interface
+interface Subscription {
+  unsub(): void;
+}
+
+// Use declaration merging to augment 'SimplePool'
+declare module 'nostr-tools' {
+  interface SimplePool {
+    list(relays: string[], filters: Filter[]): Promise<NostrEvent[]>;
+    sub(
+      relays: string[],
+      filters: Filter[],
+      handlers?: {
+        onEvent?: (event: NostrEvent) => void;
+        onEose?: () => void;
+      }
+    ): Subscription;
+    get(
+      relays: string[],
+      filter: Filter
+    ): Promise<NostrEvent | null>;
+    close(relays: string[]): void;
+  }
+}
 
 interface VideoPost {
   event: AnimalKind;
@@ -44,23 +69,6 @@ interface CommentThread {
   replies: CommentThread[];
 }
 
-// Define the Subscription interface
-interface Subscription {
-  unsub(): void;
-}
-
-// Extend the SimplePool class to include 'sub' method
-interface ExtendedSimplePool extends SimplePool {
-  sub(
-    relays: string[],
-    filters: Filter[],
-    handlers?: {
-      onEvent?: (event: NostrEvent) => void;
-      onEose?: () => void;
-    }
-  ): Subscription;
-}
-
 const downloadVideo = async (url: string, filename: string) => {
   try {
     const response = await fetch(url);
@@ -73,7 +81,7 @@ const downloadVideo = async (url: string, filename: string) => {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(downloadUrl);
-    
+
     toast({
       title: "Download started",
       description: "Your video is being downloaded",
@@ -121,12 +129,12 @@ const buildCommentThread = (comments: CommentPost[]): CommentThread[] => {
   return rootThreads;
 };
 
-const CommentThreadComponent = ({ 
-  thread, 
-  onReply, 
-  level 
-}: { 
-  thread: CommentThread; 
+const CommentThreadComponent = ({
+  thread,
+  onReply,
+  level
+}: {
+  thread: CommentThread;
   onReply: (parentId: string) => void;
   level: number;
 }) => {
@@ -157,7 +165,7 @@ const CommentThreadComponent = ({
           </button>
         </div>
       </div>
-      
+
       {thread.replies.length > 0 && (
         <div className="ml-8 space-y-2 border-l-2 border-gray-800 pl-4">
           {thread.replies.map(reply => (
@@ -176,9 +184,9 @@ const CommentThreadComponent = ({
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool: ExtendedSimplePool = new SimplePool() as ExtendedSimplePool; // Cast to ExtendedSimplePool
+  const pool = new SimplePool();
   const relays = [DEFAULT_RELAY];
-  
+
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,7 +226,7 @@ function Gallery() {
                 authors: [event.pubkey]
               }).then(profileEvent => {
                 let profile: Profile | undefined;
-                
+
                 if (profileEvent) {
                   try {
                     profile = JSON.parse(profileEvent.content);
@@ -266,7 +274,7 @@ function Gallery() {
           { kinds: [75757], limit: 200, '#e': [] },
           { kinds: [0], limit: 100 }
         ]),
-        new Promise<never>((_, reject) => 
+        new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Timeout')), 5000)
         )
       ]);
@@ -279,7 +287,7 @@ function Gallery() {
       const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
       const comments = events.filter(e => isAnimalKindWithTag(e, true));
       const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
-      
+
       const profileMap = new Map<string, Profile>();
       profileEvents.forEach(e => {
         try {
@@ -304,13 +312,13 @@ function Gallery() {
       const posts: VideoPost[] = mainPosts.map(post => ({
         event: post as AnimalKind,
         profile: profileMap.get(post.pubkey),
-        comments: commentPosts.filter(c => 
+        comments: commentPosts.filter(c =>
           c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
         )
       }));
 
       setPosts(posts);
-      
+
       toast({
         title: "Gallery updated",
         description: `Loaded ${posts.length} videos`,
@@ -341,7 +349,7 @@ function Gallery() {
     try {
       setSendingZap(true);
       setProcessingAction('zap');
-      
+
       const lnDetails = await fetchLightningDetails(post.event.pubkey);
       if (!lnDetails?.lud16 && !lnDetails?.lnurl) {
         throw new Error('No lightning address found for this user');
@@ -352,12 +360,12 @@ function Gallery() {
       if (lnAddress) {
         const amount = 1000;
         const comment = `Zap for your Animal Sunset video!`;
-        
+
         try {
           const paymentRequest = await createZapInvoice(lnAddress, amount, comment);
-          
+
           await navigator.clipboard.writeText(paymentRequest);
-          
+
           toast({
             title: "Invoice copied!",
             description: "Lightning invoice has been copied to your clipboard",
@@ -400,7 +408,7 @@ function Gallery() {
         setShowCommentModal(false);
         setNewComment('');
         setCommentParentId(null);
-        
+
         // Refresh posts to show new comment
         await fetchPosts();
 
@@ -433,14 +441,14 @@ function Gallery() {
 
     try {
       setProcessingAction('share');
-      const note = shareText || 
+      const note = shareText ||
         `Check out this Animal Sunset video!\n\n${post.event.tags.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
-        
+
       await shareToNostr(note, post.event.content);
-      
+
       setShowShareModal(false);
       setShareText('');
-      
+
       toast({
         title: "Shared successfully",
         description: "Your note has been published to Nostr",
@@ -490,7 +498,7 @@ function Gallery() {
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-       <title>Gallery | Animal Sunset 🌞🦒</title>
+        <title>Gallery | Animal Sunset 🌞🦒</title>
         <meta name="description" content="Discover AI-generated animal videos" />
       </Head>
 
@@ -661,7 +669,7 @@ function Gallery() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <textarea
               className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
               rows={4}
