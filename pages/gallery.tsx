@@ -71,40 +71,42 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    const sub = pool.subscribeMany(relays, [
-      { kinds: [75757], since: Math.floor(Date.now() / 1000) }
-    ]);
+    const sub = pool.subscribeMany(
+      relays,
+      [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }],
+      {
+        onevent(event: NostrEvent) {
+          if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+            // Get profile for the new post's author
+            pool.get(relays, {
+              kinds: [0],
+              authors: [event.pubkey]
+            }).then(profileEvent => {
+              let profile: Profile | undefined;
 
-    sub.on('event', (event: NostrEvent) => {
-      if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-        // Get profile for the new post's author
-        pool.get(relays, {
-          kinds: [0],
-          authors: [event.pubkey]
-        }).then(profileEvent => {
-          let profile: Profile | undefined;
+              if (profileEvent) {
+                try {
+                  profile = JSON.parse(profileEvent.content);
+                } catch (error) {
+                  console.error('Error parsing profile:', error);
+                }
+              }
 
-          if (profileEvent) {
-            try {
-              profile = JSON.parse(profileEvent.content);
-            } catch (error) {
-              console.error('Error parsing profile:', error);
-            }
+              setPosts(prev => [{
+                event: event as AnimalKind,
+                profile,
+                comments: []
+              }, ...prev]);
+
+              toast({
+                title: "New video",
+                description: "A new video has been added to the gallery",
+              });
+            });
           }
-
-          setPosts(prev => [{
-            event: event as AnimalKind,
-            profile,
-            comments: []
-          }, ...prev]);
-
-          toast({
-            title: "New video",
-            description: "A new video has been added to the gallery",
-          });
-        });
+        }
       }
-    });
+    );
 
     return () => {
       sub.unsub();
@@ -117,68 +119,73 @@ function Gallery() {
 
       let events: NostrEvent[] = [];
 
-      const sub = pool.subscribeMany(relays, [
-        { kinds: [75757], limit: 50 },
-        { kinds: [75757], limit: 200, '#e': [] },
-        { kinds: [0], limit: 100 }
-      ]);
-
-      sub.on('event', (event: NostrEvent) => {
-        events.push(event);
-      });
-
-      await new Promise<void>((resolve) => {
-        sub.on('eose', () => {
-          sub.unsub();
-          resolve();
-        });
-      });
-
-      // Process events
-      const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
-        if (event.kind !== 75757) return false;
-        return event.tags.some(t => t[0] === 'e') === hasETag;
-      };
-
-      const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
-      const comments = events.filter(e => isAnimalKindWithTag(e, true));
-      const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
-
-      const profileMap = new Map<string, Profile>();
-      profileEvents.forEach(e => {
-        try {
-          const profile = JSON.parse(e.content);
-          profileMap.set(e.pubkey, {
-            name: profile.name,
-            picture: profile.picture,
-            about: profile.about,
-            lud06: profile.lud06,
-            lud16: profile.lud16
-          });
-        } catch (error) {
-          console.error('Error parsing profile:', error);
+      const sub = pool.subscribeMany(
+        relays,
+        [
+          { kinds: [75757], limit: 50 },
+          { kinds: [75757], limit: 200, '#e': [] },
+          { kinds: [0], limit: 100 }
+        ],
+        {
+          onevent(event: NostrEvent) {
+            events.push(event);
+          },
+          oneose() {
+            sub.unsub();
+            processPosts();
+          }
         }
-      });
+      );
 
-      const commentPosts = comments.map(comment => ({
-        event: comment as AnimalKind,
-        profile: profileMap.get(comment.pubkey)
-      }));
+      const processPosts = () => {
+        // Process events
+        const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
+          if (event.kind !== 75757) return false;
+          return event.tags.some(t => t[0] === 'e') === hasETag;
+        };
 
-      const posts: VideoPost[] = mainPosts.map(post => ({
-        event: post as AnimalKind,
-        profile: profileMap.get(post.pubkey),
-        comments: commentPosts.filter(c =>
-          c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
-        )
-      }));
+        const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
+        const comments = events.filter(e => isAnimalKindWithTag(e, true));
+        const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
 
-      setPosts(posts);
+        const profileMap = new Map<string, Profile>();
+        profileEvents.forEach(e => {
+          try {
+            const profile = JSON.parse(e.content);
+            profileMap.set(e.pubkey, {
+              name: profile.name,
+              picture: profile.picture,
+              about: profile.about,
+              lud06: profile.lud06,
+              lud16: profile.lud16
+            });
+          } catch (error) {
+            console.error('Error parsing profile:', error);
+          }
+        });
 
-      toast({
-        title: "Gallery updated",
-        description: `Loaded ${posts.length} videos`,
-      });
+        const commentPosts = comments.map(comment => ({
+          event: comment as AnimalKind,
+          profile: profileMap.get(comment.pubkey)
+        }));
+
+        const posts: VideoPost[] = mainPosts.map(post => ({
+          event: post as AnimalKind,
+          profile: profileMap.get(post.pubkey),
+          comments: commentPosts.filter(c =>
+            c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
+          )
+        }));
+
+        setPosts(posts);
+        setLoading(false);
+
+        toast({
+          title: "Gallery updated",
+          description: `Loaded ${posts.length} videos`,
+        });
+      };
+      
     } catch (error) {
       console.error('Error fetching posts:', error);
       setError(error instanceof Error ? error.message : 'Failed to load gallery');
@@ -187,7 +194,6 @@ function Gallery() {
         title: "Failed to load gallery",
         description: "Please try refreshing the page",
       });
-    } finally {
       setLoading(false);
     }
   };
