@@ -1,11 +1,11 @@
 // pages/gallery.tsx
+
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent, RelayOptions, Sub } from 'nostr-tools';
+import { SimplePool, Filter, Event as NostrEvent, Sub } from 'nostr-tools'; // Removed RelayOptions
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
-import { useNostr } from '../contexts/NostrContext';
 import { 
   publishToRelays, 
   fetchLightningDetails, 
