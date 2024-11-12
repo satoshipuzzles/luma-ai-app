@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import { useNdk } from '@ndk/react';
+import { useNdk } from '@ndk/next';
 import {
   Download,
   MessageSquare,
@@ -28,34 +28,12 @@ interface CommentPost {
 }
 
 const downloadVideo = async (url: string, filename: string) => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-    toast({
-      title: "Download started",
-      description: "Your video is being downloaded",
-    });
-  } catch (error) {
-    console.error('Download failed:', error);
-    toast({
-      variant: "destructive",
-      title: "Download failed",
-      description: "Please try again",
-    });
-  }
+  // ...
 };
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const { getPostsForKind, publishToRelay, getProfileForPubkey } = useNdk();
+  const { getPosts, getProfile, publishPost } = useNdk();
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,18 +52,18 @@ function Gallery() {
         setLoading(true);
         setError(null);
 
-        const mainEvents = await getPostsForKind(75757, { limit: 50 });
-        const commentEvents = await getPostsForKind(75757, { limit: 200, replies: true });
+        const mainEvents = await getPosts(75757, { limit: 50 });
+        const commentEvents = await getPosts(75757, { limit: 200, replies: true });
 
         const processedPosts = await Promise.all(
           mainEvents.map(async (event) => {
-            const profile = await getProfileForPubkey(event.pubkey);
+            const profile = await getProfile(event.pubkey);
             const comments = await Promise.all(
               commentEvents
                 .filter((comment) => comment.tags?.some((tag) => tag[0] === 'e' && tag[1] === event.id))
                 .map(async (comment) => ({
                   event: comment as AnimalKind,
-                  profile: await getProfileForPubkey(comment.pubkey)
+                  profile: await getProfile(comment.pubkey)
                 }))
             );
             return {
@@ -116,7 +94,7 @@ function Gallery() {
     };
 
     fetchPosts();
-  }, [getPostsForKind, getProfileForPubkey]);
+  }, [getPosts, getProfile]);
 
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
@@ -132,7 +110,7 @@ function Gallery() {
       setSendingZap(true);
       setProcessingAction('zap');
 
-      const lnDetails = await getProfileForPubkey(post.event.pubkey);
+      const lnDetails = await getProfile(post.event.pubkey);
       if (!lnDetails?.lud16 && !lnDetails?.lnurl) {
         throw new Error('No lightning address found for this user');
       }
@@ -163,7 +141,7 @@ function Gallery() {
 
     try {
       setProcessingAction('comment');
-      await publishToRelay({
+      await publishPost({
         kind: 75757,
         content: newComment,
         tags: [['e', selectedPost.event.id, '', 'reply']]
@@ -203,7 +181,7 @@ function Gallery() {
     try {
       setProcessingAction('share');
       const note = shareText || `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
-      await publishToRelay({
+      await publishPost({
         kind: 1,
         content: note.trim(),
         tags: [
@@ -230,7 +208,6 @@ function Gallery() {
       setProcessingAction(null);
     }
   };
-
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
