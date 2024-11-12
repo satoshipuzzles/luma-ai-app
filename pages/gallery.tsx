@@ -44,7 +44,7 @@ interface CommentThread {
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool();
+  const pool = new SimplePool(undefined);  // Add the options parameter
   const relays = [DEFAULT_RELAY];
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -71,7 +71,7 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub = pool.subscribe(relays, [
+    let sub = pool.sub(relays, [
       { kinds: [75757], since: Math.floor(Date.now() / 1000) }
     ]);
 
@@ -121,7 +121,7 @@ function Gallery() {
 
       let events: NostrEvent[] = [];
 
-      const sub = pool.subscribe(relays, [
+      const sub = pool.sub(relays, [
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
@@ -194,8 +194,6 @@ function Gallery() {
     } finally {
       setLoading(false);
     }
-  };
-
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
