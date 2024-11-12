@@ -63,44 +63,47 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    // Using list method for real-time updates
-    const events = pool.list(relays, [
+    let sub = pool.sub(relays, [
       { kinds: [75757], since: Math.floor(Date.now() / 1000) }
-    ], {
-      onevent(event) {
-        if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-          // Get profile for the new post's author
-          pool.get(relays, {
+    ]);
+
+    sub.on('event', async (event: NostrEvent) => {
+      if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+        // Get profile for the new post's author
+        try {
+          const profileEvent = await pool.get(relays, {
             kinds: [0],
             authors: [event.pubkey]
-          }).then(profileEvent => {
-            let profile: Profile | undefined;
-
-            if (profileEvent) {
-              try {
-                profile = JSON.parse(profileEvent.content);
-              } catch (error) {
-                console.error('Error parsing profile:', error);
-              }
-            }
-
-            setPosts(prev => [{
-              event: event as AnimalKind,
-              profile,
-              comments: []
-            }, ...prev]);
-
-            toast({
-              title: "New video",
-              description: "A new video has been added to the gallery",
-            });
           });
+
+          let profile: Profile | undefined;
+
+          if (profileEvent) {
+            try {
+              profile = JSON.parse(profileEvent.content);
+            } catch (error) {
+              console.error('Error parsing profile:', error);
+            }
+          }
+
+          setPosts(prev => [{
+            event: event as AnimalKind,
+            profile,
+            comments: []
+          }, ...prev]);
+
+          toast({
+            title: "New video",
+            description: "A new video has been added to the gallery",
+          });
+        } catch (error) {
+          console.error('Error fetching profile:', error);
         }
       }
     });
 
     return () => {
-      // No cleanup needed for list method
+      sub.unsub();
     };
   }, [pubkey]);
 
@@ -108,8 +111,7 @@ function Gallery() {
     try {
       setLoading(true);
 
-      // Using list method to fetch posts
-      const events = await pool.list(relays, [
+      const events = await pool.querySync(relays, [
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
