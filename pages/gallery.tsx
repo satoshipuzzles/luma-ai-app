@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools'; // Removed 'Sub' and 'RelayOptions'
+import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -47,6 +47,18 @@ interface CommentThread {
 // Define the Subscription interface
 interface Subscription {
   unsub(): void;
+}
+
+// Extend the SimplePool class to include 'sub' method
+interface ExtendedSimplePool extends SimplePool {
+  sub(
+    relays: string[],
+    filters: Filter[],
+    handlers?: {
+      onEvent?: (event: NostrEvent) => void;
+      onEose?: () => void;
+    }
+  ): Subscription;
 }
 
 const downloadVideo = async (url: string, filename: string) => {
@@ -164,7 +176,7 @@ const CommentThreadComponent = ({
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool();
+  const pool: ExtendedSimplePool = new SimplePool() as ExtendedSimplePool; // Cast to ExtendedSimplePool
   const relays = [DEFAULT_RELAY];
   
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -194,37 +206,42 @@ function Gallery() {
     let sub: Subscription | undefined;
 
     const startSubscription = () => {
-      sub = pool.subscribe(
+      sub = pool.sub(
         relays,
         [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }],
-        (event: NostrEvent) => {
-          if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-            // Get profile for the new post's author
-            pool.get(relays, {
-              kinds: [0],
-              authors: [event.pubkey]
-            }).then(profileEvent => {
-              let profile: Profile | undefined;
-              
-              if (profileEvent) {
-                try {
-                  profile = JSON.parse(profileEvent.content);
-                } catch (error) {
-                  console.error('Error parsing profile:', error);
+        {
+          onEvent(event: NostrEvent) {
+            if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+              // Get profile for the new post's author
+              pool.get(relays, {
+                kinds: [0],
+                authors: [event.pubkey]
+              }).then(profileEvent => {
+                let profile: Profile | undefined;
+                
+                if (profileEvent) {
+                  try {
+                    profile = JSON.parse(profileEvent.content);
+                  } catch (error) {
+                    console.error('Error parsing profile:', error);
+                  }
                 }
-              }
 
-              setPosts(prev => [{
-                event: event as AnimalKind,
-                profile,
-                comments: []
-              }, ...prev]);
+                setPosts(prev => [{
+                  event: event as AnimalKind,
+                  profile,
+                  comments: []
+                }, ...prev]);
 
-              toast({
-                title: "New video",
-                description: "A new video has been added to the gallery",
+                toast({
+                  title: "New video",
+                  description: "A new video has been added to the gallery",
+                });
               });
-            });
+            }
+          },
+          onEose() {
+            // Handle end of subscription
           }
         }
       );
