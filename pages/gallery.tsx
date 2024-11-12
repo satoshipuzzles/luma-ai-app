@@ -1,8 +1,6 @@
-// pages/gallery.tsx
-
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Pool, Filter, Event as NostrEvent } from 'nostr-tools'; // Changed import to use Pool
+import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools'; // Changed Pool to SimplePool
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -46,9 +44,10 @@ interface CommentThread {
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new Pool(); // Use Pool instead of SimplePool
+  const pool = new SimplePool(); // Changed Pool to SimplePool
   const relays = [DEFAULT_RELAY];
 
+  // Rest of the component remains the same, just replace all instances of Pool with SimplePool
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +72,9 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub = pool.subscribe(
-      relays,
-      [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }]
-    );
+    let sub = pool.sub(relays, [
+      { kinds: [75757], since: Math.floor(Date.now() / 1000) }
+    ]);
 
     sub.on('event', (event: NostrEvent) => {
       if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
@@ -124,7 +122,7 @@ function Gallery() {
 
       let events: NostrEvent[] = [];
 
-      const sub = pool.subscribe(relays, [
+      const sub = pool.sub(relays, [
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
