@@ -44,7 +44,7 @@ interface CommentThread {
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool(undefined);  // Add the options parameter
+  const pool = new SimplePool();  // Remove the undefined parameter
   const relays = [DEFAULT_RELAY];
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
