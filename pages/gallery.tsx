@@ -4,7 +4,13 @@ import { SimplePool } from 'nostr-tools/pool';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
-import { DEFAULT_RELAY, fetchLightningDetails, createZapInvoice, publishComment, shareToNostr } from '../lib/nostr';
+import { 
+  DEFAULT_RELAY, 
+  fetchLightningDetails, 
+  createZapInvoice, 
+  publishComment, 
+  shareToNostr 
+} from '../lib/nostr';
 import { useNostr } from '../contexts/NostrContext';
 import {
   Download,
@@ -28,7 +34,6 @@ interface CommentPost {
   profile?: Profile;
 }
 
-// Utility function for downloading videos
 const downloadVideo = async (url: string, filename: string) => {
   try {
     const response = await fetch(url);
@@ -41,7 +46,6 @@ const downloadVideo = async (url: string, filename: string) => {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(downloadUrl);
-
     toast({
       title: "Download started",
       description: "Your video is being downloaded",
@@ -58,7 +62,7 @@ const downloadVideo = async (url: string, filename: string) => {
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool();
+  const [pool] = useState(() => new SimplePool());
   const relays = [DEFAULT_RELAY];
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -83,63 +87,53 @@ function Gallery() {
   const fetchPosts = async () => {
     try {
       setLoading(true);
+      setError(null);
 
-      // Fetch main posts
-      const mainEvents = await pool.list(relays, [
-        { kinds: [75757], limit: 50 }
-      ]);
-
-      // Fetch comments
-      const commentEvents = await pool.list(relays, [
+      const events = await pool.list(relays, [
+        { kinds: [75757], limit: 50 },
         { kinds: [75757], '#e': [], limit: 200 }
       ]);
 
-      // Get unique pubkeys from all events
+      const mainEvents = events.filter(e => e.kind === 75757 && !e.tags?.some(t => t[0] === 'e'));
+      const commentEvents = events.filter(e => e.kind === 75757 && e.tags?.some(t => t[0] === 'e'));
+
       const pubkeys = new Set([
         ...mainEvents.map(e => e.pubkey),
         ...commentEvents.map(e => e.pubkey)
       ]);
 
-      // Fetch profiles for all authors
-      const profileEvents = await pool.list(relays, [{
-        kinds: [0],
-        authors: Array.from(pubkeys)
-      }]);
+      const profileEvents = await pool.list(relays, [
+        { kinds: [0], authors: Array.from(pubkeys) }
+      ]);
 
-      // Create profile map
       const profileMap = new Map<string, Profile>();
       profileEvents.forEach(event => {
         try {
-          const profile = JSON.parse(event.content);
+          const profileData = JSON.parse(event.content);
           profileMap.set(event.pubkey, {
-            name: profile.name,
-            picture: profile.picture,
-            about: profile.about,
-            lud06: profile.lud06,
-            lud16: profile.lud16
+            name: profileData.name,
+            picture: profileData.picture,
+            about: profileData.about,
+            lud06: profileData.lud06,
+            lud16: profileData.lud16,
           });
         } catch (error) {
           console.error('Error parsing profile:', error);
         }
       });
 
-      // Process main posts and comments
-      const processedPosts = mainEvents
-        .filter((event): event is AnimalKind => event.kind === 75757)
-        .map(event => ({
-          event,
-          profile: profileMap.get(event.pubkey),
-          comments: commentEvents
-            .filter(comment => {
-              if (!comment.tags || !Array.isArray(comment.tags)) return false;
-              return comment.kind === 75757 && 
-                comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id);
-            })
-            .map(comment => ({
-              event: comment as AnimalKind,
-              profile: profileMap.get(comment.pubkey)
-            }))
-        }));
+      const processedPosts = mainEvents.map(event => ({
+        event: event as AnimalKind,
+        profile: profileMap.get(event.pubkey),
+        comments: commentEvents
+          .filter(comment => 
+            comment.tags?.some(tag => tag[0] === 'e' && tag[1] === event.id)
+          )
+          .map(comment => ({
+            event: comment as AnimalKind,
+            profile: profileMap.get(comment.pubkey)
+          }))
+      }));
 
       setPosts(processedPosts);
 
@@ -180,37 +174,19 @@ function Gallery() {
       }
 
       const lnAddress = lnDetails.lud16 || lnDetails.lnurl;
+      const paymentRequest = await createZapInvoice(lnAddress, 1000, `Zap for your Animal Sunset video!`);
+      await navigator.clipboard.writeText(paymentRequest);
 
-      if (lnAddress) {
-        const amount = 1000;
-        const comment = `Zap for your Animal Sunset video!`;
-
-        try {
-          const paymentRequest = await createZapInvoice(lnAddress, amount, comment);
-
-          await navigator.clipboard.writeText(paymentRequest);
-
-          toast({
-            title: "Invoice copied!",
-            description: "Lightning invoice has been copied to your clipboard",
-          });
-        } catch (error) {
-          console.error('Error sending zap:', error);
-          toast({
-            variant: "destructive",
-            title: "Zap failed",
-            description: error instanceof Error ? error.message : "Failed to send zap",
-          });
-        }
-      } else {
-        throw new Error('No lightning address found for this user');
-      }
+      toast({
+        title: "Invoice copied!",
+        description: "Lightning invoice has been copied to your clipboard",
+      });
     } catch (error) {
-      console.error('Error handling zap:', error);
+      console.error('Error sending zap:', error);
       toast({
         variant: "destructive",
         title: "Zap failed",
-        description: error instanceof Error ? error.message : "Failed to handle zap",
+        description: error instanceof Error ? error.message : "Failed to send zap",
       });
     } finally {
       setSendingZap(false);
@@ -219,27 +195,25 @@ function Gallery() {
   };
 
   const handleComment = async () => {
+    if (!selectedPost || !newComment.trim()) return;
+
     try {
       setProcessingAction('comment');
+      await publishComment(
+        newComment,
+        commentParentId || selectedPost.event.id,
+        75757  // Use the same kind as the main posts
+      );
 
-      if (selectedPost) {
-        await publishComment(
-          newComment,
-          commentParentId || selectedPost.event.id,
-          1
-        );
+      setShowCommentModal(false);
+      setNewComment('');
+      setCommentParentId(null);
+      await fetchPosts();
 
-        setShowCommentModal(false);
-        setNewComment('');
-        setCommentParentId(null);
-
-        await fetchPosts();
-
-        toast({
-          title: "Comment posted",
-          description: "Your comment has been published",
-        });
-      }
+      toast({
+        title: "Comment posted",
+        description: "Your comment has been published",
+      });
     } catch (error) {
       console.error('Error posting comment:', error);
       toast({
@@ -264,9 +238,7 @@ function Gallery() {
 
     try {
       setProcessingAction('share');
-      const note = shareText ||
-        `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
-
+      const note = shareText || `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
       await shareToNostr(note, post.event.content);
 
       setShowShareModal(false);
@@ -321,7 +293,7 @@ function Gallery() {
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-      <title>Gallery | Animal Sunset 🌞🦒</title>
+        <title>Gallery | Animal Sunset 🌞🦒</title>
         <meta name="description" content="Discover AI-generated animal videos" />
       </Head>
 
@@ -445,7 +417,8 @@ function Gallery() {
                   </button>
                 </div>
 
-                {post.comments.length > 0 && (
+                {
+                  {post.comments.length > 0 && (
                   <div className="border-t border-gray-800">
                     <div className="p-4 space-y-4">
                       {post.comments.map(comment => (
