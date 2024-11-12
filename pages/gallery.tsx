@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool } from 'nostr-tools/pool';
+import { SimplePool, SubEvent } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
@@ -78,12 +78,12 @@ function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    let sub: any = null;
+    let sub: SubEvent | null = null;
     let profilesMap = new Map<string, Profile>();
 
     const setupSubscription = () => {
       // Subscribe to animal videos (kind 75757)
-      sub = pool.subscribeMany([DEFAULT_RELAY], [
+      sub = pool.sub(relays, [
         {
           kinds: [75757],
           limit: 100
@@ -99,7 +99,7 @@ function Gallery() {
         try {
           // Get author's profile if we don't have it
           if (!profilesMap.has(event.pubkey)) {
-            const profileSub = pool.subscribeMany([DEFAULT_RELAY], [
+            const profileSub = pool.sub(relays, [
               { kinds: [0], authors: [event.pubkey], limit: 1 }
             ]);
 
@@ -136,7 +136,7 @@ function Gallery() {
           }
 
           // Get comments for this post
-          const commentsSub = pool.subscribeMany([DEFAULT_RELAY], [
+          const commentsSub = pool.sub(relays, [
             { kinds: [75757], '#e': [event.id] }
           ]);
 
@@ -145,7 +145,7 @@ function Gallery() {
           commentsSub.on('event', async (commentEvent: NostrEvent) => {
             if (!profilesMap.has(commentEvent.pubkey)) {
               // Get commenter's profile
-              const commenterProfileSub = pool.subscribeMany([DEFAULT_RELAY], [
+              const commenterProfileSub = pool.sub(relays, [
                 { kinds: [0], authors: [commentEvent.pubkey], limit: 1 }
               ]);
 
@@ -209,7 +209,7 @@ function Gallery() {
       if (sub) {
         sub.unsub();
       }
-      pool.close([DEFAULT_RELAY]);
+      pool.close(relays);
     };
   }, []);
 
@@ -450,8 +450,7 @@ function Gallery() {
           )}
         </div>
       </div>
-
-     <div className="max-w-4xl mx-auto py-8 px-4">
+<div className="max-w-4xl mx-auto py-8 px-4">
   <div className="flex justify-between items-center mb-8">
     <h1 className="text-3xl font-bold">Animal Gallery</h1>
     <button
