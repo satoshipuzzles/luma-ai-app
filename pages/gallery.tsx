@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent, Sub } from 'nostr-tools'; // Added Sub type
+import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -42,6 +42,12 @@ interface CommentThread {
   replies: CommentThread[];
 }
 
+// Define our own subscription interface
+interface NostrSubscription {
+  on: (event: 'event' | 'eose', listener: (event?: NostrEvent) => void) => void;
+  unsub: () => void;
+}
+
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
   const pool = new SimplePool();
@@ -71,7 +77,7 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub: Sub | undefined;
+    let sub: NostrSubscription | undefined;
     
     try {
       sub = pool.sub([DEFAULT_RELAY], [
@@ -79,7 +85,7 @@ function Gallery() {
       ]);
 
       sub.on('event', (event: NostrEvent) => {
-        if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+        if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
           // Get profile for the new post's author
           pool.get([DEFAULT_RELAY], {
             kinds: [0],
@@ -137,7 +143,7 @@ function Gallery() {
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
-      ]);
+      ]) as NostrSubscription;
 
       sub.on('event', (event: NostrEvent) => {
         events.push(event);
