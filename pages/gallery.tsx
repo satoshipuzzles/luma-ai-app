@@ -1,18 +1,10 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, EventEmitter } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
-import { 
-  DEFAULT_RELAY, 
-  fetchLightningDetails, 
-  createZapInvoice, 
-  publishComment, 
-  shareToNostr,
-  fetchEvents
-} from '../lib/nostr';
 import { useNostr } from '../contexts/NostrContext';
+import { useSystem } from '@snort/system';
 import {
   Download,
   MessageSquare,
@@ -41,9 +33,7 @@ const downloadVideo = async (url: string, filename: string) => {
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const [pool] = useState(() => new SimplePool());
-  const relays = [DEFAULT_RELAY];
-
+  const { getPostsForKind, publishToRelays, getProfileForPubkey } = useSystem();
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,170 +47,54 @@ function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    let sub: EventEmitter | null = null;
-    let profilesMap = new Map<string, Profile>();
+    const fetchPosts = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-    const setupSubscription = async () => {
-      // Subscribe to animal videos (kind 75757)
-      sub = pool.sub(relays, [
-        {
-          kinds: [75757],
-          limit: 100
-        }
-      ]);
+        const mainEvents = await getPostsForKind(75757, { limit: 50 });
+        const commentEvents = await getPostsForKind(75757, { limit: 200, replies: true });
 
-      sub.on('event', async (event: NostrEvent) => {
-        // Only process non-comments
-        if (event.kind !== 75757 || event.tags?.some(t => t[0] === 'e')) {
-          return;
-        }
-
-        try {
-          // Get author's profile if we don't have it
-          if (!profilesMap.has(event.pubkey)) {
-            const profileEvents = await fetchEvents({ kinds: [0], authors: [event.pubkey], limit: 1 });
-            if (profileEvents.length > 0) {
-              const profileData = JSON.parse(profileEvents[0].content);
-              profilesMap.set(event.pubkey, {
-                name: profileData.name,
-                picture: profileData.picture,
-                about: profileData.about,
-                lud06: profileData.lud06,
-                lud16: profileData.lud16
-              });
-              // Update posts with new profile
-              setPosts(prevPosts => {
-                return prevPosts.map(post => {
-                  if (post.event.pubkey === event.pubkey) {
-                    return { ...post, profile: profilesMap.get(event.pubkey) };
-                  }
-                  return post;
-                });
-              });
-            }
-          }
-
-          // Get comments for this post
-          const commentEvents = await fetchEvents({ kinds: [75757], '#e': [event.id] });
-          const comments: CommentPost[] = [];
-
-          for (const commentEvent of commentEvents) {
-            if (!profilesMap.has(commentEvent.pubkey)) {
-              // Get commenter's profile
-              const profileEvents = await fetchEvents({ kinds: [0], authors: [commentEvent.pubkey], limit: 1 });
-              if (profileEvents.length > 0) {
-                const profileData = JSON.parse(profileEvents[0].content);
-                profilesMap.set(commentEvent.pubkey, {
-                  name: profileData.name,
-                  picture: profileData.picture,
-                  about: profileData.about,
-                  lud06: profileData.lud06,
-                  lud16: profileData.lud16
-                });
-              }
-            }
-
-            comments.push({
-              event: commentEvent as AnimalKind,
-              profile: profilesMap.get(commentEvent.pubkey)
-            });
-          }
-
-          // Add new post with its comments
-          setPosts(prevPosts => {
-            const newPost = {
+        const processedPosts = await Promise.all(
+          mainEvents.map(async (event) => {
+            const profile = await getProfileForPubkey(event.pubkey);
+            const comments = await Promise.all(
+              commentEvents
+                .filter((comment) => comment.tags?.some((tag) => tag[0] === 'e' && tag[1] === event.id))
+                .map(async (comment) => ({
+                  event: comment as AnimalKind,
+                  profile: await getProfileForPubkey(comment.pubkey)
+                }))
+            );
+            return {
               event: event as AnimalKind,
-              profile: profilesMap.get(event.pubkey),
+              profile,
               comments
             };
-            // Avoid duplicates
-            if (!prevPosts.some(p => p.event.id === event.id)) {
-              return [newPost, ...prevPosts];
-            }
-            return prevPosts;
-          });
-        } catch (error) {
-          console.error('Error processing event:', error);
-        }
-      });
+          })
+        );
 
-      sub.on('eose', () => {
+        setPosts(processedPosts);
+
+        toast({
+          title: "Gallery updated",
+          description: `Loaded ${processedPosts.length} videos`,
+        });
+      } catch (error) {
+        console.error('Error fetching posts:', error);
+        setError(error instanceof Error ? error.message : 'Failed to load gallery');
+        toast({
+          variant: "destructive",
+          title: "Failed to load gallery",
+          description: "Please try refreshing the page",
+        });
+      } finally {
         setLoading(false);
-      });
+      }
     };
 
-    setupSubscription();
-
-    return () => {
-      if (sub) {
-        sub.unsub();
-      }
-      pool.close(relays);
-    };
-  }, []);
-
-  const fetchPosts = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const mainEvents = await fetchEvents({ kinds: [75757], limit: 50 });
-      const commentEvents = await fetchEvents({ kinds: [75757], '#e': [], limit: 200 });
-
-      const pubkeys = new Set([
-        ...mainEvents.map(e => e.pubkey),
-        ...commentEvents.map(e => e.pubkey)
-      ]);
-
-      const profileEvents = await fetchEvents({ kinds: [0], authors: Array.from(pubkeys) });
-
-      const profileMap = new Map<string, Profile>();
-      for (const event of profileEvents) {
-        try {
-          const profileData = JSON.parse(event.content);
-          profileMap.set(event.pubkey, {
-            name: profileData.name,
-            picture: profileData.picture,
-            about: profileData.about,
-            lud06: profileData.lud06,
-            lud16: profileData.lud16,
-          });
-        } catch (error) {
-          console.error('Error parsing profile:', error);
-        }
-      }
-
-      const processedPosts = mainEvents.map(event => ({
-        event: event as AnimalKind,
-        profile: profileMap.get(event.pubkey),
-        comments: commentEvents
-          .filter(comment => 
-            comment.tags?.some(tag => tag[0] === 'e' && tag[1] === event.id)
-          )
-          .map(comment => ({
-            event: comment as AnimalKind,
-            profile: profileMap.get(comment.pubkey)
-          }))
-      }));
-
-      setPosts(processedPosts);
-
-      toast({
-        title: "Gallery updated",
-        description: `Loaded ${processedPosts.length} videos`,
-      });
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load gallery');
-      toast({
-        variant: "destructive",
-        title: "Failed to load gallery",
-        description: "Please try refreshing the page",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetchPosts();
+  }, [getPostsForKind, getProfileForPubkey]);
 
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
@@ -236,7 +110,7 @@ function Gallery() {
       setSendingZap(true);
       setProcessingAction('zap');
 
-      const lnDetails = await fetchLightningDetails(post.event.pubkey);
+      const lnDetails = await getProfileForPubkey(post.event.pubkey);
       if (!lnDetails?.lud16 && !lnDetails?.lnurl) {
         throw new Error('No lightning address found for this user');
       }
@@ -267,11 +141,11 @@ function Gallery() {
 
     try {
       setProcessingAction('comment');
-      await publishComment(
-        newComment,
-        commentParentId || selectedPost.event.id,
-        75757  // Use the same kind as the main posts
-      );
+      await publishToRelays({
+        kind: 75757,
+        content: newComment,
+        tags: [['e', selectedPost.event.id, '', 'reply']]
+      });
 
       setShowCommentModal(false);
       setNewComment('');
@@ -307,7 +181,14 @@ function Gallery() {
     try {
       setProcessingAction('share');
       const note = shareText || `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n#animalsunset`;
-      await shareToNostr(note, post.event.content);
+      await publishToRelays({
+        kind: 1,
+        content: note.trim(),
+        tags: [
+          ['t', 'animalsunset'],
+          ['r', post.event.content]
+        ]
+      });
 
       setShowShareModal(false);
       setShareText('');
@@ -327,13 +208,6 @@ function Gallery() {
       setProcessingAction(null);
     }
   };
-
-  useEffect(() => {
-    fetchPosts();
-    return () => {
-      pool.close(relays);
-    };
-  }, []);
 
   if (!pubkey) {
     return (
