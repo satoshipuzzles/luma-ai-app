@@ -6,7 +6,7 @@ declare global {
   interface Window {
     nostr?: {
       getPublicKey(): Promise<string>;
-      signEvent(event: any): Promise<Event>;
+      signEvent(event: any): Promise<any>; // Return type adjusted to Promise<any>
     };
   }
 }
@@ -40,7 +40,8 @@ export async function publishToRelays(
   };
 
   finalEvent.id = getEventHash(finalEvent);
-  const signedEvent = await window.nostr.signEvent(finalEvent);
+  // Cast the result to 'Event'
+  const signedEvent = (await window.nostr.signEvent(finalEvent)) as Event;
 
   if (!validateEvent(signedEvent)) {
     throw new Error('Invalid event');
@@ -113,33 +114,6 @@ export async function publishVideo(
 
   await publishToRelays(historyEvent);
 }
-
-export async function fetchLightningDetails(
-  pubkey: string
-): Promise<{ lnurl?: string; lud16?: string } | null> {
-  const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
-
-  const profileEvent = events[0];
-  if (!profileEvent) return null;
-
-  try {
-    const profile = JSON.parse(profileEvent.content);
-    return {
-      lnurl: profile.lud06,
-      lud16: profile.lud16,
-    };
-  } catch (error) {
-    console.error('Error parsing profile:', error);
-    return null;
-  }
-}
-
-export async function createZapInvoice(
-  lnAddress: string,
-  amount: number,
-  comment?: string
-): Promise<string> {
-  const [username, domain] = lnAddress.split('@');
 
   // Fetch LNURL pay endpoint
   const response = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
