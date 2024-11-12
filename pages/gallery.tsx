@@ -78,9 +78,138 @@ function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    fetchPosts();
+    let sub: any = null;
+    let profilesMap = new Map<string, Profile>();
+
+    const setupSubscription = () => {
+      // Subscribe to animal videos (kind 75757)
+      sub = pool.subscribeMany([DEFAULT_RELAY], [
+        {
+          kinds: [75757],
+          limit: 100
+        }
+      ]);
+
+      sub.on('event', async (event: NostrEvent) => {
+        // Only process non-comments
+        if (event.kind !== 75757 || event.tags?.some(t => t[0] === 'e')) {
+          return;
+        }
+
+        try {
+          // Get author's profile if we don't have it
+          if (!profilesMap.has(event.pubkey)) {
+            const profileSub = pool.subscribeMany([DEFAULT_RELAY], [
+              { kinds: [0], authors: [event.pubkey], limit: 1 }
+            ]);
+
+            profileSub.on('event', (profileEvent: NostrEvent) => {
+              if (profileEvent.kind === 0) {
+                try {
+                  const profileData = JSON.parse(profileEvent.content);
+                  profilesMap.set(event.pubkey, {
+                    name: profileData.name,
+                    picture: profileData.picture,
+                    about: profileData.about,
+                    lud06: profileData.lud06,
+                    lud16: profileData.lud16
+                  });
+                  // Update posts with new profile
+                  setPosts(prevPosts => {
+                    return prevPosts.map(post => {
+                      if (post.event.pubkey === event.pubkey) {
+                        return { ...post, profile: profilesMap.get(event.pubkey) };
+                      }
+                      return post;
+                    });
+                  });
+                } catch (error) {
+                  console.error('Error parsing profile:', error);
+                }
+              }
+            });
+
+            // Clean up profile subscription after we get the data
+            profileSub.on('eose', () => {
+              profileSub.unsub();
+            });
+          }
+
+          // Get comments for this post
+          const commentsSub = pool.subscribeMany([DEFAULT_RELAY], [
+            { kinds: [75757], '#e': [event.id] }
+          ]);
+
+          const comments: CommentPost[] = [];
+
+          commentsSub.on('event', async (commentEvent: NostrEvent) => {
+            if (!profilesMap.has(commentEvent.pubkey)) {
+              // Get commenter's profile
+              const commenterProfileSub = pool.subscribeMany([DEFAULT_RELAY], [
+                { kinds: [0], authors: [commentEvent.pubkey], limit: 1 }
+              ]);
+
+              commenterProfileSub.on('event', (profileEvent: NostrEvent) => {
+                if (profileEvent.kind === 0) {
+                  try {
+                    const profileData = JSON.parse(profileEvent.content);
+                    profilesMap.set(commentEvent.pubkey, {
+                      name: profileData.name,
+                      picture: profileData.picture,
+                      about: profileData.about,
+                      lud06: profileData.lud06,
+                      lud16: profileData.lud16
+                    });
+                  } catch (error) {
+                    console.error('Error parsing profile:', error);
+                  }
+                }
+              });
+
+              commenterProfileSub.on('eose', () => {
+                commenterProfileSub.unsub();
+              });
+            }
+
+            comments.push({
+              event: commentEvent as AnimalKind,
+              profile: profilesMap.get(commentEvent.pubkey)
+            });
+          });
+
+          commentsSub.on('eose', () => {
+            commentsSub.unsub();
+            // Add new post with its comments
+            setPosts(prevPosts => {
+              const newPost = {
+                event: event as AnimalKind,
+                profile: profilesMap.get(event.pubkey),
+                comments
+              };
+              // Avoid duplicates
+              if (!prevPosts.some(p => p.event.id === event.id)) {
+                return [newPost, ...prevPosts];
+              }
+              return prevPosts;
+            });
+          });
+        } catch (error) {
+          console.error('Error processing event:', error);
+        }
+      });
+
+      sub.on('eose', () => {
+        setLoading(false);
+      });
+    };
+
+    setupSubscription();
+
     return () => {
-      pool.close(relays);
+      if (sub) {
+        sub.unsub();
+      }
+      pool.close([DEFAULT_RELAY]);
     };
   }, []);
 
@@ -260,6 +389,13 @@ function Gallery() {
     }
   };
 
+  useEffect(() => {
+    fetchPosts();
+    return () => {
+      pool.close(relays);
+    };
+  }, []);
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -315,247 +451,242 @@ function Gallery() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Animal Gallery</h1>
-          <button
-            onClick={fetchPosts}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
-            <RefreshCw size={16} />
-            <span>Refresh</span>
-          </button>
-        </div>
+     <div className="max-w-4xl mx-auto py-8 px-4">
+  <div className="flex justify-between items-center mb-8">
+    <h1 className="text-3xl font-bold">Animal Gallery</h1>
+    <button
+      onClick={fetchPosts}
+      className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+    >
+      <RefreshCw size={16} />
+      <span>Refresh</span>
+    </button>
+  </div>
 
-        {error ? (
-          <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-            {error}
-          </div>
-        ) : posts.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            No videos found in the gallery yet.
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {posts.map(post => (
-              <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
-                <div className="p-4 flex items-center space-x-3">
-                  <img
-                    src={post.profile?.picture || '/default-avatar.png'}
-                    alt="Profile"
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
-                  <div>
-                    <div className="font-medium">
-                      {post.profile?.name || "Anonymous"}
-                    </div>
-                    <div className="text-sm text-gray-400">
-                      {new Date(post.event.created_at * 1000).toLocaleDateString()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="relative pt-[56.25%] bg-black">
-                  <video
-                    src={post.event.content}
-                    className="absolute top-0 left-0 w-full h-full object-contain"
-                    controls
-                    loop
-                    playsInline
-                  />
-                </div>
-
-                <div className="p-4 pb-2">
-                  <p className="text-lg font-medium">
-                    {post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
-                  </p>
-                </div>
-
-                <div className="p-4 flex flex-wrap items-center gap-4">
-                  <button
-                    onClick={() => handleZap(post)}
-                    disabled={sendingZap || processingAction === 'zap'}
-                    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {processingAction === 'zap' ? (
-                      <RefreshCw className="animate-spin h-5 w-5" />
-                    ) : (
-                      <Zap size={20} />
-                    )}
-                    <span>Zap</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedPost(post);
-                      setShowCommentModal(true);
-                    }}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                  >
-                    <MessageSquare size={20} />
-                    <span>{post.comments.length}</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedPost(post);
-                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
-                      setShowShareModal(true);
-                    }}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                  >
-                    <Share2 size={20} />
-                    <span>Share</span>
-                  </button>
-
-                  <button
-                    onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
-                  >
-                    <Download size={20} />
-                    <span>Download</span>
-                  </button>
-                </div>
-
-                {
-                  {post.comments.length > 0 && (
-                  <div className="border-t border-gray-800">
-                    <div className="p-4 space-y-4">
-                      {post.comments.map(comment => (
-                        <div key={comment.event.id} className="flex items-start space-x-3">
-                          <img
-                            src={comment.profile?.picture || '/default-avatar.png'}
-                            alt="Commenter"
-                            className="w-8 h-8 rounded-full"
-                          />
-                          <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
-                            <div className="font-medium text-gray-300 mb-1">
-                              {comment.profile?.name || "Anonymous"}
-                            </div>
-                            <div className="text-sm text-gray-200">
-                              {comment.event.content}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+  {error ? (
+    <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+      {error}
+    </div>
+  ) : posts.length === 0 ? (
+    <div className="text-center text-gray-400 py-8">
+      No videos found in the gallery yet.
+    </div>
+  ) : (
+    <div className="space-y-8">
+      {posts.map(post => (
+        <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
+          <div className="p-4 flex items-center space-x-3">
+            <img
+              src={post.profile?.picture || '/default-avatar.png'}
+              alt="Profile"
+              className="w-10 h-10 rounded-full object-cover"
+            />
+            <div>
+              <div className="font-medium">
+                {post.profile?.name || "Anonymous"}
               </div>
-            ))}
+              <div className="text-sm text-gray-400">
+                {new Date(post.event.created_at * 1000).toLocaleDateString()}
+              </div>
+            </div>
           </div>
-        )}
+
+          <div className="relative pt-[56.25%] bg-black">
+            <video
+              src={post.event.content}
+              className="absolute top-0 left-0 w-full h-full object-contain"
+              controls
+              loop
+              playsInline
+            />
+          </div>
+
+          <div className="p-4 pb-2">
+            <p className="text-lg font-medium">
+              {post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+            </p>
+          </div>
+
+          <div className="p-4 flex flex-wrap items-center gap-4">
+            <button
+              onClick={() => handleZap(post)}
+              disabled={sendingZap || processingAction === 'zap'}
+              className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processingAction === 'zap' ? (
+                <RefreshCw className="animate-spin h-5 w-5" />
+              ) : (
+                <Zap size={20} />
+              )}
+              <span>Zap</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedPost(post);
+                setShowCommentModal(true);
+              }}
+              className="flex items-center space-x-2 text-gray-400 hover:text-white"
+            >
+              <MessageSquare size={20} />
+              <span>{post.comments.length}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedPost(post);
+                setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
+                setShowShareModal(true);
+              }}
+              className="flex items-center space-x-2 text-gray-400 hover:text-white"
+            >
+              <Share2 size={20} />
+              <span>Share</span>
+            </button>
+
+            <button
+              onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
+              className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
+            >
+              <Download size={20} />
+              <span>Download</span>
+            </button>
+          </div>
+
+          {post.comments.length > 0 && (
+            <div className="border-t border-gray-800">
+              <div className="p-4 space-y-4">
+                {post.comments.map(comment => (
+                  <div key={comment.event.id} className="flex items-start space-x-3">
+                    <img
+                      src={comment.profile?.picture || '/default-avatar.png'}
+                      alt="Commenter"
+                      className="w-8 h-8 rounded-full"
+                    />
+                    <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
+                      <div className="font-medium text-gray-300 mb-1">
+                        {comment.profile?.name || "Anonymous"}
+                      </div>
+                      <div className="text-sm text-gray-200">
+                        {comment.event.content}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
+{showCommentModal && selectedPost && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">
+          {commentParentId ? 'Reply to Comment' : 'Add Comment'}
+        </h2>
+        <button
+          onClick={() => {
+            setShowCommentModal(false);
+            setCommentParentId(null);
+          }}
+          className="text-gray-400 hover:text-white"
+        >
+          <X size={20} />
+        </button>
       </div>
 
-      {showCommentModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">
-                {commentParentId ? 'Reply to Comment' : 'Add Comment'}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowCommentModal(false);
-                  setCommentParentId(null);
-                }}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
+      <textarea
+        className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+        rows={4}
+        value={newComment}
+        onChange={(e) => setNewComment(e.target.value)}
+        placeholder="Write your comment..."
+      />
 
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Write your comment..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowCommentModal(false);
-                  setCommentParentId(null);
-                }}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleComment}
-                disabled={!newComment.trim() || processingAction === 'comment'}
-                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-              >
-                {processingAction === 'comment' ? (
-                  <>
-                    <RefreshCw className="animate-spin h-5 w-5" />
-                    <span>Posting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send size={16} />
-                    <span>Post Comment</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showShareModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Share to Nostr</h2>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={shareText}
-              onChange={(e) => setShareText(e.target.value)}
-              placeholder="Add a note..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleShare(selectedPost)}
-                disabled={!shareText.trim() || processingAction === 'share'}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-              >
-                {processingAction === 'share' ? (
-                  <>
-                    <RefreshCw className="animate-spin h-5 w-5" />
-                    <span>Sharing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe size={16} />
-                    <span>Share to Nostr</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={() => {
+            setShowCommentModal(false);
+            setCommentParentId(null);
+          }}
+          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleComment}
+          disabled={!newComment.trim() || processingAction === 'comment'}
+          className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {processingAction === 'comment' ? (
+            <>
+              <RefreshCw className="animate-spin h-5 w-5" />
+              <span>Posting...</span>
+            </>
+          ) : (
+            <>
+              <Send size={16} />
+              <span>Post Comment</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
-  );
-}
+  </div>
+)}
 
-export default Gallery;
+{showShareModal && selectedPost && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Share to Nostr</h2>
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="text-gray-400 hover:text-white"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <textarea
+        className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+        rows={4}
+        value={shareText}
+        onChange={(e) => setShareText(e.target.value)}
+        placeholder="Add a note..."
+      />
+
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => handleShare(selectedPost)}
+          disabled={!shareText.trim() || processingAction === 'share'}
+          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {processingAction === 'share' ? (
+            <>
+              <RefreshCw className="animate-spin h-5 w-5" />
+              <span>Sharing...</span>
+            </>
+          ) : (
+            <>
+              <Globe size={16} />
+              <span>Share to Nostr</span>
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+</div>
