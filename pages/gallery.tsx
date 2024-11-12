@@ -80,7 +80,7 @@ function Gallery() {
     let sub: NostrSubscription | undefined;
     
     try {
-      sub = pool.sub([DEFAULT_RELAY], [
+      sub = pool.subscribe([[DEFAULT_RELAY]], [
         { kinds: [75757], since: Math.floor(Date.now() / 1000) }
       ]);
 
@@ -139,7 +139,7 @@ function Gallery() {
 
       let events: NostrEvent[] = [];
 
-      const sub = pool.sub([DEFAULT_RELAY], [
+      const sub = pool.subscribe([[DEFAULT_RELAY]], [
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
