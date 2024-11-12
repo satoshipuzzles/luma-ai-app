@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
+import { Relay } from 'nostr-tools';  // Changed import to use Relay instead of SimplePool
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -42,10 +42,14 @@ interface CommentThread {
   replies: CommentThread[];
 }
 
+interface RelaySubscription {
+  on: (event: 'event' | 'eose', listener: (event?: any) => void) => void;
+  unsub: () => void;
+}
+
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
-  const pool = new SimplePool();
-  const relays = [DEFAULT_RELAY];
+  const [relay, setRelay] = useState<Relay | null>(null);
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,36 +64,39 @@ function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    if (pubkey) {
-      fetchPosts();
+    if (pubkey && !relay) {
+      const newRelay = Relay.connect(DEFAULT_RELAY);
+      setRelay(newRelay);
     }
     return () => {
-      pool.close(relays);
+      if (relay) {
+        relay.close();
+      }
     };
   }, [pubkey]);
 
   useEffect(() => {
-    if (!pubkey) return;
+    if (!pubkey || !relay) return;
 
-    let sub = pool.subscribeMany(relays, [
+    let sub: RelaySubscription = relay.sub([
       { kinds: [75757], since: Math.floor(Date.now() / 1000) }
     ]);
 
-    sub.on('event', (event: NostrEvent) => {
-      if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+    sub.on('event', (event: any) => {
+      if (event?.kind === 75757 && !event.tags.some((t: any[]) => t[0] === 'e')) {
         // Get profile for the new post's author
-        pool.get(relays, {
+        const profileSub = relay.sub([{
           kinds: [0],
           authors: [event.pubkey]
-        }).then(profileEvent => {
+        }]);
+
+        profileSub.on('event', (profileEvent: any) => {
           let profile: Profile | undefined;
 
-          if (profileEvent) {
-            try {
-              profile = JSON.parse(profileEvent.content);
-            } catch (error) {
-              console.error('Error parsing profile:', error);
-            }
+          try {
+            profile = JSON.parse(profileEvent.content);
+          } catch (error) {
+            console.error('Error parsing profile:', error);
           }
 
           setPosts(prev => [{
@@ -102,32 +109,32 @@ function Gallery() {
             title: "New video",
             description: "A new video has been added to the gallery",
           });
+
+          profileSub.unsub();
         });
       }
-    });
-
-    sub.on('eose', () => {
-      // Handle end of subscription
     });
 
     return () => {
       sub.unsub();
     };
-  }, [pubkey]);
+  }, [pubkey, relay]);
 
   const fetchPosts = async () => {
+    if (!relay) return;
+
     try {
       setLoading(true);
 
-      let events: NostrEvent[] = [];
+      let events: any[] = [];
 
-      const sub = pool.subscribeMany(relays, [
+      const sub = relay.sub([
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
       ]);
 
-      sub.on('event', (event: NostrEvent) => {
+      sub.on('event', (event: any) => {
         events.push(event);
       });
 
@@ -139,9 +146,9 @@ function Gallery() {
       });
 
       // Process events
-      const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
+      const isAnimalKindWithTag = (event: any, hasETag: boolean): event is AnimalKind => {
         if (event.kind !== 75757) return false;
-        return event.tags.some(t => t[0] === 'e') === hasETag;
+        return event.tags.some((t: any[]) => t[0] === 'e') === hasETag;
       };
 
       const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
@@ -173,7 +180,7 @@ function Gallery() {
         event: post as AnimalKind,
         profile: profileMap.get(post.pubkey),
         comments: commentPosts.filter(c =>
-          c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
+          c.event.tags.find((t: any[]) => t[0] === 'e')?.[1] === post.id
         )
       }));
 
