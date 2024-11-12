@@ -5,6 +5,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { DEFAULT_RELAY } from '../lib/nostr';
+import { useNostr } from '../contexts/NostrContext';
 import {
   Download,
   MessageSquare,
@@ -27,12 +28,33 @@ interface CommentPost {
   profile?: Profile;
 }
 
-interface CommentThread {
-  id: string;
-  event: AnimalKind;
-  profile?: Profile;
-  replies: CommentThread[];
-}
+// Utility function for downloading videos
+const downloadVideo = async (url: string, filename: string) => {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+
+    toast({
+      title: "Download started",
+      description: "Your video is being downloaded",
+    });
+  } catch (error) {
+    console.error('Download failed:', error);
+    toast({
+      variant: "destructive",
+      title: "Download failed",
+      description: "Please try again",
+    });
+  }
+};
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
@@ -52,86 +74,44 @@ function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    if (pubkey) {
-      fetchPosts();
-    }
+    fetchPosts();
     return () => {
       pool.close(relays);
     };
-  }, [pubkey]);
-
-  useEffect(() => {
-    if (!pubkey) return;
-
-    let sub = pool.sub(relays, [
-      { kinds: [75757], since: Math.floor(Date.now() / 1000) }
-    ]);
-
-    sub.on('event', async (event: NostrEvent) => {
-      if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-        // Get profile for the new post's author
-        try {
-          const profileEvent = await pool.get(relays, {
-            kinds: [0],
-            authors: [event.pubkey]
-          });
-
-          let profile: Profile | undefined;
-
-          if (profileEvent) {
-            try {
-              profile = JSON.parse(profileEvent.content);
-            } catch (error) {
-              console.error('Error parsing profile:', error);
-            }
-          }
-
-          setPosts(prev => [{
-            event: event as AnimalKind,
-            profile,
-            comments: []
-          }, ...prev]);
-
-          toast({
-            title: "New video",
-            description: "A new video has been added to the gallery",
-          });
-        } catch (error) {
-          console.error('Error fetching profile:', error);
-        }
-      }
-    });
-
-    return () => {
-      sub.unsub();
-    };
-  }, [pubkey]);
+  }, []);
 
   const fetchPosts = async () => {
     try {
       setLoading(true);
 
-      const events = await pool.querySync(relays, [
-        { kinds: [75757], limit: 50 },
-        { kinds: [75757], limit: 200, '#e': [] },
-        { kinds: [0], limit: 100 }
+      // Fetch main posts
+      const mainEvents = await pool.list(relays, [
+        { kinds: [75757], limit: 50 }
       ]);
 
-      // Process events
-      const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
-        if (event.kind !== 75757) return false;
-        return event.tags.some(t => t[0] === 'e') === hasETag;
-      };
+      // Fetch comments
+      const commentEvents = await pool.list(relays, [
+        { kinds: [75757], '#e': [], limit: 200 }
+      ]);
 
-      const mainPosts = events.filter(e => isAnimalKindWithTag(e, false));
-      const comments = events.filter(e => isAnimalKindWithTag(e, true));
-      const profileEvents = events.filter((e): e is ProfileKind => e.kind === 0);
+      // Get unique pubkeys from all events
+      const pubkeys = new Set([
+        ...mainEvents.map(e => e.pubkey),
+        ...commentEvents.map(e => e.pubkey)
+      ]);
 
+      // Fetch profiles for all authors
+      const profileEvents = await pool.list(relays, [{
+        kinds: [0],
+        authors: Array.from(pubkeys)
+      }]);
+
+      // Create profile map
       const profileMap = new Map<string, Profile>();
-      profileEvents.forEach(e => {
+      profileEvents.forEach(event => {
         try {
-          const profile = JSON.parse(e.content);
-          profileMap.set(e.pubkey, {
+          const profile = JSON.parse(event.content);
+          profileMap.set(event.pubkey, {
             name: profile.name,
             picture: profile.picture,
             about: profile.about,
@@ -143,24 +123,28 @@ function Gallery() {
         }
       });
 
-      const commentPosts = comments.map(comment => ({
-        event: comment as AnimalKind,
-        profile: profileMap.get(comment.pubkey)
-      }));
+      // Process main posts and comments
+      const processedPosts = mainEvents
+        .filter((event): event is AnimalKind => event.kind === 75757)
+        .map(event => ({
+          event,
+          profile: profileMap.get(event.pubkey),
+          comments: commentEvents
+            .filter(comment => 
+              comment.kind === 75757 && 
+              comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
+            )
+            .map(comment => ({
+              event: comment as AnimalKind,
+              profile: profileMap.get(comment.pubkey)
+            }))
+        }));
 
-      const posts: VideoPost[] = mainPosts.map(post => ({
-        event: post as AnimalKind,
-        profile: profileMap.get(post.pubkey),
-        comments: commentPosts.filter(c =>
-          c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
-        )
-      }));
-
-      setPosts(posts);
+      setPosts(processedPosts);
 
       toast({
         title: "Gallery updated",
-        description: `Loaded ${posts.length} videos`,
+        description: `Loaded ${processedPosts.length} videos`,
       });
     } catch (error) {
       console.error('Error fetching posts:', error);
@@ -174,6 +158,7 @@ function Gallery() {
       setLoading(false);
     }
   };
+
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -240,14 +225,13 @@ function Gallery() {
         await publishComment(
           newComment,
           commentParentId || selectedPost.event.id,
-          1 // Kind for comments
+          1
         );
 
         setShowCommentModal(false);
         setNewComment('');
         setCommentParentId(null);
 
-        // Refresh posts to show new comment
         await fetchPosts();
 
         toast({
@@ -352,7 +336,7 @@ function Gallery() {
                   className="w-8 h-8 rounded-full"
                 />
               )}
-              <span>{profile.name || formatPubkey(pubkey)}</span>
+              <span>{profile.name || "Anonymous"}</span>
             </div>
           )}
         </div>
@@ -362,13 +346,7 @@ function Gallery() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Animal Gallery</h1>
           <button
-            onClick={() => {
-              fetchPosts();
-              toast({
-                title: "Refreshing gallery",
-                description: "Fetching latest videos...",
-              });
-            }}
+            onClick={fetchPosts}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
           >
             <RefreshCw size={16} />
@@ -396,7 +374,7 @@ function Gallery() {
                   />
                   <div>
                     <div className="font-medium">
-                      {post.profile?.name || formatPubkey(post.event.pubkey)}
+                      {post.profile?.name || "Anonymous"}
                     </div>
                     <div className="text-sm text-gray-400">
                       {new Date(post.event.created_at * 1000).toLocaleDateString()}
@@ -459,7 +437,9 @@ function Gallery() {
 
                   <button
                     onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml
+
+-auto"
                   >
                     <Download size={20} />
                     <span>Download</span>
@@ -469,17 +449,22 @@ function Gallery() {
                 {post.comments.length > 0 && (
                   <div className="border-t border-gray-800">
                     <div className="p-4 space-y-4">
-                      {buildCommentThread(post.comments).map(thread => (
-                        <CommentThreadComponent
-                          key={thread.id}
-                          thread={thread}
-                          onReply={(parentId) => {
-                            setSelectedPost(post);
-                            setCommentParentId(parentId);
-                            setShowCommentModal(true);
-                          }}
-                          level={0}
-                        />
+                      {post.comments.map(comment => (
+                        <div key={comment.event.id} className="flex items-start space-x-3">
+                          <img
+                            src={comment.profile?.picture || '/default-avatar.png'}
+                            alt="Commenter"
+                            className="w-8 h-8 rounded-full"
+                          />
+                          <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
+                            <div className="font-medium text-gray-300 mb-1">
+                              {comment.profile?.name || "Anonymous"}
+                            </div>
+                            <div className="text-sm text-gray-200">
+                              {comment.event.content}
+                            </div>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
