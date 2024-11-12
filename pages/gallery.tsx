@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent, Sub } from 'nostr-tools'; // Removed RelayOptions
+import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools'; // Removed 'Sub' and 'RelayOptions'
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
+import { useNostr } from '../contexts/NostrContext';
 import { 
   publishToRelays, 
   fetchLightningDetails, 
@@ -41,6 +42,11 @@ interface CommentThread {
   event: AnimalKind;
   profile?: Profile;
   replies: CommentThread[];
+}
+
+// Define the Subscription interface
+interface Subscription {
+  unsub(): void;
 }
 
 const downloadVideo = async (url: string, filename: string) => {
@@ -185,45 +191,40 @@ function Gallery() {
   useEffect(() => {
     if (!pubkey) return;
 
-    let sub: Sub | undefined;
+    let sub: Subscription | undefined;
 
     const startSubscription = () => {
       sub = pool.subscribe(
         relays,
         [{ kinds: [75757], since: Math.floor(Date.now() / 1000) }],
-        {
-          onEvent(event: NostrEvent) {
-            if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-              // Get profile for the new post's author
-              pool.get(relays, {
-                kinds: [0],
-                authors: [event.pubkey]
-              }).then(profileEvent => {
-                let profile: Profile | undefined;
-                
-                if (profileEvent) {
-                  try {
-                    profile = JSON.parse(profileEvent.content);
-                  } catch (error) {
-                    console.error('Error parsing profile:', error);
-                  }
+        (event: NostrEvent) => {
+          if (event.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+            // Get profile for the new post's author
+            pool.get(relays, {
+              kinds: [0],
+              authors: [event.pubkey]
+            }).then(profileEvent => {
+              let profile: Profile | undefined;
+              
+              if (profileEvent) {
+                try {
+                  profile = JSON.parse(profileEvent.content);
+                } catch (error) {
+                  console.error('Error parsing profile:', error);
                 }
+              }
 
-                setPosts(prev => [{
-                  event: event as AnimalKind,
-                  profile,
-                  comments: []
-                }, ...prev]);
+              setPosts(prev => [{
+                event: event as AnimalKind,
+                profile,
+                comments: []
+              }, ...prev]);
 
-                toast({
-                  title: "New video",
-                  description: "A new video has been added to the gallery",
-                });
+              toast({
+                title: "New video",
+                description: "A new video has been added to the gallery",
               });
-            }
-          },
-          onEose() {
-            // Handle end of subscription
+            });
           }
         }
       );
@@ -279,12 +280,12 @@ function Gallery() {
       });
 
       const commentPosts = comments.map(comment => ({
-        event: comment,
+        event: comment as AnimalKind,
         profile: profileMap.get(comment.pubkey)
       }));
 
       const posts: VideoPost[] = mainPosts.map(post => ({
-        event: post,
+        event: post as AnimalKind,
         profile: profileMap.get(post.pubkey),
         comments: commentPosts.filter(c => 
           c.event.tags.find(t => t[0] === 'e')?.[1] === post.id
