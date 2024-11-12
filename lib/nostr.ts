@@ -21,12 +21,17 @@ export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
 
 const pool = new SimplePool();
 
+// Create a new interface where 'id' is required
+interface SignedEvent extends Event {
+  id: string;
+}
+
 type UnsignedEvent = Omit<Event, 'id' | 'sig' | 'pubkey' | 'created_at'>;
 
 export async function publishToRelays(
   event: UnsignedEvent,
   relays: string[] = [DEFAULT_RELAY, ...BACKUP_RELAYS]
-): Promise<Event> {
+): Promise<SignedEvent> {
   if (typeof window === 'undefined' || !window.nostr) {
     throw new Error('Nostr extension not found');
   }
@@ -40,8 +45,8 @@ export async function publishToRelays(
   };
 
   finalEvent.id = getEventHash(finalEvent);
-  // Cast the result to 'Event'
-  const signedEvent = (await window.nostr.signEvent(finalEvent)) as Event;
+  // Cast the result to 'SignedEvent'
+  const signedEvent = (await window.nostr.signEvent(finalEvent)) as SignedEvent;
 
   if (!validateEvent(signedEvent)) {
     throw new Error('Invalid event');
@@ -94,18 +99,13 @@ export async function publishVideo(
   // Get the signed event, which includes the 'id'
   const signedAnimalEvent = await publishToRelays(animalEvent);
 
-  // Ensure 'id' is not undefined
-  if (!signedAnimalEvent.id) {
-    throw new Error('Signed animal event does not have an id');
-  }
-
-  // Now you can access the 'id' property safely
+  // Now you can access the 'id' property without TypeScript errors
   const historyEvent: UnsignedEvent = {
     kind: 8008135,
     tags: [
       ['text-to-speech', prompt],
       ['r', videoUrl],
-      ['e', signedAnimalEvent.id], // 'id' is now guaranteed to be a string
+      ['e', signedAnimalEvent.id],
       ['public', isPublic.toString()],
     ],
     content: JSON.stringify({
@@ -119,6 +119,38 @@ export async function publishVideo(
 
   await publishToRelays(historyEvent);
 }
+
+export async function fetchLightningDetails(
+  pubkey: string
+): Promise<{ lnurl?: string; lud16?: string } | null> {
+  const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
+
+  const profileEvent = events[0];
+  if (!profileEvent) return null;
+
+  try {
+    const profile = JSON.parse(profileEvent.content);
+    return {
+      lnurl: profile.lud06,
+      lud16: profile.lud16,
+    };
+  } catch (error) {
+    console.error('Error parsing profile:', error);
+    return null;
+  }
+}
+
+export async function createZapInvoice(
+  lnAddress: string,
+  amount: number,
+  comment?: string
+): Promise<string> {
+  const [username, domain] = lnAddress.split('@');
+
+  if (!username || !domain) {
+    throw new Error('Invalid LN address format');
+  }
+
   // Fetch LNURL pay endpoint
   const response = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
   const { callback, maxSendable, minSendable } = await response.json();
