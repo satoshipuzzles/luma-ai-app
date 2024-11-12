@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { SimplePool, Filter, Event as NostrEvent, relayInit } from 'nostr-tools';
+import { SimplePool, Filter, Event as NostrEvent } from 'nostr-tools';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile } from '../types/nostr';
@@ -44,6 +44,7 @@ interface CommentThread {
 
 function Gallery() {
   const { pubkey, profile, connect } = useNostr();
+  const pool = new SimplePool();
   const relays = [DEFAULT_RELAY];
 
   const [posts, setPosts] = useState<VideoPost[]>([]);
@@ -62,75 +63,65 @@ function Gallery() {
     if (pubkey) {
       fetchPosts();
     }
+    return () => {
+      pool.close(relays);
+    };
   }, [pubkey]);
 
   useEffect(() => {
     if (!pubkey) return;
 
-    const setupRelay = async () => {
-      const relay = relayInit(DEFAULT_RELAY);
-      await relay.connect();
+    let sub = pool.subscribeMany(relays, [
+      { kinds: [75757], since: Math.floor(Date.now() / 1000) }
+    ]);
 
-      relay.on('connect', () => {
-        console.log(`Connected to ${relay.url}`);
-      });
+    sub.on('event', (event: NostrEvent) => {
+      if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
+        // Get profile for the new post's author
+        pool.get(relays, {
+          kinds: [0],
+          authors: [event.pubkey]
+        }).then(profileEvent => {
+          let profile: Profile | undefined;
 
-      relay.on('error', () => {
-        console.log(`Failed to connect to ${relay.url}`);
-      });
-
-      const sub = relay.sub([
-        { kinds: [75757], since: Math.floor(Date.now() / 1000) }
-      ]);
-
-      sub.on('event', (event: NostrEvent) => {
-        if (event?.kind === 75757 && !event.tags.some(t => t[0] === 'e')) {
-          // Get profile for the new post's author
-          relay.sub([{
-            kinds: [0],
-            authors: [event.pubkey]
-          }]).on('event', (profileEvent: NostrEvent) => {
-            let profile: Profile | undefined;
-
+          if (profileEvent) {
             try {
               profile = JSON.parse(profileEvent.content);
             } catch (error) {
               console.error('Error parsing profile:', error);
             }
+          }
 
-            setPosts(prev => [{
-              event: event as AnimalKind,
-              profile,
-              comments: []
-            }, ...prev]);
+          setPosts(prev => [{
+            event: event as AnimalKind,
+            profile,
+            comments: []
+          }, ...prev]);
 
-            toast({
-              title: "New video",
-              description: "A new video has been added to the gallery",
-            });
+          toast({
+            title: "New video",
+            description: "A new video has been added to the gallery",
           });
-        }
-      });
+        });
+      }
+    });
 
-      return () => {
-        sub.unsub();
-        relay.close();
-      };
+    sub.on('eose', () => {
+      // Handle end of subscription
+    });
+
+    return () => {
+      sub.unsub();
     };
-
-    setupRelay();
   }, [pubkey]);
 
   const fetchPosts = async () => {
     try {
       setLoading(true);
 
-      const relay = relayInit(DEFAULT_RELAY);
-      await relay.connect();
-
       let events: NostrEvent[] = [];
 
-      const sub = relay.sub([
+      const sub = pool.subscribeMany(relays, [
         { kinds: [75757], limit: 50 },
         { kinds: [75757], limit: 200, '#e': [] },
         { kinds: [0], limit: 100 }
@@ -140,16 +131,12 @@ function Gallery() {
         events.push(event);
       });
 
-      // Wait for end of stored events
       await new Promise<void>((resolve) => {
         sub.on('eose', () => {
           sub.unsub();
           resolve();
         });
       });
-
-      // Close relay connection
-      relay.close();
 
       // Process events
       const isAnimalKindWithTag = (event: NostrEvent, hasETag: boolean): event is AnimalKind => {
