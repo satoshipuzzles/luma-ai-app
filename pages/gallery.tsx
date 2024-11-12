@@ -36,29 +36,7 @@ interface CommentPost {
 }
 
 const downloadVideo = async (url: string, filename: string) => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-    toast({
-      title: "Download started",
-      description: "Your video is being downloaded",
-    });
-  } catch (error) {
-    console.error('Download failed:', error);
-    toast({
-      variant: "destructive",
-      title: "Download failed",
-      description: "Please try again",
-    });
-  }
+  // ...
 };
 
 function Gallery() {
