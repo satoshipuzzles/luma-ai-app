@@ -27,7 +27,7 @@
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "^3.3.0",
     "ws": "^8.15.1",
-    "@ndk/next"
+    "@nostr-dev-kit/ndk": "^0.6.3"
   },
   "devDependencies": {
     "@types/bad-words": "^3.0.1",
