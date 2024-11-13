@@ -1,6 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
 import NDK, { NDKEvent, NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
+import type { Event } from 'nostr-tools';
+
+// Declare window.nostr type
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: Partial<Event>): Promise<Event>;
+      getRelays?(): Promise<{ [url: string]: { read: boolean; write: boolean } }>;
+      nip04?: {
+        encrypt(pubkey: string, plaintext: string): Promise<string>;
+        decrypt(pubkey: string, ciphertext: string): Promise<string>;
+      };
+    };
+  }
+}
 
 interface NostrContextType {
   pubkey: string | null;
@@ -52,31 +68,35 @@ class NIP07Signer implements NDKSigner {
   }
 
   async encrypt(recipient: NDKUser, value: string): Promise<string> {
-    if (!window.nostr?.nip04) {
+    const nostr = window.nostr;
+    if (!nostr || !nostr.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
-    return window.nostr.nip04.encrypt(recipient.pubkey, value);
+    return nostr.nip04.encrypt(recipient.pubkey, value);
   }
 
   async decrypt(sender: NDKUser, value: string): Promise<string> {
-    if (!window.nostr?.nip04) {
+    const nostr = window.nostr;
+    if (!nostr || !nostr.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
-    return window.nostr.nip04.decrypt(sender.pubkey, value);
+    return nostr.nip04.decrypt(sender.pubkey, value);
   }
 
   async nip04Encrypt(recipientPubkey: string, value: string): Promise<string> {
-    if (!window.nostr?.nip04) {
+    const nostr = window.nostr;
+    if (!nostr || !nostr.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
-    return window.nostr.nip04.encrypt(recipientPubkey, value);
+    return nostr.nip04.encrypt(recipientPubkey, value);
   }
 
   async nip04Decrypt(senderPubkey: string, value: string): Promise<string> {
-    if (!window.nostr?.nip04) {
+    const nostr = window.nostr;
+    if (!nostr || !nostr.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
-    return window.nostr.nip04.decrypt(senderPubkey, value);
+    return nostr.nip04.decrypt(senderPubkey, value);
   }
 
   get lud16(): string | undefined {
