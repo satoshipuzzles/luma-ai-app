@@ -3,19 +3,17 @@ import { SimplePool } from 'nostr-tools/pool';
 import NDK, { NDKEvent, NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
 import type { Event } from 'nostr-tools';
 
-// Declare window.nostr type
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent(event: Partial<Event>): Promise<Event>;
-      getRelays?(): Promise<{ [url: string]: { read: boolean; write: boolean } }>;
-      nip04?: {
-        encrypt(pubkey: string, plaintext: string): Promise<string>;
-        decrypt(pubkey: string, ciphertext: string): Promise<string>;
-      };
-    };
-  }
+// Define our own interfaces without modifying global
+interface Nip04 {
+  encrypt(pubkey: string, plaintext: string): Promise<string>;
+  decrypt(pubkey: string, ciphertext: string): Promise<string>;
+}
+
+interface NostrWindow {
+  getPublicKey(): Promise<string>;
+  signEvent(event: Partial<Event>): Promise<Event>;
+  getRelays?(): Promise<{ [url: string]: { read: boolean; write: boolean } }>;
+  nip04?: Nip04;
 }
 
 interface NostrContextType {
@@ -32,6 +30,10 @@ class NIP07Signer implements NDKSigner {
   private pubkey: string | null = null;
   private _user: NDKUser | null = null;
 
+  private getNostr(): NostrWindow | undefined {
+    return (window as any).nostr as NostrWindow | undefined;
+  }
+
   async user(): Promise<NDKUser> {
     if (!this._user) {
       const pubkey = await this.getPublicKey();
@@ -46,13 +48,15 @@ class NIP07Signer implements NDKSigner {
 
   async getPublicKey(): Promise<string> {
     if (this.pubkey) return this.pubkey;
-    if (!window.nostr) throw new Error('Nostr extension not found');
-    this.pubkey = await window.nostr.getPublicKey();
+    const nostr = this.getNostr();
+    if (!nostr) throw new Error('Nostr extension not found');
+    this.pubkey = await nostr.getPublicKey();
     return this.pubkey;
   }
 
   async sign(event: NostrEvent): Promise<string> {
-    if (!window.nostr) throw new Error('Nostr extension not found');
+    const nostr = this.getNostr();
+    if (!nostr) throw new Error('Nostr extension not found');
     
     const eventToSign = {
       ...event,
@@ -63,37 +67,37 @@ class NIP07Signer implements NDKSigner {
       tags: event.tags || []
     };
 
-    const signedEvent = await window.nostr.signEvent(eventToSign);
+    const signedEvent = await nostr.signEvent(eventToSign);
     return signedEvent.sig;
   }
 
   async encrypt(recipient: NDKUser, value: string): Promise<string> {
-    const nostr = window.nostr;
-    if (!nostr || !nostr.nip04) {
+    const nostr = this.getNostr();
+    if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
     return nostr.nip04.encrypt(recipient.pubkey, value);
   }
 
   async decrypt(sender: NDKUser, value: string): Promise<string> {
-    const nostr = window.nostr;
-    if (!nostr || !nostr.nip04) {
+    const nostr = this.getNostr();
+    if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
     return nostr.nip04.decrypt(sender.pubkey, value);
   }
 
   async nip04Encrypt(recipientPubkey: string, value: string): Promise<string> {
-    const nostr = window.nostr;
-    if (!nostr || !nostr.nip04) {
+    const nostr = this.getNostr();
+    if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
     return nostr.nip04.encrypt(recipientPubkey, value);
   }
 
   async nip04Decrypt(senderPubkey: string, value: string): Promise<string> {
-    const nostr = window.nostr;
-    if (!nostr || !nostr.nip04) {
+    const nostr = this.getNostr();
+    if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
     return nostr.nip04.decrypt(senderPubkey, value);
@@ -150,10 +154,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   };
 
   const connect = async () => {
-    if (typeof window === 'undefined' || !window.nostr) {
+    if (typeof window === 'undefined' || !(window as any).nostr) {
       throw new Error('Nostr extension not found');
     }
-    const key = await window.nostr.getPublicKey();
+    const nostr = (window as any).nostr as NostrWindow;
+    const key = await nostr.getPublicKey();
     setPubkey(key);
     localStorage.setItem('nostr_pubkey', key);
     await fetchProfile(key);
