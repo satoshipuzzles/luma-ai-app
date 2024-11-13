@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
-import NDK, { NDKEvent, NDKSigner, NDKUser } from '@nostr-dev-kit/ndk';
-import type { Event as NostrEvent } from 'nostr-tools';
+import NDK, { NDKEvent, NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
 
 interface NostrContextType {
   pubkey: string | null;
@@ -50,6 +49,42 @@ class NIP07Signer implements NDKSigner {
 
     const signedEvent = await window.nostr.signEvent(eventToSign);
     return signedEvent.sig;
+  }
+
+  async encrypt(recipient: NDKUser, value: string): Promise<string> {
+    if (!window.nostr?.nip04) {
+      throw new Error('NIP-04 encryption not supported');
+    }
+    return window.nostr.nip04.encrypt(recipient.pubkey, value);
+  }
+
+  async decrypt(sender: NDKUser, value: string): Promise<string> {
+    if (!window.nostr?.nip04) {
+      throw new Error('NIP-04 encryption not supported');
+    }
+    return window.nostr.nip04.decrypt(sender.pubkey, value);
+  }
+
+  async nip04Encrypt(recipientPubkey: string, value: string): Promise<string> {
+    if (!window.nostr?.nip04) {
+      throw new Error('NIP-04 encryption not supported');
+    }
+    return window.nostr.nip04.encrypt(recipientPubkey, value);
+  }
+
+  async nip04Decrypt(senderPubkey: string, value: string): Promise<string> {
+    if (!window.nostr?.nip04) {
+      throw new Error('NIP-04 encryption not supported');
+    }
+    return window.nostr.nip04.decrypt(senderPubkey, value);
+  }
+
+  get lud16(): string | undefined {
+    return undefined;
+  }
+
+  get npub(): string | undefined {
+    return undefined;
   }
 }
 
