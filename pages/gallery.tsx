@@ -45,7 +45,7 @@ function Gallery() {
       });
     } catch (error: any) {
       console.error('Error fetching posts:', error);
-      setError(error.message || 'Failed to load gallery');
+      setError((error as Error).message || 'Failed to load gallery');
       toast({
         variant: "destructive",
         title: "Failed to load gallery",
@@ -76,7 +76,7 @@ function Gallery() {
       toast({
         variant: "destructive",
         title: "Zap failed",
-        description: error.message || "Failed to send zap",
+        description: (error as Error).message || "Failed to send zap",
       });
     } finally {
       setSendingZap(false);
@@ -164,13 +164,13 @@ function Gallery() {
               <div key={post.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
                 <div className="p-4 flex items-center space-x-3">
                   <img
-                    src={post.profile?.picture || '/default-avatar.png'}
+                    src={(post as any)?.profile?.picture || '/default-avatar.png'}
                     alt="Profile"
                     className="w-10 h-10 rounded-full object-cover"
                   />
                   <div>
                     <div className="font-medium">
-                      {post.profile?.name || "Anonymous"}
+                      {(post as any)?.profile?.name || "Anonymous"}
                     </div>
                     <div className="text-sm text-gray-400">
                       {new Date(post.created_at * 1000).toLocaleDateString()}
