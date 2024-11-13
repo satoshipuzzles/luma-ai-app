@@ -87,20 +87,20 @@ class NIP07Signer implements NDKSigner {
     return nostr.nip04.decrypt(sender.pubkey, value);
   }
 
-  async nip04Encrypt(recipientPubkey: string, value: string): Promise<string> {
+  async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
-    return nostr.nip04.encrypt(recipientPubkey, value);
+    return nostr.nip04.encrypt(recipient.pubkey, value);
   }
 
-  async nip04Decrypt(senderPubkey: string, value: string): Promise<string> {
+  async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
     }
-    return nostr.nip04.decrypt(senderPubkey, value);
+    return nostr.nip04.decrypt(sender.pubkey, value);
   }
 
   get lud16(): string | undefined {
