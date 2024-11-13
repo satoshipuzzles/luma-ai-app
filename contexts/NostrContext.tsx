@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
-import NDK, { NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
+import NDK, { NDKNip07Signer, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
 import type { Event } from 'nostr-tools';
 
 // Define our own interfaces without modifying global
@@ -28,85 +28,6 @@ interface NostrContextType {
 
 const NostrContext = createContext<NostrContextType | null>(null);
 
-class NIP07Signer implements NDKSigner {
-  private pubkey: string | null = null;
-  private _user: NDKUser | null = null;
-
-  private getNostr(): NostrWindow | undefined {
-    return (window as any).nostr as NostrWindow | undefined;
-  }
-
-  public async user(): Promise<NDKUser> {
-    if (!this._user) {
-      const pubkey = await this.getPublicKey();
-      this._user = new NDKUser({ pubkey });
-    }
-    return this._user;
-  }
-
-  public async blockUntilReady(): Promise<NDKUser> {
-    return this.user();
-  }
-
-  public async getPublicKey(): Promise<string> {
-    if (this.pubkey) return this.pubkey;
-    const nostr = this.getNostr();
-    if (!nostr) throw new Error('Nostr extension not found');
-    this.pubkey = await nostr.getPublicKey();
-    return this.pubkey;
-  }
-
-  public async sign(event: NostrEvent): Promise<string> {
-    const nostr = this.getNostr();
-    if (!nostr) throw new Error('Nostr extension not found');
-
-    const eventToSign: Event = {
-      ...event,
-      pubkey: event.pubkey || await this.getPublicKey(),
-      kind: event.kind,
-      created_at: event.created_at || Math.floor(Date.now() / 1000),
-      content: event.content,
-      tags: event.tags || []
-    };
-
-    const signedEvent = await nostr.signEvent(eventToSign);
-    return signedEvent.sig;
-  }
-
-  public async encrypt(recipient: NDKUser, value: string): Promise<string> {
-    const nostr = this.getNostr();
-    if (!nostr?.nip04) {
-      throw new Error('NIP-04 encryption not supported');
-    }
-    return nostr.nip04.encrypt(recipient.pubkey, value);
-  }
-
-  public async decrypt(sender: NDKUser, value: string): Promise<string> {
-    const nostr = this.getNostr();
-    if (!nostr?.nip04) {
-      throw new Error('NIP-04 decryption not supported');
-    }
-    return nostr.nip04.decrypt(sender.pubkey, value);
-  }
-
-  // Implementing nip04Encrypt and nip04Decrypt as required by the interface
-  public async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
-    return this.encrypt(recipient, value);
-  }
-
-  public async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
-    return this.decrypt(sender, value);
-  }
-
-  get lud16(): string | undefined {
-    return undefined;
-  }
-
-  get npub(): string | undefined {
-    return undefined;
-  }
-}
-
 export function NostrProvider({ children }: { children: React.ReactNode }) {
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
@@ -121,8 +42,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         fetchProfile(storedPubkey);
       }
 
-      // Initialize NDK
-      const signer = new NIP07Signer();
+      // Initialize NDK with built-in signer
+      const signer = new NDKNip07Signer();
       const ndkInstance = new NDK({
         explicitRelayUrls: ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
         signer
