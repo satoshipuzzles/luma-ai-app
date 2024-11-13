@@ -1,4 +1,4 @@
-// gallery.tsx
+// pages/gallery.tsx
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -207,9 +207,9 @@ export default function Gallery() {
       } catch (clipboardError) {
         console.error('Clipboard copy failed:', clipboardError);
         toast({
-          variant: "warning",
+          variant: "destructive", // Changed from "warning" to "destructive"
           title: "Copy Failed",
-          description: "Please manually copy the invoice.",
+          description: "Please manually copy the invoice."
         });
       }
     } catch (error) {
@@ -349,7 +349,7 @@ export default function Gallery() {
       });
     }
   };
-
+  
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
