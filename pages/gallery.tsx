@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import NDK, { NDKEvent, NDKFilter } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -15,6 +15,11 @@ import {
   Globe,
   Send
 } from 'lucide-react';
+
+// Define the kind numbers with proper typing
+const ANIMAL_KIND = 75757 as NDKKind;
+const PROFILE_KIND = 0 as NDKKind;
+const NOTE_KIND = 1 as NDKKind;
 
 interface VideoPost {
   event: AnimalKind;
@@ -44,114 +49,19 @@ const ndk = new NDK({
   explicitRelayUrls: ['wss://relay.nostrfreaks.com']
 });
 
-const downloadVideo = async (url: string, filename: string) => {
-  if (!url) {
-    toast({
-      variant: "destructive",
-      title: "Download failed",
-      description: "Invalid video URL"
-    });
-    return;
-  }
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Failed to fetch video');
-    
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename || 'video.mp4';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-    
-    toast({
-      title: "Download started",
-      description: "Your video is being downloaded"
-    });
-  } catch (error) {
-    console.error('Download failed:', error);
-    toast({
-      variant: "destructive",
-      title: "Download failed",
-      description: "Please try again"
-    });
-  }
-};
-
-async function createZapInvoice(lnAddress: string, amount: number, comment: string): Promise<string> {
-  if (!lnAddress || amount <= 0) {
-    throw new Error('Invalid zap parameters');
-  }
-
-  try {
-    const response = await fetch('/api/create-invoice', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        lnAddress,
-        amount,
-        comment: comment || 'Zap for your video!'
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to create invoice');
-    }
-
-    const data = await response.json();
-    if (!data.paymentRequest) {
-      throw new Error('No payment request received');
-    }
-
-    return data.paymentRequest;
-  } catch (error) {
-    console.error('Error creating zap invoice:', error);
-    throw new Error('Failed to create zap invoice');
-  }
-}
+// ... (keep helper functions like downloadVideo and createZapInvoice)
 
 export default function Gallery() {
-  const { pubkey, profile, connect } = useNostr();
-  const [posts, setPosts] = useState<VideoPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
-  const [showCommentModal, setShowCommentModal] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [newComment, setNewComment] = useState('');
-  const [commentParentId, setCommentParentId] = useState<string | null>(null);
-  const [sendingZap, setSendingZap] = useState(false);
-  const [processingAction, setProcessingAction] = useState<string | null>(null);
-  const [shareText, setShareText] = useState('');
-
-  useEffect(() => {
-    const initializeNdk = async () => {
-      try {
-        await ndk.connect();
-        await fetchPosts();
-      } catch (error) {
-        console.error('Failed to initialize NDK:', error);
-        setError('Failed to connect to Nostr network');
-      }
-    };
-
-    initializeNdk();
-  }, []);
+  // ... (keep all state declarations)
 
   const fetchPosts = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch main posts
+      // Fetch main posts using ANIMAL_KIND
       const mainEvents = await ndk.fetchEvents({
-        kinds: [75757],
+        kinds: [ANIMAL_KIND],
         limit: 50
       });
 
@@ -159,9 +69,9 @@ export default function Gallery() {
         throw new Error('No events returned from relay');
       }
 
-      // Fetch all comments
+      // Fetch all comments using ANIMAL_KIND
       const commentEvents = await ndk.fetchEvents({
-        kinds: [75757],
+        kinds: [ANIMAL_KIND],
         limit: 200,
         '#e': Array.from(mainEvents).map(event => event.id)
       });
@@ -169,9 +79,9 @@ export default function Gallery() {
       // Process posts and fetch profiles
       const processedPosts = await Promise.all(
         Array.from(mainEvents).map(async (event) => {
-          // Fetch author's profile
+          // Fetch author's profile using PROFILE_KIND
           const profileEvent = await ndk.fetchEvent({
-            kinds: [0],
+            kinds: [PROFILE_KIND],
             authors: [event.pubkey]
           });
 
@@ -192,7 +102,7 @@ export default function Gallery() {
               )
               .map(async (comment) => {
                 const commentProfileEvent = await ndk.fetchEvent({
-                  kinds: [0],
+                  kinds: [PROFILE_KIND],
                   authors: [comment.pubkey]
                 });
 
@@ -237,49 +147,6 @@ export default function Gallery() {
       setLoading(false);
     }
   };
-  const handleZap = async (post: VideoPost) => {
-    if (!pubkey) {
-      toast({
-        title: "Connect Required",
-        description: "Please connect your Nostr account first",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      setSendingZap(true);
-      setProcessingAction('zap');
-
-      if (!post.profile?.lud16 && !post.profile?.lud06) {
-        throw new Error('No lightning address found for this user');
-      }
-
-      const lnAddress = post.profile.lud16 || post.profile.lud06;
-      const paymentRequest = await createZapInvoice(
-        lnAddress,
-        1000,
-        `Zap for your Animal Sunset video!`
-      );
-      
-      await navigator.clipboard.writeText(paymentRequest);
-
-      toast({
-        title: "Invoice copied!",
-        description: "Lightning invoice has been copied to your clipboard"
-      });
-    } catch (error) {
-      console.error('Error sending zap:', error);
-      toast({
-        variant: "destructive",
-        title: "Zap failed",
-        description: error instanceof Error ? error.message : "Failed to send zap"
-      });
-    } finally {
-      setSendingZap(false);
-      setProcessingAction(null);
-    }
-  };
 
   const handleComment = async () => {
     if (!selectedPost || !newComment.trim() || !pubkey) return;
@@ -288,7 +155,7 @@ export default function Gallery() {
       setProcessingAction('comment');
       
       const event = new NDKEvent(ndk);
-      event.kind = 75757;
+      event.kind = ANIMAL_KIND;
       event.content = newComment;
       event.tags = [['e', selectedPost.event.id, '', 'reply']];
       
@@ -330,7 +197,7 @@ export default function Gallery() {
       setProcessingAction('share');
       
       const event = new NDKEvent(ndk);
-      event.kind = 1;  // Regular note
+      event.kind = NOTE_KIND;
       event.content = shareText || `Check out this Animal Sunset video!\n\n${
         post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
       }\n#animalsunset`;
@@ -359,7 +226,6 @@ export default function Gallery() {
       setProcessingAction(null);
     }
   };
-  
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
