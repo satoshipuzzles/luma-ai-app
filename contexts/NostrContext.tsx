@@ -3,21 +3,6 @@ import { SimplePool } from 'nostr-tools/pool';
 import NDK, { NDKEvent, NDKSigner } from '@nostr-dev-kit/ndk';
 import type { Event } from 'nostr-tools';
 
-// Extend Window interface correctly
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent<T = Event>(event: T): Promise<T>;
-      getRelays?(): Promise<{ [url: string]: { read: boolean; write: boolean } }>;
-      nip04?: {
-        encrypt(pubkey: string, plaintext: string): Promise<string>;
-        decrypt(pubkey: string, ciphertext: string): Promise<string>;
-      };
-    };
-  }
-}
-
 interface NostrContextType {
   pubkey: string | null;
   profile: any | null;
