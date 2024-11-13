@@ -59,7 +59,7 @@ class NIP07Signer implements NDKSigner {
   async sign(event: NostrEvent): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr) throw new Error('Nostr extension not found');
-    
+
     const eventToSign: Event = {
       ...event,
       pubkey: event.pubkey || await this.getPublicKey(),
@@ -89,7 +89,16 @@ class NIP07Signer implements NDKSigner {
     return nostr.nip04.decrypt(sender.pubkey, value);
   }
 
-  // Renamed methods to match the NDKSigner interface
+  // Implementing nip04Encrypt and nip04Decrypt as required
+  async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
+    return this.encrypt(recipient, value);
+  }
+
+  async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
+    return this.decrypt(sender, value);
+  }
+
+  // Implementing nip44Encrypt and nip44Decrypt in case the interface expects them
   async nip44Encrypt(recipient: NDKUser, value: string): Promise<string> {
     return this.encrypt(recipient, value);
   }
