@@ -15,10 +15,10 @@ const ndk = new NDK({
 });
 
 function Gallery() {
-  const [posts, setPosts] = useState([]);
+  const [posts, setPosts] = useState<NDKEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedPost, setSelectedPost] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<NDKEvent | null>(null);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [sendingZap, setSendingZap] = useState(false);
@@ -37,11 +37,11 @@ function Gallery() {
         limit: 50
       });
 
-      setPosts(events);
+      setPosts(Array.from(events));
 
       toast({
         title: "Gallery updated",
-        description: `Loaded ${events.length} videos`,
+        description: `Loaded ${events.size} videos`,
       });
     } catch (error) {
       console.error('Error fetching posts:', error);
@@ -56,7 +56,7 @@ function Gallery() {
     }
   };
 
-  const handleZap = async (post) => {
+  const handleZap = async (post: NDKEvent) => {
     try {
       setSendingZap(true);
       const ndkEvent = new NDKEvent(ndk);
@@ -83,7 +83,7 @@ function Gallery() {
     }
   };
 
-  const downloadVideo = async (url, filename) => {
+  const downloadVideo = async (url: string, filename: string) => {
     try {
       const response = await fetch(url);
       const blob = await response.blob();
