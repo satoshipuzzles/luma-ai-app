@@ -1,3 +1,5 @@
+// index.tsx
+
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
@@ -357,120 +359,120 @@ export default function Home() {
     poll();
   };
 
-const generateVideo = async (e?: React.FormEvent) => {
-  if (e) e.preventDefault();
-  if (!prompt || !pubkey) return;
+  const generateVideo = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!prompt || !pubkey) return;
 
-  if (!isPromptSafe(prompt)) {
-    setError(getPromptFeedback(prompt));
-    toast({
-      variant: "destructive",
-      title: "Invalid prompt",
-      description: getPromptFeedback(prompt),
-    });
-    return;
-  }
-
-  setLoading(true);
-  setError('');
-
-  try {
-    // Create Lightning invoice
-    const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
-    });
-
-    if (!invoiceResponse.ok) {
-      const errorData = await invoiceResponse.json();
-      throw new Error(errorData.error || 'Failed to create invoice');
-    }
-
-    const invoiceData = await invoiceResponse.json();
-    const { payment_request, payment_hash } = invoiceData;
-
-    setPaymentRequest(payment_request);
-    setPaymentHash(payment_hash);
-
-    const paymentConfirmed = await waitForPayment(payment_hash);
-    if (!paymentConfirmed) {
-      setLoading(false);
+    if (!isPromptSafe(prompt)) {
+      setError(getPromptFeedback(prompt));
+      toast({
+        variant: "destructive",
+        title: "Invalid prompt",
+        description: getPromptFeedback(prompt),
+      });
       return;
     }
 
-    setPaymentRequest(null);
-    setPaymentHash(null);
+    setLoading(true);
+    setError('');
 
-    // Prepare generation request
-    const generationBody: any = { 
-      prompt,
-      loop: isLooping
-    };
+    try {
+      // Create Lightning invoice
+      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
+      });
 
-    if (isExtending && selectedVideoId) {
-      generationBody.extend = true;
-      generationBody.videoId = selectedVideoId;
-    } else if (startImageUrl) {
-      generationBody.startImageUrl = startImageUrl;
+      if (!invoiceResponse.ok) {
+        const errorData = await invoiceResponse.json();
+        throw new Error(errorData.error || 'Failed to create invoice');
+      }
+
+      const invoiceData = await invoiceResponse.json();
+      const { payment_request, payment_hash } = invoiceData;
+
+      setPaymentRequest(payment_request);
+      setPaymentHash(payment_hash);
+
+      const paymentConfirmed = await waitForPayment(payment_hash);
+      if (!paymentConfirmed) {
+        setLoading(false);
+        return;
+      }
+
+      setPaymentRequest(null);
+      setPaymentHash(null);
+
+      // Prepare generation request
+      const generationBody: any = { 
+        prompt,
+        loop: isLooping
+      };
+
+      if (isExtending && selectedVideoId) {
+        generationBody.extend = true;
+        generationBody.videoId = selectedVideoId;
+      } else if (startImageUrl) {
+        generationBody.startImageUrl = startImageUrl;
+      }
+
+      // Generate video
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(generationBody),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate video');
+      }
+
+      const data = await response.json();
+
+      if (!data.id) {
+        throw new Error('Invalid response from server');
+      }
+
+      const newGeneration: StoredGeneration = {
+        id: data.id,
+        prompt,
+        state: data.state || 'queued',
+        createdAt: data.created_at || new Date().toISOString(),
+        pubkey,
+        videoUrl: data.assets?.video,
+      };
+
+      saveGeneration(newGeneration);
+      setGenerations((prev) => [newGeneration, ...prev]);
+      setSelectedGeneration(newGeneration);
+      setPrompt('');
+      pollForCompletion(data.id);
+
+      toast({
+        title: "Generation started",
+        description: "Your video is being generated",
+      });
+    } catch (err: any) {
+      console.error('Generation error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate video. Please try again.'
+      );
+      toast({
+        variant: "destructive",
+        title: "Generation failed",
+        description: err instanceof Error ? err.message : "Please try again",
+      });
+      setLoading(false);
     }
-
-    // Generate video
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(generationBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to generate video');
-    }
-
-    const data = await response.json();
-
-    if (!data.id) {
-      throw new Error('Invalid response from server');
-    }
-
-    const newGeneration: StoredGeneration = {
-      id: data.id,
-      prompt,
-      state: data.state || 'queued',
-      createdAt: data.created_at || new Date().toISOString(),
-      pubkey,
-      videoUrl: data.assets?.video,
-    };
-
-    saveGeneration(newGeneration);
-    setGenerations((prev) => [newGeneration, ...prev]);
-    setSelectedGeneration(newGeneration);
-    setPrompt('');
-    pollForCompletion(data.id);
-
-    toast({
-      title: "Generation started",
-      description: "Your video is being generated",
-    });
-  } catch (err: any) {
-    console.error('Generation error:', err);
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Failed to generate video. Please try again.'
-    );
-    toast({
-      variant: "destructive",
-      title: "Generation failed",
-      description: err instanceof Error ? err.message : "Please try again",
-    });
-    setLoading(false);
-  }
-};
+  };
 
   // Render login screen if not connected
   if (!pubkey) {
@@ -530,10 +532,19 @@ const generateVideo = async (e?: React.FormEvent) => {
             >
               <Settings size={20} />
             </button>
-            {profile.picture && (
+            {profile.picture ? (
               <img
                 src={profile.picture}
                 alt="Profile"
+                className="w-8 h-8 rounded-full"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                }}
+              />
+            ) : (
+              <img
+                src="/default-avatar.png"
+                alt="Default Profile"
                 className="w-8 h-8 rounded-full"
               />
             )}
@@ -601,10 +612,19 @@ const generateVideo = async (e?: React.FormEvent) => {
                 >
                   <Settings size={20} />
                 </button>
-                {profile.picture && (
+                {profile.picture ? (
                   <img
                     src={profile.picture}
                     alt="Profile"
+                    className="w-8 h-8 rounded-full"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    }}
+                  />
+                ) : (
+                  <img
+                    src="/default-avatar.png"
+                    alt="Default Profile"
                     className="w-8 h-8 rounded-full"
                   />
                 )}
