@@ -15,14 +15,18 @@ const NostrContext = createContext<NostrContextType | null>(null);
 
 class NIP07Signer implements NDKSigner {
   private pubkey: string | null = null;
-  private user: NDKUser | null = null;
+  private _user: NDKUser | null = null;
+
+  async user(): Promise<NDKUser> {
+    if (!this._user) {
+      const pubkey = await this.getPublicKey();
+      this._user = new NDKUser({ pubkey });
+    }
+    return this._user;
+  }
 
   async blockUntilReady(): Promise<NDKUser> {
-    if (this.user) return this.user;
-    
-    const pubkey = await this.getPublicKey();
-    this.user = new NDKUser({ pubkey });
-    return this.user;
+    return this.user();
   }
 
   async getPublicKey(): Promise<string> {
