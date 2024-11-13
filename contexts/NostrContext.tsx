@@ -1,15 +1,15 @@
-// contexts/NostrContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
-import { Event } from 'nostr-tools/event';
 import NDK, { NDKEvent, NDKSigner } from '@nostr-dev-kit/ndk';
+import type { Event } from 'nostr-tools';
 
+// Extend Window interface correctly
 declare global {
   interface Window {
     nostr?: {
       getPublicKey(): Promise<string>;
-      signEvent(event: Event): Promise<Event>;
-      getRelays?(): Promise<{ [url: string]: any }>;
+      signEvent<T = Event>(event: T): Promise<T>;
+      getRelays?(): Promise<{ [url: string]: { read: boolean; write: boolean } }>;
       nip04?: {
         encrypt(pubkey: string, plaintext: string): Promise<string>;
         decrypt(pubkey: string, ciphertext: string): Promise<string>;
@@ -28,7 +28,6 @@ interface NostrContextType {
 
 const NostrContext = createContext<NostrContextType | null>(null);
 
-// Create a NIP-07 signer
 class NIP07Signer implements NDKSigner {
   private pubkey: string | null = null;
 
