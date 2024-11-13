@@ -49,10 +49,33 @@ const ndk = new NDK({
   explicitRelayUrls: ['wss://relay.nostrfreaks.com']
 });
 
-// ... (keep helper functions like downloadVideo and createZapInvoice)
-
 export default function Gallery() {
-  // ... (keep all state declarations)
+  const { pubkey, profile, connect } = useNostr();
+  const [posts, setPosts] = useState<VideoPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentParentId, setCommentParentId] = useState<string | null>(null);
+  const [sendingZap, setSendingZap] = useState(false);
+  const [processingAction, setProcessingAction] = useState<string | null>(null);
+  const [shareText, setShareText] = useState('');
+
+  useEffect(() => {
+    const initializeNdk = async () => {
+      try {
+        await ndk.connect();
+        await fetchPosts();
+      } catch (error) {
+        console.error('Failed to initialize NDK:', error);
+        setError('Failed to connect to Nostr network');
+      }
+    };
+
+    initializeNdk();
+  }, []);
 
   const fetchPosts = async () => {
     try {
@@ -148,6 +171,66 @@ export default function Gallery() {
     }
   };
 
+  const handleZap = async (post: VideoPost) => {
+    if (!pubkey) {
+      toast({
+        title: "Connect Required",
+        description: "Please connect your Nostr account first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSendingZap(true);
+      setProcessingAction('zap');
+
+      if (!post.profile?.lud16 && !post.profile?.lud06) {
+        throw new Error('No lightning address found for this user');
+      }
+
+      const lnAddress = post.profile.lud16 || post.profile.lud06;
+      
+      const response = await fetch('/api/create-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          lnAddress,
+          amount: 1000,
+          comment: 'Zap for your Animal Sunset video!'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create invoice');
+      }
+
+      const data = await response.json();
+      if (!data.paymentRequest) {
+        throw new Error('No payment request received');
+      }
+
+      await navigator.clipboard.writeText(data.paymentRequest);
+
+      toast({
+        title: "Invoice copied!",
+        description: "Lightning invoice has been copied to your clipboard"
+      });
+    } catch (error) {
+      console.error('Error sending zap:', error);
+      toast({
+        variant: "destructive",
+        title: "Zap failed",
+        description: error instanceof Error ? error.message : "Failed to send zap"
+      });
+    } finally {
+      setSendingZap(false);
+      setProcessingAction(null);
+    }
+  };
+
   const handleComment = async () => {
     if (!selectedPost || !newComment.trim() || !pubkey) return;
 
@@ -226,6 +309,36 @@ export default function Gallery() {
       setProcessingAction(null);
     }
   };
+
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch video');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({
+        title: "Download started",
+        description: "Your video is being downloaded"
+      });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast({
+        variant: "destructive",
+        title: "Download failed",
+        description: "Please try again"
+      });
+    }
+  };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -337,12 +450,12 @@ export default function Gallery() {
                   </p>
                 </div>
 
-                <div className="p-4 flex flex-wrap items-center gap-4">
+              <div className="p-4 flex flex-wrap items-center gap-4">
                   <button
                     onClick={() => handleZap(post)}
                     disabled={sendingZap || processingAction === 'zap'}
                     className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
+                  >
                     {processingAction === 'zap' ? (
                       <RefreshCw className="animate-spin h-5 w-5" />
                     ) : (
@@ -375,7 +488,7 @@ export default function Gallery() {
                   </button>
 
                   <button
-                    onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
+                    onClick={() => handleDownload(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
                     className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
                   >
                     <Download size={20} />
