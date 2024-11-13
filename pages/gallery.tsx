@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import NDK, { NDKEvent, NDKKind, NDKTag } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKFilter } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -15,22 +15,6 @@ import {
   Globe,
   Send
 } from 'lucide-react';
-
-// Define custom kind
-const ANIMAL_KIND = 75757 as NDKKind;
-
-// Helper function to convert NDKEvent to AnimalKind
-function convertToAnimalKind(event: NDKEvent): AnimalKind {
-  return {
-    id: event.id,
-    pubkey: event.pubkey,
-    created_at: event.created_at,
-    kind: ANIMAL_KIND,
-    tags: event.tags.map(tag => [tag[0], tag[1]]) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
-    content: event.content,
-    sig: event.sig || ''
-  };
-}
 
 interface VideoPost {
   event: AnimalKind;
@@ -43,19 +27,42 @@ interface CommentPost {
   profile?: Profile;
 }
 
+function convertToAnimalKind(event: NDKEvent): AnimalKind {
+  return {
+    id: event.id || '',
+    pubkey: event.pubkey || '',
+    created_at: Math.floor(event.created_at || Date.now() / 1000),
+    kind: 75757,
+    tags: event.tags.map(tag => [tag[0] || '', tag[1] || '']) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
+    content: event.content || '',
+    sig: event.sig || ''
+  };
+}
+
 // Initialize NDK with your relay
 const ndk = new NDK({
   explicitRelayUrls: ['wss://relay.nostrfreaks.com']
 });
 
 const downloadVideo = async (url: string, filename: string) => {
+  if (!url) {
+    toast({
+      variant: "destructive",
+      title: "Download failed",
+      description: "Invalid video URL"
+    });
+    return;
+  }
+
   try {
     const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to fetch video');
+    
     const blob = await response.blob();
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = filename;
+    link.download = filename || 'video.mp4';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -76,6 +83,10 @@ const downloadVideo = async (url: string, filename: string) => {
 };
 
 async function createZapInvoice(lnAddress: string, amount: number, comment: string): Promise<string> {
+  if (!lnAddress || amount <= 0) {
+    throw new Error('Invalid zap parameters');
+  }
+
   try {
     const response = await fetch('/api/create-invoice', {
       method: 'POST',
@@ -85,7 +96,7 @@ async function createZapInvoice(lnAddress: string, amount: number, comment: stri
       body: JSON.stringify({
         lnAddress,
         amount,
-        comment
+        comment: comment || 'Zap for your video!'
       })
     });
 
@@ -94,8 +105,13 @@ async function createZapInvoice(lnAddress: string, amount: number, comment: stri
     }
 
     const data = await response.json();
+    if (!data.paymentRequest) {
+      throw new Error('No payment request received');
+    }
+
     return data.paymentRequest;
   } catch (error) {
+    console.error('Error creating zap invoice:', error);
     throw new Error('Failed to create zap invoice');
   }
 }
@@ -115,8 +131,17 @@ export default function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    ndk.connect().catch(console.error);
-    fetchPosts();
+    const initializeNdk = async () => {
+      try {
+        await ndk.connect();
+        await fetchPosts();
+      } catch (error) {
+        console.error('Failed to initialize NDK:', error);
+        setError('Failed to connect to Nostr network');
+      }
+    };
+
+    initializeNdk();
   }, []);
 
   const fetchPosts = async () => {
@@ -126,13 +151,17 @@ export default function Gallery() {
 
       // Fetch main posts
       const mainEvents = await ndk.fetchEvents({
-        kinds: [ANIMAL_KIND],
+        kinds: [75757],
         limit: 50
       });
 
+      if (!mainEvents) {
+        throw new Error('No events returned from relay');
+      }
+
       // Fetch all comments
       const commentEvents = await ndk.fetchEvents({
-        kinds: [ANIMAL_KIND],
+        kinds: [75757],
         limit: 200,
         '#e': Array.from(mainEvents).map(event => event.id)
       });
@@ -142,7 +171,7 @@ export default function Gallery() {
         Array.from(mainEvents).map(async (event) => {
           // Fetch author's profile
           const profileEvent = await ndk.fetchEvent({
-            kinds: [0 as NDKKind],
+            kinds: [0],
             authors: [event.pubkey]
           });
 
@@ -157,13 +186,13 @@ export default function Gallery() {
 
           // Get comments for this post
           const postComments = await Promise.all(
-            Array.from(commentEvents)
+            Array.from(commentEvents || [])
               .filter(comment => 
                 comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
               )
               .map(async (comment) => {
                 const commentProfileEvent = await ndk.fetchEvent({
-                  kinds: [0 as NDKKind],
+                  kinds: [0],
                   authors: [comment.pubkey]
                 });
 
@@ -208,7 +237,6 @@ export default function Gallery() {
       setLoading(false);
     }
   };
-
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -260,7 +288,7 @@ export default function Gallery() {
       setProcessingAction('comment');
       
       const event = new NDKEvent(ndk);
-      event.kind = ANIMAL_KIND;
+      event.kind = 75757;
       event.content = newComment;
       event.tags = [['e', selectedPost.event.id, '', 'reply']];
       
@@ -302,9 +330,9 @@ export default function Gallery() {
       setProcessingAction('share');
       
       const event = new NDKEvent(ndk);
-      event.kind = 1 as NDKKind;
+      event.kind = 1;  // Regular note
       event.content = shareText || `Check out this Animal Sunset video!\n\n${
-        post.event.tags?.find(tag => tag[0] === 'title')?.[1]
+        post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
       }\n#animalsunset`;
       event.tags = [
         ['t', 'animalsunset'],
@@ -331,7 +359,7 @@ export default function Gallery() {
       setProcessingAction(null);
     }
   };
-
+  
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
