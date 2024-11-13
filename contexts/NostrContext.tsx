@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
 import NDK, { NDKEvent, NDKSigner, NDKUser } from '@nostr-dev-kit/ndk';
-import type { Event } from 'nostr-tools';
+import type { Event as NostrEvent } from 'nostr-tools';
 
 interface NostrContextType {
   pubkey: string | null;
@@ -36,12 +36,19 @@ class NIP07Signer implements NDKSigner {
     return this.pubkey;
   }
 
-  async sign(event: NDKEvent): Promise<string> {
+  async sign(event: NostrEvent): Promise<string> {
     if (!window.nostr) throw new Error('Nostr extension not found');
-    const signedEvent = await window.nostr.signEvent({
-      ...event.rawEvent(),
-      pubkey: await this.getPublicKey(),
-    });
+    
+    const eventToSign = {
+      ...event,
+      pubkey: event.pubkey || await this.getPublicKey(),
+      kind: event.kind,
+      created_at: event.created_at || Math.floor(Date.now() / 1000),
+      content: event.content,
+      tags: event.tags || []
+    };
+
+    const signedEvent = await window.nostr.signEvent(eventToSign);
     return signedEvent.sig;
   }
 }
