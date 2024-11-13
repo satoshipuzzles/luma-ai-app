@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import NDK, { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKFilter, NDKKind, NDKSigner } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -44,13 +44,26 @@ function convertToAnimalKind(event: NDKEvent): AnimalKind {
   };
 }
 
-// Initialize NDK with your relay
-const ndk = new NDK({
-  explicitRelayUrls: ['wss://relay.nostrfreaks.com']
-});
+// Helper function to parse profile content
+function parseProfile(content: string): Profile | undefined {
+  try {
+    const parsed = JSON.parse(content);
+    return {
+      name: parsed.name,
+      picture: parsed.picture,
+      about: parsed.about,
+      lud06: parsed.lud06,
+      lud16: parsed.lud16
+    };
+  } catch (e) {
+    console.error('Error parsing profile:', e);
+    return undefined;
+  }
+}
 
 export default function Gallery() {
-  const { pubkey, profile, connect } = useNostr();
+  const { pubkey, profile: userProfile, signer, connect } = useNostr();
+  const [ndk, setNdk] = useState<NDK | null>(null);
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,27 +76,31 @@ export default function Gallery() {
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
 
+  // Initialize NDK with signer when available
   useEffect(() => {
-    const initializeNdk = async () => {
-      try {
-        await ndk.connect();
-        await fetchPosts();
-      } catch (error) {
-        console.error('Failed to initialize NDK:', error);
-        setError('Failed to connect to Nostr network');
-      }
-    };
+    const ndkInstance = new NDK({
+      explicitRelayUrls: ['wss://relay.nostrfreaks.com']
+    });
 
-    initializeNdk();
-  }, []);
+    if (signer) {
+      ndkInstance.signer = signer as NDKSigner;
+    }
 
-  const fetchPosts = async () => {
+    ndkInstance.connect().then(() => {
+      setNdk(ndkInstance);
+      fetchPosts(ndkInstance);
+    }).catch(error => {
+      console.error('Failed to initialize NDK:', error);
+      setError('Failed to connect to Nostr network');
+    });
+  }, [signer]);
+
+  const fetchPosts = async (ndkInstance: NDK) => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch main posts using ANIMAL_KIND
-      const mainEvents = await ndk.fetchEvents({
+      const mainEvents = await ndkInstance.fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 50
       });
@@ -92,62 +109,45 @@ export default function Gallery() {
         throw new Error('No events returned from relay');
       }
 
-      // Fetch all comments using ANIMAL_KIND
-      const commentEvents = await ndk.fetchEvents({
+      const commentEvents = await ndkInstance.fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 200,
         '#e': Array.from(mainEvents).map(event => event.id)
       });
 
-      // Process posts and fetch profiles
+      // Fetch all profiles at once
+      const profilePubkeys = new Set<string>();
+      mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
+      commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
+
+      const profileEvents = await ndkInstance.fetchEvents({
+        kinds: [PROFILE_KIND],
+        authors: Array.from(profilePubkeys)
+      });
+
+      // Create profile lookup map
+      const profileMap = new Map<string, Profile>();
+      profileEvents?.forEach(event => {
+        const profile = parseProfile(event.content);
+        if (profile) {
+          profileMap.set(event.pubkey, profile);
+        }
+      });
+
       const processedPosts = await Promise.all(
         Array.from(mainEvents).map(async (event) => {
-          // Fetch author's profile using PROFILE_KIND
-          const profileEvent = await ndk.fetchEvent({
-            kinds: [PROFILE_KIND],
-            authors: [event.pubkey]
-          });
-
-          let profile: Profile | undefined;
-          if (profileEvent) {
-            try {
-              profile = JSON.parse(profileEvent.content);
-            } catch (e) {
-              console.error('Error parsing profile:', e);
-            }
-          }
-
-          // Get comments for this post
-          const postComments = await Promise.all(
-            Array.from(commentEvents || [])
-              .filter(comment => 
-                comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
-              )
-              .map(async (comment) => {
-                const commentProfileEvent = await ndk.fetchEvent({
-                  kinds: [PROFILE_KIND],
-                  authors: [comment.pubkey]
-                });
-
-                let commentProfile: Profile | undefined;
-                if (commentProfileEvent) {
-                  try {
-                    commentProfile = JSON.parse(commentProfileEvent.content);
-                  } catch (e) {
-                    console.error('Error parsing comment profile:', e);
-                  }
-                }
-
-                return {
-                  event: convertToAnimalKind(comment),
-                  profile: commentProfile
-                };
-              })
-          );
+          const postComments = Array.from(commentEvents || [])
+            .filter(comment => 
+              comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
+            )
+            .map(comment => ({
+              event: convertToAnimalKind(comment),
+              profile: profileMap.get(comment.pubkey)
+            }));
 
           return {
             event: convertToAnimalKind(event),
-            profile,
+            profile: profileMap.get(event.pubkey),
             comments: postComments
           };
         })
@@ -185,12 +185,12 @@ export default function Gallery() {
       setSendingZap(true);
       setProcessingAction('zap');
 
-      if (!post.profile?.lud16 && !post.profile?.lud06) {
+      // Check both lud06 and lud16
+      const lnAddress = post.profile?.lud16 || post.profile?.lud06;
+      if (!lnAddress) {
         throw new Error('No lightning address found for this user');
       }
 
-      const lnAddress = post.profile.lud16 || post.profile.lud06;
-      
       const response = await fetch('/api/create-invoice', {
         method: 'POST',
         headers: {
@@ -232,7 +232,14 @@ export default function Gallery() {
   };
 
   const handleComment = async () => {
-    if (!selectedPost || !newComment.trim() || !pubkey) return;
+    if (!selectedPost || !newComment.trim() || !pubkey || !ndk || !signer) {
+      toast({
+        variant: "destructive",
+        title: "Cannot post comment",
+        description: "Please make sure you are connected to Nostr"
+      });
+      return;
+    }
 
     try {
       setProcessingAction('comment');
@@ -241,6 +248,7 @@ export default function Gallery() {
       event.kind = ANIMAL_KIND;
       event.content = newComment;
       event.tags = [['e', selectedPost.event.id, '', 'reply']];
+      event.pubkey = pubkey;
       
       await event.publish();
 
@@ -248,7 +256,7 @@ export default function Gallery() {
       setNewComment('');
       setCommentParentId(null);
       
-      await fetchPosts();
+      await fetchPosts(ndk);
 
       toast({
         title: "Comment posted",
@@ -267,11 +275,11 @@ export default function Gallery() {
   };
 
   const handleShare = async (post: VideoPost) => {
-    if (!pubkey) {
+    if (!pubkey || !ndk || !signer) {
       toast({
-        title: "Connect Required",
-        description: "Please connect your Nostr account first",
-        variant: "destructive"
+        variant: "destructive",
+        title: "Cannot share",
+        description: "Please make sure you are connected to Nostr"
       });
       return;
     }
@@ -281,6 +289,7 @@ export default function Gallery() {
       
       const event = new NDKEvent(ndk);
       event.kind = NOTE_KIND;
+      event.pubkey = pubkey;
       event.content = shareText || `Check out this Animal Sunset video!\n\n${
         post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
       }\n#animalsunset`;
