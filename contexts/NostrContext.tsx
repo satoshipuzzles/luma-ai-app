@@ -36,7 +36,7 @@ class NIP07Signer implements NDKSigner {
     return (window as any).nostr as NostrWindow | undefined;
   }
 
-  async user(): Promise<NDKUser> {
+  public async user(): Promise<NDKUser> {
     if (!this._user) {
       const pubkey = await this.getPublicKey();
       this._user = new NDKUser({ pubkey });
@@ -44,11 +44,11 @@ class NIP07Signer implements NDKSigner {
     return this._user;
   }
 
-  async blockUntilReady(): Promise<NDKUser> {
+  public async blockUntilReady(): Promise<NDKUser> {
     return this.user();
   }
 
-  async getPublicKey(): Promise<string> {
+  public async getPublicKey(): Promise<string> {
     if (this.pubkey) return this.pubkey;
     const nostr = this.getNostr();
     if (!nostr) throw new Error('Nostr extension not found');
@@ -56,7 +56,7 @@ class NIP07Signer implements NDKSigner {
     return this.pubkey;
   }
 
-  async sign(event: NostrEvent): Promise<string> {
+  public async sign(event: NostrEvent): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr) throw new Error('Nostr extension not found');
 
@@ -73,7 +73,7 @@ class NIP07Signer implements NDKSigner {
     return signedEvent.sig;
   }
 
-  async encrypt(recipient: NDKUser, value: string): Promise<string> {
+  public async encrypt(recipient: NDKUser, value: string): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
@@ -81,7 +81,7 @@ class NIP07Signer implements NDKSigner {
     return nostr.nip04.encrypt(recipient.pubkey, value);
   }
 
-  async decrypt(sender: NDKUser, value: string): Promise<string> {
+  public async decrypt(sender: NDKUser, value: string): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr?.nip04) {
       throw new Error('NIP-04 decryption not supported');
@@ -90,11 +90,11 @@ class NIP07Signer implements NDKSigner {
   }
 
   // Implementing nip04Encrypt and nip04Decrypt as required by the interface
-  async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
+  public async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
     return this.encrypt(recipient, value);
   }
 
-  async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
+  public async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
     return this.decrypt(sender, value);
   }
 
