@@ -1,3 +1,5 @@
+// contexts/NostrContext.tsx
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
 import NDK, { NDKEvent, NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
@@ -58,7 +60,7 @@ class NIP07Signer implements NDKSigner {
     const nostr = this.getNostr();
     if (!nostr) throw new Error('Nostr extension not found');
     
-    const eventToSign = {
+    const eventToSign: Event = {
       ...event,
       pubkey: event.pubkey || await this.getPublicKey(),
       kind: event.kind,
@@ -71,7 +73,7 @@ class NIP07Signer implements NDKSigner {
     return signedEvent.sig;
   }
 
-  async encrypt(recipient: NDKUser, value: string): Promise<string> {
+  async nip44Encrypt(recipient: NDKUser, value: string): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr?.nip04) {
       throw new Error('NIP-04 encryption not supported');
@@ -79,26 +81,10 @@ class NIP07Signer implements NDKSigner {
     return nostr.nip04.encrypt(recipient.pubkey, value);
   }
 
-  async decrypt(sender: NDKUser, value: string): Promise<string> {
+  async nip44Decrypt(sender: NDKUser, value: string): Promise<string> {
     const nostr = this.getNostr();
     if (!nostr?.nip04) {
-      throw new Error('NIP-04 encryption not supported');
-    }
-    return nostr.nip04.decrypt(sender.pubkey, value);
-  }
-
-  async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
-    const nostr = this.getNostr();
-    if (!nostr?.nip04) {
-      throw new Error('NIP-04 encryption not supported');
-    }
-    return nostr.nip04.encrypt(recipient.pubkey, value);
-  }
-
-  async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
-    const nostr = this.getNostr();
-    if (!nostr?.nip04) {
-      throw new Error('NIP-04 encryption not supported');
+      throw new Error('NIP-04 decryption not supported');
     }
     return nostr.nip04.decrypt(sender.pubkey, value);
   }
@@ -126,7 +112,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         fetchProfile(storedPubkey);
       }
 
-      // Initialize NDK
       const signer = new NIP07Signer();
       const ndkInstance = new NDK({
         explicitRelayUrls: ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
