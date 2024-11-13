@@ -1,47 +1,20 @@
+// Import necessary modules
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
-import { useNostr } from '../contexts/NostrContext';
-import {
-  Download,
-  MessageSquare,
-  Zap,
-  X,
-  Share2,
-  RefreshCw
-} from 'lucide-react';
+import { Download, MessageSquare, Zap, X, RefreshCw } from 'lucide-react';
+import NDK, { NDKNip07Signer, NDKEvent } from "@nostr-dev-kit/ndk";
+import "websocket-polyfill";
 
-// Utility function for downloading videos
-const downloadVideo = async (url, filename) => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-    toast({
-      title: "Download started",
-      description: "Your video is being downloaded",
-    });
-  } catch (error) {
-    console.error('Download failed:', error);
-    toast({
-      variant: "destructive",
-      title: "Download failed",
-      description: "Please try again",
-    });
-  }
-};
+// Create an NDK instance
+const ndk = new NDK({
+  explicitRelayUrls: ["wss://relay.nostrfreaks.com"],
+  signer: new NDKNip07Signer()
+});
 
 function Gallery() {
-  const { pubkey, profile, connect, isConnected } = useNostr();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -51,7 +24,7 @@ function Gallery() {
   const [sendingZap, setSendingZap] = useState(false);
 
   useEffect(() => {
-    fetchPosts();
+    ndk.connect().then(() => fetchPosts());
   }, []);
 
   const fetchPosts = async () => {
@@ -59,23 +32,11 @@ function Gallery() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/nostr/fetch-events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          relay: 'wss://relay.nostrfreaks.com',
-          filter: {
-            kinds: [75757],
-            limit: 50
-          }
-        })
+      const events = await ndk.fetchEvents({
+        kinds: [75757],
+        limit: 50
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch posts');
-      }
-
-      const events = await response.json();
       setPosts(events);
 
       toast({
@@ -96,25 +57,16 @@ function Gallery() {
   };
 
   const handleZap = async (post) => {
-    if (!pubkey) {
-      toast({
-        title: "Connect Required",
-        description: "Please connect your Nostr account first",
-        variant: "destructive"
-      });
-      return;
-    }
-
     try {
       setSendingZap(true);
-      // Assuming getLightningAddress is a utility function to fetch lightning address
-      const lnAddress = await getLightningAddress(post.pubkey);
-      if (!lnAddress) {
-        throw new Error('No lightning address found for this user');
-      }
-      
-      // Create invoice logic here
-      // Show success toast
+      const ndkEvent = new NDKEvent(ndk);
+      ndkEvent.kind = 9734;
+      ndkEvent.content = "Zap event";
+      ndkEvent.tags = [
+        ["e", post.id],
+        ["p", post.pubkey]
+      ];
+      await ndkEvent.publish();
       toast({
         title: "Zap sent!",
         description: "Thank you for supporting the creator",
@@ -131,24 +83,33 @@ function Gallery() {
     }
   };
 
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
-        <div className="max-w-md w-full p-6 space-y-6">
-          <h1 className="text-3xl font-bold text-center">Animal Gallery 🌞🦒</h1>
-          <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to interact with the gallery</p>
-            <button
-              onClick={connect}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
-            >
-              Connect with Nostr
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const downloadVideo = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename || 'animal-sunset-video.mp4';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({
+        title: "Download started",
+        description: "Your video is being downloaded",
+        duration: 2000
+      });
+    } catch (err) {
+      console.error('Download failed:', err);
+      toast({
+        title: "Download failed",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -171,18 +132,9 @@ function Gallery() {
       <div className="bg-[#1a1a1a] p-4 border-b border-gray-800">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <Navigation />
-          {profile && (
-            <div className="flex items-center space-x-2">
-              {profile.picture && (
-                <img
-                  src={profile.picture}
-                  alt="Profile"
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span>{profile.name || "Anonymous"}</span>
-            </div>
-          )}
+          <div className="flex items-center space-x-2">
+            <span>Connected to Nostr</span>
+          </div>
         </div>
       </div>
 
