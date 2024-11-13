@@ -43,7 +43,7 @@ function Gallery() {
         title: "Gallery updated",
         description: `Loaded ${Array.from(events).length} videos`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching posts:', error);
       setError((error as Error).message || 'Failed to load gallery');
       toast({
@@ -71,7 +71,7 @@ function Gallery() {
         title: "Zap sent!",
         description: "Thank you for supporting the creator",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error sending zap:', error);
       toast({
         variant: "destructive",
@@ -173,7 +173,7 @@ function Gallery() {
                       {(post as any)?.profile?.name || "Anonymous"}
                     </div>
                     <div className="text-sm text-gray-400">
-                      {new Date(post.created_at * 1000).toLocaleDateString()}
+                      {post.created_at ? new Date(post.created_at * 1000).toLocaleDateString() : 'Unknown date'}
                     </div>
                   </div>
                 </div>
