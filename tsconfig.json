@@ -21,7 +21,11 @@
     ],
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./types"
+    ]
   },
   "include": [
     "next-env.d.ts",
@@ -29,7 +33,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "types/**/*.d.ts",
-    "nostr-tools.d.ts"
+    "nostr-tools.d.ts",
+    "types/window.d.ts"
   ],
   "exclude": ["node_modules"]
 }
