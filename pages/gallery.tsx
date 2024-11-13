@@ -41,7 +41,7 @@ function Gallery() {
 
       toast({
         title: "Gallery updated",
-        description: `Loaded ${events.length} videos`,
+        description: `Loaded ${Array.from(events).length} videos`,
       });
     } catch (error) {
       console.error('Error fetching posts:', error);
