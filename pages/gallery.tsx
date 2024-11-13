@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import NDK, { NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKKind, NDKTag } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -18,6 +18,19 @@ import {
 
 // Define custom kind
 const ANIMAL_KIND = 75757 as NDKKind;
+
+// Helper function to convert NDKEvent to AnimalKind
+function convertToAnimalKind(event: NDKEvent): AnimalKind {
+  return {
+    id: event.id,
+    pubkey: event.pubkey,
+    created_at: event.created_at,
+    kind: ANIMAL_KIND,
+    tags: event.tags.map(tag => [tag[0], tag[1]]) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
+    content: event.content,
+    sig: event.sig || ''
+  };
+}
 
 interface VideoPost {
   event: AnimalKind;
@@ -164,14 +177,14 @@ export default function Gallery() {
                 }
 
                 return {
-                  event: comment as AnimalKind,
+                  event: convertToAnimalKind(comment),
                   profile: commentProfile
                 };
               })
           );
 
           return {
-            event: event as AnimalKind,
+            event: convertToAnimalKind(event),
             profile,
             comments: postComments
           };
@@ -257,7 +270,6 @@ export default function Gallery() {
       setNewComment('');
       setCommentParentId(null);
       
-      // Refresh posts to show new comment
       await fetchPosts();
 
       toast({
@@ -436,7 +448,7 @@ export default function Gallery() {
                     onClick={() => handleZap(post)}
                     disabled={sendingZap || processingAction === 'zap'}
                     className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
+                    >
                     {processingAction === 'zap' ? (
                       <RefreshCw className="animate-spin h-5 w-5" />
                     ) : (
