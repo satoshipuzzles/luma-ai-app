@@ -43,9 +43,9 @@ function Gallery() {
         title: "Gallery updated",
         description: `Loaded ${Array.from(events).length} videos`,
       });
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error fetching posts:', error);
-      setError((error as Error).message || 'Failed to load gallery');
+      setError((error instanceof Error ? error.message : 'Failed to load gallery'));
       toast({
         variant: "destructive",
         title: "Failed to load gallery",
@@ -71,12 +71,12 @@ function Gallery() {
         title: "Zap sent!",
         description: "Thank you for supporting the creator",
       });
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error sending zap:', error);
       toast({
         variant: "destructive",
         title: "Zap failed",
-        description: (error as Error).message || "Failed to send zap",
+        description: (error instanceof Error ? error.message : "Failed to send zap"),
       });
     } finally {
       setSendingZap(false);
