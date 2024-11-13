@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import NDK, { NDKEvent } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -15,6 +15,9 @@ import {
   Globe,
   Send
 } from 'lucide-react';
+
+// Define custom kind
+const ANIMAL_KIND = 75757 as NDKKind;
 
 interface VideoPost {
   event: AnimalKind;
@@ -110,13 +113,13 @@ export default function Gallery() {
 
       // Fetch main posts
       const mainEvents = await ndk.fetchEvents({
-        kinds: [75757],
+        kinds: [ANIMAL_KIND],
         limit: 50
       });
 
       // Fetch all comments
       const commentEvents = await ndk.fetchEvents({
-        kinds: [75757],
+        kinds: [ANIMAL_KIND],
         limit: 200,
         '#e': Array.from(mainEvents).map(event => event.id)
       });
@@ -126,7 +129,7 @@ export default function Gallery() {
         Array.from(mainEvents).map(async (event) => {
           // Fetch author's profile
           const profileEvent = await ndk.fetchEvent({
-            kinds: [0],
+            kinds: [0 as NDKKind],
             authors: [event.pubkey]
           });
 
@@ -147,7 +150,7 @@ export default function Gallery() {
               )
               .map(async (comment) => {
                 const commentProfileEvent = await ndk.fetchEvent({
-                  kinds: [0],
+                  kinds: [0 as NDKKind],
                   authors: [comment.pubkey]
                 });
 
@@ -244,7 +247,7 @@ export default function Gallery() {
       setProcessingAction('comment');
       
       const event = new NDKEvent(ndk);
-      event.kind = 75757;
+      event.kind = ANIMAL_KIND;
       event.content = newComment;
       event.tags = [['e', selectedPost.event.id, '', 'reply']];
       
@@ -287,7 +290,7 @@ export default function Gallery() {
       setProcessingAction('share');
       
       const event = new NDKEvent(ndk);
-      event.kind = 1;
+      event.kind = 1 as NDKKind;
       event.content = shareText || `Check out this Animal Sunset video!\n\n${
         post.event.tags?.find(tag => tag[0] === 'title')?.[1]
       }\n#animalsunset`;
@@ -442,7 +445,7 @@ export default function Gallery() {
                     <span>Zap</span>
                   </button>
 
-                <button
+                  <button
                     onClick={() => {
                       setSelectedPost(post);
                       setShowCommentModal(true);
