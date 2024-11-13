@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
-import NDK, { NDKEvent, NDKSigner } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKSigner, NDKUser } from '@nostr-dev-kit/ndk';
 import type { Event } from 'nostr-tools';
 
 interface NostrContextType {
@@ -15,9 +15,14 @@ const NostrContext = createContext<NostrContextType | null>(null);
 
 class NIP07Signer implements NDKSigner {
   private pubkey: string | null = null;
+  private user: NDKUser | null = null;
 
-  async blockUntilReady(): Promise<boolean> {
-    return true;
+  async blockUntilReady(): Promise<NDKUser> {
+    if (this.user) return this.user;
+    
+    const pubkey = await this.getPublicKey();
+    this.user = new NDKUser({ pubkey });
+    return this.user;
   }
 
   async getPublicKey(): Promise<string> {
