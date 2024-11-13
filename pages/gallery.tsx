@@ -53,7 +53,8 @@ function parseProfile(content: string): Profile | undefined {
       picture: parsed.picture,
       about: parsed.about,
       lud06: parsed.lud06,
-      lud16: parsed.lud16
+      lud16: parsed.lud16,
+      lnurl: parsed.lnurl, // Ensure LNURL is part of the profile
     };
   } catch (e) {
     console.error('Error parsing profile:', e);
@@ -70,8 +71,6 @@ export default function Gallery() {
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [commentParentId, setCommentParentId] = useState<string | null>(null);
-  const [sendingZap, setSendingZap] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
 
@@ -88,25 +87,29 @@ export default function Gallery() {
       setLoading(true);
       setError(null);
 
+      // Fetch main video events
       const mainEvents = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
-        limit: 50
+        limit: 100
       });
 
       if (!mainEvents) {
         throw new Error('No events returned from relay');
       }
 
+      // Fetch comment events related to main events
       const commentEvents = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
-        limit: 200,
-        '#e': Array.from(mainEvents).map(event => event.id)
+        '#e': Array.from(mainEvents).map(event => event.id),
+        limit: 500
       });
 
+      // Collect all unique pubkeys from main and comment events
       const profilePubkeys = new Set<string>();
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
       commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
 
+      // Fetch profile events
       const profileEvents = await ndk.fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
@@ -120,6 +123,7 @@ export default function Gallery() {
         }
       });
 
+      // Process main events into VideoPost objects
       const processedPosts = await Promise.all(
         Array.from(mainEvents).map(async (event) => {
           const postComments = Array.from(commentEvents || [])
@@ -139,10 +143,25 @@ export default function Gallery() {
         })
       );
 
-      setPosts(processedPosts);
+      // Filter out posts without videoUrl (assuming video URL is in content)
+      const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.endsWith('.mp4'));
+
+      // Deduplicate posts based on video URL
+      const uniquePostsMap = new Map<string, VideoPost>();
+      filteredPosts.forEach(post => {
+        if (!uniquePostsMap.has(post.event.content)) {
+          uniquePostsMap.set(post.event.content, post);
+        }
+      });
+      const uniquePosts = Array.from(uniquePostsMap.values());
+
+      // Sort posts chronologically, newest first
+      uniquePosts.sort((a, b) => b.event.created_at - a.event.created_at);
+
+      setPosts(uniquePosts);
       toast({
         title: "Gallery updated",
-        description: `Loaded ${processedPosts.length} videos`
+        description: `Loaded ${uniquePosts.length} videos`
       });
     } catch (error) {
       console.error('Error fetching posts:', error);
@@ -167,51 +186,60 @@ export default function Gallery() {
       return;
     }
 
+    if (!post.profile?.lnurl) {
+      toast({
+        variant: "destructive",
+        title: "Zap Failed",
+        description: "Author has not set up an LNURL for receiving Zaps.",
+      });
+      return;
+    }
+
     try {
-      setSendingZap(true);
       setProcessingAction('zap');
 
-      const lnAddress = post.profile?.lud16 || post.profile?.lud06;
-      if (!lnAddress) {
-        throw new Error('No lightning address found for this user');
+      // Fetch the lightning invoice using the author's LNURL
+      const lnurlResponse = await fetch(post.profile.lnurl);
+      if (!lnurlResponse.ok) {
+        throw new Error(`Failed to fetch LNURL endpoint: ${lnurlResponse.statusText}`);
       }
 
-      const response = await fetch('/api/create-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          lnAddress,
-          amount: 1000,
-          comment: 'Zap for your Animal Sunset video!'
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create invoice');
+      const lnurlData = await lnurlResponse.json();
+      if (lnurlData.status !== 'OK') {
+        throw new Error(`LNURL endpoint returned an error: ${lnurlData.reason || 'Unknown reason'}`);
       }
 
-      const data = await response.json();
-      if (!data.paymentRequest) {
-        throw new Error('No payment request received');
+      const { pr: paymentRequest } = lnurlData; // 'pr' is the payment request
+
+      if (!paymentRequest) {
+        throw new Error('No payment request found in LNURL response');
       }
 
+      // Copy the payment request to clipboard
       try {
-        await navigator.clipboard.writeText(data.paymentRequest);
+        await navigator.clipboard.writeText(paymentRequest);
         toast({
-          title: "Invoice copied!",
+          title: "Zap Invoice Copied!",
           description: "Lightning invoice has been copied to your clipboard"
         });
       } catch (clipboardError) {
         console.error('Clipboard copy failed:', clipboardError);
         toast({
-          variant: "destructive", // Changed from "warning" to "destructive"
+          variant: "destructive",
           title: "Copy Failed",
           description: "Please manually copy the invoice."
         });
       }
+
+      // Optionally, open the user's lightning wallet with the payment request
+      // Example: window.location.href = `lightning:${paymentRequest}`;
+      
+      toast({
+        title: "Zap Initiated",
+        description: "Please complete the payment using your lightning wallet.",
+      });
+
+      // Note: Monitoring payment status requires additional implementation
     } catch (error) {
       console.error('Error sending zap:', error);
       toast({
@@ -220,7 +248,6 @@ export default function Gallery() {
         description: error instanceof Error ? error.message : "Failed to send zap"
       });
     } finally {
-      setSendingZap(false);
       setProcessingAction(null);
     }
   };
@@ -245,11 +272,9 @@ export default function Gallery() {
       
       const publishResult = await event.publish();
 
-      // Assuming publish resolves on success and rejects on failure
-      if (publishResult) { 
+      if (publishResult && publishResult.id) { 
         setShowCommentModal(false);
         setNewComment('');
-        setCommentParentId(null);
         
         await fetchPosts();
 
@@ -257,6 +282,14 @@ export default function Gallery() {
           title: "Comment posted",
           description: "Your comment has been published"
         });
+
+        // Scroll to the commented post
+        setTimeout(() => {
+          const postElement = document.getElementById(`post-${selectedPost.event.id}`);
+          if (postElement) {
+            postElement.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 500);
       } else {
         throw new Error('Failed to publish comment');
       }
@@ -287,18 +320,16 @@ export default function Gallery() {
       
       const event = new NDKEvent(ndk);
       event.kind = NOTE_KIND;
-      event.content = shareText || `Check out this Animal Sunset video!\n\n${
-        post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
-      }\n#animalsunset`;
+      event.content = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`;
       event.tags = [
         ['t', 'animalsunset'],
-        ['r', post.event.content]
+        ['p', post.profile?.pubkey || ''], // Tagging the author
+        ['r', post.event.content] // Reference to the video URL
       ];
       
       const publishResult = await event.publish();
 
-      // Assuming publish resolves on success and rejects on failure
-      if (publishResult) {
+      if (publishResult && publishResult.id) {
         setShowShareModal(false);
         setShareText('');
 
@@ -363,6 +394,11 @@ export default function Gallery() {
             >
               Connect with Nostr
             </button>
+            {error && (
+              <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                {error}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -438,7 +474,7 @@ export default function Gallery() {
         ) : (
           <div className="space-y-8">
             {posts.map(post => (
-              <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
+              <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden" id={`post-${post.event.id}`}>
                 <div className="p-4 flex items-center space-x-3">
                   {post.profile?.picture ? (
                     <img
@@ -485,7 +521,7 @@ export default function Gallery() {
                 <div className="p-4 flex flex-wrap items-center gap-4">
                   <button
                     onClick={() => handleZap(post)}
-                    disabled={sendingZap || processingAction === 'zap'}
+                    disabled={processingAction === 'zap'}
                     className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {processingAction === 'zap' ? (
@@ -510,7 +546,7 @@ export default function Gallery() {
                   <button
                     onClick={() => {
                       setSelectedPost(post);
-                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
+                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`);
                       setShowShareModal(true);
                     }}
                     className="flex items-center space-x-2 text-gray-400 hover:text-white"
