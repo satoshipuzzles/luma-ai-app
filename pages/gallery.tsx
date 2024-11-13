@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import NDK, { NDKEvent, NDKFilter, NDKKind, NDKSigner } from '@nostr-dev-kit/ndk';
+import { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -16,7 +16,6 @@ import {
   Send
 } from 'lucide-react';
 
-// Define the kind numbers with proper typing
 const ANIMAL_KIND = 75757 as NDKKind;
 const PROFILE_KIND = 0 as NDKKind;
 const NOTE_KIND = 1 as NDKKind;
@@ -44,7 +43,6 @@ function convertToAnimalKind(event: NDKEvent): AnimalKind {
   };
 }
 
-// Helper function to parse profile content
 function parseProfile(content: string): Profile | undefined {
   try {
     const parsed = JSON.parse(content);
@@ -62,8 +60,7 @@ function parseProfile(content: string): Profile | undefined {
 }
 
 export default function Gallery() {
-  const { pubkey, profile: userProfile, signer, connect } = useNostr();
-  const [ndk, setNdk] = useState<NDK | null>(null);
+  const { pubkey, profile: userProfile, ndk, connect } = useNostr();
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,31 +73,20 @@ export default function Gallery() {
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
 
-  // Initialize NDK with signer when available
   useEffect(() => {
-    const ndkInstance = new NDK({
-      explicitRelayUrls: ['wss://relay.nostrfreaks.com']
-    });
-
-    if (signer) {
-      ndkInstance.signer = signer as NDKSigner;
+    if (ndk) {
+      fetchPosts();
     }
+  }, [ndk]);
 
-    ndkInstance.connect().then(() => {
-      setNdk(ndkInstance);
-      fetchPosts(ndkInstance);
-    }).catch(error => {
-      console.error('Failed to initialize NDK:', error);
-      setError('Failed to connect to Nostr network');
-    });
-  }, [signer]);
+  const fetchPosts = async () => {
+    if (!ndk) return;
 
-  const fetchPosts = async (ndkInstance: NDK) => {
     try {
       setLoading(true);
       setError(null);
 
-      const mainEvents = await ndkInstance.fetchEvents({
+      const mainEvents = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 50
       });
@@ -109,23 +95,21 @@ export default function Gallery() {
         throw new Error('No events returned from relay');
       }
 
-      const commentEvents = await ndkInstance.fetchEvents({
+      const commentEvents = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 200,
         '#e': Array.from(mainEvents).map(event => event.id)
       });
 
-      // Fetch all profiles at once
       const profilePubkeys = new Set<string>();
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
       commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
 
-      const profileEvents = await ndkInstance.fetchEvents({
+      const profileEvents = await ndk.fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
       });
 
-      // Create profile lookup map
       const profileMap = new Map<string, Profile>();
       profileEvents?.forEach(event => {
         const profile = parseProfile(event.content);
@@ -185,7 +169,6 @@ export default function Gallery() {
       setSendingZap(true);
       setProcessingAction('zap');
 
-      // Check both lud06 and lud16
       const lnAddress = post.profile?.lud16 || post.profile?.lud06;
       if (!lnAddress) {
         throw new Error('No lightning address found for this user');
@@ -232,7 +215,7 @@ export default function Gallery() {
   };
 
   const handleComment = async () => {
-    if (!selectedPost || !newComment.trim() || !pubkey || !ndk || !signer) {
+    if (!selectedPost || !newComment.trim() || !pubkey || !ndk) {
       toast({
         variant: "destructive",
         title: "Cannot post comment",
@@ -248,7 +231,6 @@ export default function Gallery() {
       event.kind = ANIMAL_KIND;
       event.content = newComment;
       event.tags = [['e', selectedPost.event.id, '', 'reply']];
-      event.pubkey = pubkey;
       
       await event.publish();
 
@@ -256,7 +238,7 @@ export default function Gallery() {
       setNewComment('');
       setCommentParentId(null);
       
-      await fetchPosts(ndk);
+      await fetchPosts();
 
       toast({
         title: "Comment posted",
@@ -275,7 +257,7 @@ export default function Gallery() {
   };
 
   const handleShare = async (post: VideoPost) => {
-    if (!pubkey || !ndk || !signer) {
+    if (!pubkey || !ndk) {
       toast({
         variant: "destructive",
         title: "Cannot share",
@@ -289,7 +271,6 @@ export default function Gallery() {
       
       const event = new NDKEvent(ndk);
       event.kind = NOTE_KIND;
-      event.pubkey = pubkey;
       event.content = shareText || `Check out this Animal Sunset video!\n\n${
         post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
       }\n#animalsunset`;
@@ -347,7 +328,6 @@ export default function Gallery() {
       });
     }
   };
-
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -388,16 +368,16 @@ export default function Gallery() {
       <div className="bg-[#1a1a1a] p-4 border-b border-gray-800">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <Navigation />
-          {profile && (
+          {userProfile && (
             <div className="flex items-center space-x-2">
-              {profile.picture && (
+              {userProfile.picture && (
                 <img
-                  src={profile.picture}
+                  src={userProfile.picture}
                   alt="Profile"
                   className="w-8 h-8 rounded-full"
                 />
               )}
-              <span>{profile.name || "Anonymous"}</span>
+              <span>{userProfile.name || "Anonymous"}</span>
             </div>
           )}
         </div>
@@ -459,7 +439,7 @@ export default function Gallery() {
                   </p>
                 </div>
 
-              <div className="p-4 flex flex-wrap items-center gap-4">
+                <div className="p-4 flex flex-wrap items-center gap-4">
                   <button
                     onClick={() => handleZap(post)}
                     disabled={sendingZap || processingAction === 'zap'}
