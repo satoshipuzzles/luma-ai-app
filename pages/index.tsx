@@ -1,9 +1,8 @@
-// index.tsx
+// pages/index.tsx
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
-import { Relay } from 'nostr-tools';
 import { 
   Menu, 
   X, 
@@ -38,10 +37,6 @@ interface StoredGeneration {
   createdAt: string;
   pubkey: string;
 }
-
-const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
-const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
-const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 
 // Utility Functions
 const formatDate = (dateString: string) => {
@@ -100,11 +95,13 @@ const getStatusMessage = (state: string) => {
 const downloadVideo = async (url: string, filename: string) => {
   try {
     const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to fetch video');
+    
     const blob = await response.blob();
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = filename || 'animal-sunset-video.mp4';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -118,16 +115,16 @@ const downloadVideo = async (url: string, filename: string) => {
   } catch (err) {
     console.error('Download failed:', err);
     toast({
+      variant: "destructive",
       title: "Download failed",
       description: "Please try again",
-      variant: "destructive"
     });
   }
 };
 
 export default function Home() {
   // Get Nostr context
-  const { pubkey, profile, connect } = useNostr();
+  const { pubkey, profile, ndk, connect } = useNostr();
 
   // State Management
   const [prompt, setPrompt] = useState('');
@@ -228,28 +225,10 @@ export default function Home() {
     }
   };
 
-  const copyVideoUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast({
-        title: "Copied",
-        description: "Video URL copied to clipboard",
-        duration: 2000
-      });
-    } catch (err) {
-      console.error('Failed to copy:', err);
-      toast({
-        variant: "destructive",
-        title: "Copy failed",
-        description: "Please try again",
-      });
-    }
-  };
-
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     const startTime = Date.now();
     
-    while (Date.now() - startTime < INVOICE_EXPIRY) {
+    while (Date.now() - startTime < 600000) { // 10 minutes
       try {
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
@@ -352,7 +331,7 @@ export default function Home() {
     const poll = async () => {
       const shouldStop = await checkStatus();
       if (!shouldStop) {
-        setTimeout(poll, GENERATION_POLL_INTERVAL);
+        setTimeout(poll, 2000); // 2 seconds
       }
     };
 
@@ -377,13 +356,13 @@ export default function Home() {
     setError('');
 
     try {
-      // Create Lightning invoice
+      // Create Lightning invoice for video generation
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
+        body: JSON.stringify({ amount: 1000 }), // Example amount in sats
       });
 
       if (!invoiceResponse.ok) {
