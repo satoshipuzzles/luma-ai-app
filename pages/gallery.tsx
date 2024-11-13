@@ -3,10 +3,8 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
-import { Download, MessageSquare, Zap, X, RefreshCw } from 'lucide-react';
+import { Download, MessageSquare, Zap, RefreshCw } from 'lucide-react';
 import NDK, { NDKNip07Signer, NDKEvent } from "@nostr-dev-kit/ndk";
-import "websocket-polyfill";
 
 // Create an NDK instance
 const ndk = new NDK({
@@ -43,9 +41,9 @@ function Gallery() {
         title: "Gallery updated",
         description: `Loaded ${Array.from(events).length} videos`,
       });
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-      setError((error instanceof Error ? error.message : 'Failed to load gallery'));
+    } catch (err: any) {
+      console.error('Error fetching posts:', err);
+      setError(err.message || 'Failed to load gallery');
       toast({
         variant: "destructive",
         title: "Failed to load gallery",
@@ -71,12 +69,12 @@ function Gallery() {
         title: "Zap sent!",
         description: "Thank you for supporting the creator",
       });
-    } catch (error) {
-      console.error('Error sending zap:', error);
+    } catch (err: any) {
+      console.error('Error sending zap:', err);
       toast({
         variant: "destructive",
         title: "Zap failed",
-        description: (error instanceof Error ? error.message : "Failed to send zap"),
+        description: err.message || "Failed to send zap",
       });
     } finally {
       setSendingZap(false);
@@ -101,7 +99,7 @@ function Gallery() {
         description: "Your video is being downloaded",
         duration: 2000
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Download failed:', err);
       toast({
         title: "Download failed",
