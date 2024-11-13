@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SimplePool } from 'nostr-tools/pool';
-import NDK, { NDKEvent, NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
+import NDK, { NDKSigner, NDKUser, NostrEvent } from '@nostr-dev-kit/ndk';
 import type { Event } from 'nostr-tools';
 
 // Define our own interfaces without modifying global
@@ -89,16 +89,7 @@ class NIP07Signer implements NDKSigner {
     return nostr.nip04.decrypt(sender.pubkey, value);
   }
 
-  // Implementing nip04Encrypt and nip04Decrypt as required
-  async nip04Encrypt(recipient: NDKUser, value: string): Promise<string> {
-    return this.encrypt(recipient, value);
-  }
-
-  async nip04Decrypt(sender: NDKUser, value: string): Promise<string> {
-    return this.decrypt(sender, value);
-  }
-
-  // Implementing nip44Encrypt and nip44Decrypt in case the interface expects them
+  // Implementing nip44Encrypt and nip44Decrypt as required by the interface
   async nip44Encrypt(recipient: NDKUser, value: string): Promise<string> {
     return this.encrypt(recipient, value);
   }
