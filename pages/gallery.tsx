@@ -1,3 +1,5 @@
+// gallery.tsx
+
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
@@ -187,7 +189,8 @@ export default function Gallery() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create invoice');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create invoice');
       }
 
       const data = await response.json();
@@ -195,12 +198,20 @@ export default function Gallery() {
         throw new Error('No payment request received');
       }
 
-      await navigator.clipboard.writeText(data.paymentRequest);
-
-      toast({
-        title: "Invoice copied!",
-        description: "Lightning invoice has been copied to your clipboard"
-      });
+      try {
+        await navigator.clipboard.writeText(data.paymentRequest);
+        toast({
+          title: "Invoice copied!",
+          description: "Lightning invoice has been copied to your clipboard"
+        });
+      } catch (clipboardError) {
+        console.error('Clipboard copy failed:', clipboardError);
+        toast({
+          variant: "warning",
+          title: "Copy Failed",
+          description: "Please manually copy the invoice.",
+        });
+      }
     } catch (error) {
       console.error('Error sending zap:', error);
       toast({
@@ -232,18 +243,23 @@ export default function Gallery() {
       event.content = newComment;
       event.tags = [['e', selectedPost.event.id, '', 'reply']];
       
-      await event.publish();
+      const publishResult = await event.publish();
 
-      setShowCommentModal(false);
-      setNewComment('');
-      setCommentParentId(null);
-      
-      await fetchPosts();
+      // Assuming publish resolves on success and rejects on failure
+      if (publishResult) { 
+        setShowCommentModal(false);
+        setNewComment('');
+        setCommentParentId(null);
+        
+        await fetchPosts();
 
-      toast({
-        title: "Comment posted",
-        description: "Your comment has been published"
-      });
+        toast({
+          title: "Comment posted",
+          description: "Your comment has been published"
+        });
+      } else {
+        throw new Error('Failed to publish comment');
+      }
     } catch (error) {
       console.error('Error posting comment:', error);
       toast({
@@ -279,21 +295,26 @@ export default function Gallery() {
         ['r', post.event.content]
       ];
       
-      await event.publish();
+      const publishResult = await event.publish();
 
-      setShowShareModal(false);
-      setShareText('');
+      // Assuming publish resolves on success and rejects on failure
+      if (publishResult) {
+        setShowShareModal(false);
+        setShareText('');
 
-      toast({
-        title: "Shared successfully",
-        description: "Your note has been published to Nostr"
-      });
+        toast({
+          title: "Shared successfully",
+          description: "Your note has been published to Nostr"
+        });
+      } else {
+        throw new Error('Failed to publish share');
+      }
     } catch (error) {
       console.error('Error sharing:', error);
       toast({
         variant: "destructive",
         title: "Share failed",
-        description: "Failed to share to Nostr"
+        description: error instanceof Error ? error.message : "Failed to share to Nostr"
       });
     } finally {
       setProcessingAction(null);
@@ -328,6 +349,7 @@ export default function Gallery() {
       });
     }
   };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -370,10 +392,19 @@ export default function Gallery() {
           <Navigation />
           {userProfile && (
             <div className="flex items-center space-x-2">
-              {userProfile.picture && (
+              {userProfile.picture ? (
                 <img
                   src={userProfile.picture}
                   alt="Profile"
+                  className="w-8 h-8 rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  }}
+                />
+              ) : (
+                <img
+                  src="/default-avatar.png"
+                  alt="Default Profile"
                   className="w-8 h-8 rounded-full"
                 />
               )}
@@ -389,6 +420,7 @@ export default function Gallery() {
           <button
             onClick={fetchPosts}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+            disabled={loading}
           >
             <RefreshCw size={16} />
             <span>Refresh</span>
@@ -408,11 +440,22 @@ export default function Gallery() {
             {posts.map(post => (
               <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
                 <div className="p-4 flex items-center space-x-3">
-                  <img
-                    src={post.profile?.picture || '/default-avatar.png'}
-                    alt="Profile"
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
+                  {post.profile?.picture ? (
+                    <img
+                      src={post.profile.picture}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src="/default-avatar.png"
+                      alt="Default Profile"
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                  )}
                   <div>
                     <div className="font-medium">
                       {post.profile?.name || "Anonymous"}
@@ -490,11 +533,22 @@ export default function Gallery() {
                     <div className="p-4 space-y-4">
                       {post.comments.map(comment => (
                         <div key={comment.event.id} className="flex items-start space-x-3">
-                          <img
-                            src={comment.profile?.picture || '/default-avatar.png'}
-                            alt="Commenter"
-                            className="w-8 h-8 rounded-full"
-                          />
+                          {comment.profile?.picture ? (
+                            <img
+                              src={comment.profile.picture}
+                              alt="Commenter"
+                              className="w-8 h-8 rounded-full"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                              }}
+                            />
+                          ) : (
+                            <img
+                              src="/default-avatar.png"
+                              alt="Default Profile"
+                              className="w-8 h-8 rounded-full"
+                            />
+                          )}
                           <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
                             <div className="font-medium text-gray-300 mb-1">
                               {comment.profile?.name || "Anonymous"}
