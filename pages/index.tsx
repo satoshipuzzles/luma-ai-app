@@ -658,13 +658,14 @@ export default function Home() {
 
                         {/* Action Buttons */}
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <Copy size={16} />
-                            <span>Copy URL</span>
-                          </button>
+                    <button
+  onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+>
+  <Copy size={16} />
+  <span>Copy URL</span>
+</button>
+
                           <button
                             onClick={() => downloadVideo(selectedGeneration.videoUrl!, `animal-sunset-${selectedGeneration.id}.mp4`)}
                             className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
