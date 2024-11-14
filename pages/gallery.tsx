@@ -17,8 +17,7 @@ import {
   Send
 } from 'lucide-react';
 import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr'; // Import necessary functions
-import ShareDialog from '../components/ShareDialog';
-
+import ShareDialog from '../components/ShareDialog'; // <-- Imported ShareDialog
 
 const ANIMAL_KIND = 75757;
 const PROFILE_KIND = 0;
@@ -54,99 +53,99 @@ export default function Gallery() {
     }
   }, [pubkey]);
 
-const fetchPosts = async () => {
-  try {
-    setLoading(true);
-    setError(null);
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    // Fetch main events (animal videos)
-    let mainEventsSet = await fetchEvents({
-      kinds: [ANIMAL_KIND],
-      limit: 50
-    });
+      // Fetch main events (animal videos)
+      let mainEventsSet = await fetchEvents({
+        kinds: [ANIMAL_KIND],
+        limit: 50
+      });
 
-    if (!mainEventsSet) {
-      throw new Error('No events returned from relay');
+      if (!mainEventsSet) {
+        throw new Error('No events returned from relay');
+      }
+
+      // Convert Set to Array and filter out events without an ID
+      const mainEvents = Array.from(mainEventsSet).filter((event): event is NostrEvent & { id: string } => !!event.id);
+
+      // Fetch comments related to main events
+      let commentEventsSet = await fetchEvents({
+        kinds: [NOTE_KIND], // Assuming comments are of kind NOTE_KIND
+        limit: 200,
+        '#e': mainEvents.map(event => event.id)
+      });
+
+      const commentEvents = commentEventsSet ? Array.from(commentEventsSet).filter((comment): comment is NostrEvent & { id: string } => !!comment.id) : [];
+
+      // Collect all pubkeys from main events and comments
+      const profilePubkeys = new Set<string>();
+      mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
+      commentEvents.forEach(event => profilePubkeys.add(event.pubkey));
+
+      // Fetch profile events
+      const profileEventsSet = await fetchEvents({
+        kinds: [PROFILE_KIND],
+        authors: Array.from(profilePubkeys)
+      });
+
+      const profileEvents = profileEventsSet ? Array.from(profileEventsSet) : [];
+
+      const profileMap = new Map<string, Profile>();
+      profileEvents.forEach(event => {
+        const profile = parseProfile(event.content);
+        if (profile) {
+          profileMap.set(event.pubkey, profile);
+        }
+      });
+
+      const processedPosts = mainEvents.map(event => ({
+        event,
+        profile: profileMap.get(event.pubkey),
+        comments: commentEvents
+          .filter(comment =>
+            comment.tags?.some(tag => tag[0] === 'e' && tag[1] === event.id) ?? false
+          )
+          .map(comment => ({
+            event: comment,
+            profile: profileMap.get(comment.pubkey)
+          }))
+      }));
+
+      // Filter out posts without .mp4 URLs
+      const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.includes('.mp4'));
+
+      // Deduplicate posts based on video URL
+      const uniquePostsMap = new Map<string, VideoPost>();
+      filteredPosts.forEach(post => {
+        if (!uniquePostsMap.has(post.event.content)) {
+          uniquePostsMap.set(post.event.content, post as VideoPost); // Type assertion is safe here
+        }
+      });
+      const uniquePosts = Array.from(uniquePostsMap.values());
+
+      // Sort posts chronologically, newest first
+      uniquePosts.sort((a, b) => b.event.created_at - a.event.created_at);
+
+      setPosts(uniquePosts);
+      toast({
+        title: "Gallery updated",
+        description: `Loaded ${uniquePosts.length} videos`
+      });
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load gallery');
+      toast({
+        variant: "destructive",
+        title: "Failed to load gallery",
+        description: "Please try refreshing the page"
+      });
+    } finally {
+      setLoading(false);
     }
-
-    // Convert Set to Array and filter out events without an ID
-    const mainEvents = Array.from(mainEventsSet).filter((event): event is NostrEvent & { id: string } => !!event.id);
-
-    // Fetch comments related to main events
-    let commentEventsSet = await fetchEvents({
-      kinds: [NOTE_KIND], // Assuming comments are of kind NOTE_KIND
-      limit: 200,
-      '#e': mainEvents.map(event => event.id)
-    });
-
-    const commentEvents = commentEventsSet ? Array.from(commentEventsSet).filter((comment): comment is NostrEvent & { id: string } => !!comment.id) : [];
-
-    // Collect all pubkeys from main events and comments
-    const profilePubkeys = new Set<string>();
-    mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
-    commentEvents.forEach(event => profilePubkeys.add(event.pubkey));
-
-    // Fetch profile events
-    const profileEventsSet = await fetchEvents({
-      kinds: [PROFILE_KIND],
-      authors: Array.from(profilePubkeys)
-    });
-
-    const profileEvents = profileEventsSet ? Array.from(profileEventsSet) : [];
-
-    const profileMap = new Map<string, Profile>();
-    profileEvents.forEach(event => {
-      const profile = parseProfile(event.content);
-      if (profile) {
-        profileMap.set(event.pubkey, profile);
-      }
-    });
-
-    const processedPosts = mainEvents.map(event => ({
-      event,
-      profile: profileMap.get(event.pubkey),
-      comments: commentEvents
-        .filter(comment =>
-          comment.tags?.some(tag => tag[0] === 'e' && tag[1] === event.id) ?? false
-        )
-        .map(comment => ({
-          event: comment,
-          profile: profileMap.get(comment.pubkey)
-        }))
-    }));
-
-    // Filter out posts without .mp4 URLs
-    const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.includes('.mp4'));
-
-    // Deduplicate posts based on video URL
-    const uniquePostsMap = new Map<string, VideoPost>();
-    filteredPosts.forEach(post => {
-      if (!uniquePostsMap.has(post.event.content)) {
-        uniquePostsMap.set(post.event.content, post as VideoPost); // Type assertion is safe here
-      }
-    });
-    const uniquePosts = Array.from(uniquePostsMap.values());
-
-    // Sort posts chronologically, newest first
-    uniquePosts.sort((a, b) => b.event.created_at - a.event.created_at);
-
-    setPosts(uniquePosts);
-    toast({
-      title: "Gallery updated",
-      description: `Loaded ${uniquePosts.length} videos`
-    });
-  } catch (error) {
-    console.error('Error fetching posts:', error);
-    setError(error instanceof Error ? error.message : 'Failed to load gallery');
-    toast({
-      variant: "destructive",
-      title: "Failed to load gallery",
-      description: "Please try refreshing the page"
-    });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const parseProfile = (content: string): Profile | undefined => {
     try {
@@ -653,8 +652,6 @@ const fetchPosts = async () => {
           onShare={handleShare}
         />
       )}
-      </div> 
-);
-
-    
-  
+    </div>
+  );
+}
