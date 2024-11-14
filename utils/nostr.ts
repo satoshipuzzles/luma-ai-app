@@ -1,4 +1,6 @@
 import { WebSocket } from 'ws';
+import { NDKEvent } from '@nostr-dev-kit/ndk';
+import { Profile, AnimalKind } from '../types/nostr';
 
 interface NostrEvent {
   kind: number;
@@ -20,7 +22,6 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
   return new Promise((resolve) => {
     const ws = new WebSocket('wss://relay.damus.io');
     let timeout: NodeJS.Timeout;
-
     ws.onopen = () => {
       // Subscribe to kind 0 events for this pubkey
       const subscription = JSON.stringify([
@@ -41,7 +42,6 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
         resolve(null);
       }, 5000);
     };
-
     ws.onmessage = (event) => {
       try {
         const [type, , nostrEvent] = JSON.parse(event.data.toString());
@@ -57,7 +57,6 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
         console.error('Error parsing Nostr event:', error);
       }
     };
-
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
       clearTimeout(timeout);
@@ -65,4 +64,59 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
       resolve(null);
     };
   });
+};
+
+export const handleShare = async (
+  ndk: any,
+  content: string,
+  targetEventId: string,
+  type: 'note' | 'gallery' = 'note'
+) => {
+  if (!ndk) {
+    throw new Error('NDK instance is required');
+  }
+
+  const event = new NDKEvent(ndk);
+  event.kind = type === 'note' ? 1 : 75757;
+  event.content = content;
+  event.tags = [
+    ['t', 'animalsunset'],
+    ['e', targetEventId, '', type === 'note' ? 'mention' : 'reference']
+  ];
+  
+  const published = await event.publish();
+  if (!published) {
+    throw new Error('Failed to publish event');
+  }
+  
+  return event;
+};
+
+export const parseProfile = (content: string): Profile | undefined => {
+  try {
+    const parsed = JSON.parse(content);
+    return {
+      name: parsed.name,
+      picture: parsed.picture,
+      about: parsed.about,
+      lud06: parsed.lud06,
+      lud16: parsed.lud16,
+      lnurl: parsed.lnurl
+    };
+  } catch (e) {
+    console.error('Error parsing profile:', e);
+    return undefined;
+  }
+};
+
+export const convertToAnimalKind = (event: NDKEvent): AnimalKind => {
+  return {
+    id: event.id || '',
+    pubkey: event.pubkey || '',
+    created_at: Math.floor(event.created_at || Date.now() / 1000),
+    kind: 75757,
+    tags: event.tags.map(tag => [tag[0] || '', tag[1] || '']) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
+    content: event.content || '',
+    sig: event.sig || ''
+  };
 };
