@@ -59,32 +59,38 @@ export default function Gallery() {
       setLoading(true);
       setError(null);
 
-      const mainEvents = await ndk.fetchEvents({
+      const mainEventsSet = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 50
       });
 
-      if (!mainEvents) {
+      if (!mainEventsSet) {
         throw new Error('No events returned from relay');
       }
 
-      const commentEvents = await ndk.fetchEvents({
+      const mainEvents = Array.from(mainEventsSet); // Convert Set to Array
+
+      const commentEventsSet = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 200,
-        '#e': Array.from(mainEvents).map(event => event.id)
+        '#e': mainEvents.map(event => event.id)
       });
+
+      const commentEvents = commentEventsSet ? Array.from(commentEventsSet) : [];
 
       const profilePubkeys = new Set<string>();
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
-      commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
+      commentEvents.forEach(event => profilePubkeys.add(event.pubkey));
 
-      const profileEvents = await ndk.fetchEvents({
+      const profileEventsSet = await ndk.fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
       });
 
+      const profileEvents = profileEventsSet ? Array.from(profileEventsSet) : [];
+
       const profileMap = new Map<string, Profile>();
-      profileEvents?.forEach(event => {
+      profileEvents.forEach(event => {
         const profile = parseProfile(event.content);
         if (profile) {
           profileMap.set(event.pubkey, profile);
@@ -94,12 +100,14 @@ export default function Gallery() {
       const processedPosts = mainEvents.map(event => ({
         event,
         profile: profileMap.get(event.pubkey),
-        comments: (commentEvents || []).filter(comment =>
-          comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
-        ).map(comment => ({
-          event: comment,
-          profile: profileMap.get(comment.pubkey)
-        }))
+        comments: commentEvents
+          .filter(comment =>
+            comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
+          )
+          .map(comment => ({
+            event: comment,
+            profile: profileMap.get(comment.pubkey)
+          }))
       }));
 
       // Filter out posts without .mp4 URLs
@@ -597,7 +605,9 @@ export default function Gallery() {
             </div>
             
             <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none 
+                       border border-gray-700 focus:border-purple-500 focus:ring-2 
+                       focus:ring-purple-500"
               rows={4}
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
@@ -614,7 +624,9 @@ export default function Gallery() {
               <button
                 onClick={handleComment}
                 disabled={!newComment.trim() || processingAction === 'comment'}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 
+                         disabled:cursor-not-allowed text-white font-semibold py-2 px-4 
+                         rounded-lg transition-colors flex items-center space-x-2"
               >
                 {processingAction === 'comment' ? (
                   <>
@@ -647,25 +659,13 @@ export default function Gallery() {
               </button>
             </div>
 
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={shareText}
-              onChange={(e) => setShareText(e.target.value)}
-              placeholder="Add a message..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
+            <div className="space-y-4">
               <button
                 onClick={() => handleShare(selectedPost)}
                 disabled={processingAction === 'share'}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
+                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 
+                         disabled:cursor-not-allowed text-white font-semibold py-2 px-4 
+                         rounded-lg transition-colors flex items-center space-x-2"
               >
                 {processingAction === 'share' ? (
                   <>
