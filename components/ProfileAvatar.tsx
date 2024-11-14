@@ -1,6 +1,6 @@
 import React from 'react';
 import { UserCircle } from 'lucide-react';
-import { Profile } from '../../types/nostr';
+import { Profile } from '../types/nostr';
 
 interface ProfileAvatarProps {
   profile?: Profile;
