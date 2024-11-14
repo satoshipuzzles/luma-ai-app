@@ -23,7 +23,6 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
     const ws = new WebSocket('wss://relay.damus.io');
     let timeout: NodeJS.Timeout;
     ws.onopen = () => {
-      // Subscribe to kind 0 events for this pubkey
       const subscription = JSON.stringify([
         "REQ",
         "profile-lookup",
@@ -36,7 +35,6 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
       
       ws.send(subscription);
       
-      // Set timeout for 5 seconds
       timeout = setTimeout(() => {
         ws.close();
         resolve(null);
@@ -66,12 +64,13 @@ export const fetchNostrProfile = async (pubkey: string): Promise<NostrProfile | 
   });
 };
 
+// Add this new export
 export const handleShare = async (
   ndk: any,
   content: string,
   targetEventId: string,
   type: 'note' | 'gallery' = 'note'
-) => {
+): Promise<NDKEvent> => {
   if (!ndk) {
     throw new Error('NDK instance is required');
   }
@@ -83,12 +82,8 @@ export const handleShare = async (
     ['t', 'animalsunset'],
     ['e', targetEventId, '', type === 'note' ? 'mention' : 'reference']
   ];
-  
-  const published = await event.publish();
-  if (!published) {
-    throw new Error('Failed to publish event');
-  }
-  
+
+  await event.publish();
   return event;
 };
 
