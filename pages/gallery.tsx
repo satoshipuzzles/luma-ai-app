@@ -17,7 +17,7 @@ import {
   Send
 } from 'lucide-react';
 import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr'; // Import necessary functions
-import { ShareDialog } from '../components/ShareDialog'; // Ensure ShareDialog is correctly imported
+import { ShareDialog } from '../components/ShareDialog'; // Corrected import for named export
 
 const ANIMAL_KIND = 75757;
 const PROFILE_KIND = 0;
@@ -59,7 +59,7 @@ export default function Gallery() {
       setError(null);
 
       // Fetch main events (animal videos)
-      const mainEventsSet = await fetchEvents({
+      let mainEventsSet = await fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 50
       });
@@ -68,23 +68,17 @@ export default function Gallery() {
         throw new Error('No events returned from relay');
       }
 
-      // Filter out events without an 'id'
-      const mainEvents: NostrEvent[] = Array.from(mainEventsSet).filter(
-        (event): event is NostrEvent => !!event.id
-      );
+      // Convert Set to Array and filter out events without an ID
+      const mainEvents = Array.from(mainEventsSet).filter((event): event is NostrEvent & { id: string } => !!event.id);
 
       // Fetch comments related to main events
-      const commentEventsSet = await fetchEvents({
+      let commentEventsSet = await fetchEvents({
         kinds: [NOTE_KIND], // Assuming comments are of kind NOTE_KIND
         limit: 200,
         '#e': mainEvents.map(event => event.id)
       });
 
-      const commentEvents: NostrEvent[] = commentEventsSet
-        ? Array.from(commentEventsSet).filter(
-            (comment): comment is NostrEvent => !!comment.id
-          )
-        : [];
+      const commentEvents = commentEventsSet ? Array.from(commentEventsSet).filter((comment): comment is NostrEvent & { id: string } => !!comment.id) : [];
 
       // Collect all pubkeys from main events and comments
       const profilePubkeys = new Set<string>();
@@ -97,11 +91,7 @@ export default function Gallery() {
         authors: Array.from(profilePubkeys)
       });
 
-      const profileEvents: NostrEvent[] = profileEventsSet
-        ? Array.from(profileEventsSet).filter(
-            (event): event is NostrEvent => !!event.id
-          )
-        : [];
+      const profileEvents = profileEventsSet ? Array.from(profileEventsSet) : [];
 
       const profileMap = new Map<string, Profile>();
       profileEvents.forEach(event => {
@@ -111,7 +101,7 @@ export default function Gallery() {
         }
       });
 
-      const processedPosts: VideoPost[] = mainEvents.map(event => ({
+      const processedPosts = mainEvents.map(event => ({
         event,
         profile: profileMap.get(event.pubkey),
         comments: commentEvents
@@ -131,7 +121,7 @@ export default function Gallery() {
       const uniquePostsMap = new Map<string, VideoPost>();
       filteredPosts.forEach(post => {
         if (!uniquePostsMap.has(post.event.content)) {
-          uniquePostsMap.set(post.event.content, post);
+          uniquePostsMap.set(post.event.content, post as VideoPost); // Type assertion is safe here
         }
       });
       const uniquePosts = Array.from(uniquePostsMap.values());
@@ -662,4 +652,6 @@ export default function Gallery() {
           onShare={handleShare}
         />
       )}
-    }
+    </div>
+  );
+}
