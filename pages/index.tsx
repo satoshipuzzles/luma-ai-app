@@ -451,59 +451,60 @@ export default function Home() {
     }
   };
 
- const handleShare = async () => {
-  if (!pubkey || !ndk) {
-    toast({
-      variant: "destructive",
-      title: "Cannot share",
-      description: "Please make sure you are connected to Nostr"
-    });
-    return;
-  }
-
-  if (!selectedGeneration || !selectedGeneration.videoUrl) {
-    toast({
-      variant: "destructive",
-      title: "No video to share",
-      description: "Please generate a video first."
-    });
-    return;
-  }
-
-  try {
-    setProcessingAction('share');
-
-    const event = new NDKEvent(ndk);
-    event.kind = NOTE_KIND;
-    event.content = `Check out this Animal Sunset video!\n\n${selectedGeneration.prompt}\n${selectedGeneration.videoUrl}\n#animalsunset`;
-    event.tags = [
-      ['t', 'animalsunset']
-    ];
-
-    const publishResult = await event.publish();
-
-    if (publishResult && publishResult.id) {
-      setShowShareDialog(false);
-      setShareText('');
-
+  // Handle sharing without author tag
+  const handleIndexShare = async () => {
+    if (!pubkey || !ndk) {
       toast({
-        title: "Shared successfully",
-        description: "Your note has been published to Nostr"
+        variant: "destructive",
+        title: "Cannot share",
+        description: "Please make sure you are connected to Nostr"
       });
-    } else {
-      throw new Error('Failed to publish share');
+      return;
     }
-  } catch (error) {
-    console.error('Error sharing:', error);
-    toast({
-      variant: "destructive",
-      title: "Share failed",
-      description: error instanceof Error ? error.message : "Failed to share to Nostr"
-    });
-  } finally {
-    setProcessingAction(null);
-  }
-};
+
+    if (!selectedGeneration || !selectedGeneration.videoUrl) {
+      toast({
+        variant: "destructive",
+        title: "No video to share",
+        description: "Please generate a video first."
+      });
+      return;
+    }
+
+    try {
+      setProcessingAction('share');
+
+      const event = new NDKEvent(ndk);
+      event.kind = NOTE_KIND;
+      event.content = `Check out this Animal Sunset video!\n\n${selectedGeneration.prompt}\n${selectedGeneration.videoUrl}\n#animalsunset`;
+      event.tags = [
+        ['t', 'animalsunset']
+      ];
+
+      const publishResult = await event.publish();
+
+      if (publishResult && publishResult.id) {
+        setShowShareDialog(false);
+        setShareText('');
+
+        toast({
+          title: "Shared successfully",
+          description: "Your note has been published to Nostr"
+        });
+      } else {
+        throw new Error('Failed to publish share');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+      toast({
+        variant: "destructive",
+        title: "Share failed",
+        description: error instanceof Error ? error.message : "Failed to share to Nostr"
+      });
+    } finally {
+      setProcessingAction(null);
+    }
+  };
 
   // Render login screen if not connected
   if (!pubkey) {
@@ -512,7 +513,7 @@ export default function Home() {
         <div className="max-w-md w-full p-6 space-y-6">
           <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
+            <p className="text-gray-300 text-center">Connect with Nostr to interact with the gallery</p>
             <button
               onClick={connect}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
@@ -1000,6 +1001,5 @@ export default function Home() {
         pubkey={pubkey}
         onSettingsChange={setUserSettings}
       />
-    </div>
-  );
+    }
 }
