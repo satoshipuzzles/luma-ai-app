@@ -91,6 +91,22 @@ const getStatusMessage = (state: string) => {
       return 'Processing...';
   }
 };
+const copyVideoUrl = async (url: string) => {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast({
+      title: "Copied!",
+      description: "Video URL copied to clipboard",
+    });
+  } catch (error) {
+    console.error("Failed to copy video URL:", error);
+    toast({
+      variant: "destructive",
+      title: "Copy failed",
+      description: "Please try again",
+    });
+  }
+};
 
 const downloadVideo = async (url: string, filename: string) => {
   try {
