@@ -653,7 +653,7 @@ const fetchPosts = async () => {
           onShare={handleShare}
         />
       )}
-      </div> {}
+      </div> 
 );
 
     
