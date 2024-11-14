@@ -144,6 +144,7 @@ export default function Home() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   // Effects
   useEffect(() => {
@@ -453,7 +454,69 @@ export default function Home() {
     }
   };
 
-  // Render login screen if not connected
+  const handleShare = async (post: VideoPost) => {
+    if (!pubkey || !ndk) {
+      toast({
+        variant: "destructive",
+        title: "Cannot share",
+        description: "Please make sure you are connected to Nostr"
+      });
+      return;
+    }
+
+    try {
+      setProcessingAction('share');
+      
+      const event = new NDKEvent(ndk);
+      event.kind = NOTE_KIND;
+      event.content = `Check out this video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`;
+      event.tags = [
+        ['t', 'animalsunset']
+      ];
+      
+      const publishResult = await event.publish();
+
+      if (publishResult && publishResult.id) {
+        setShowShareModal(false);
+        setShareText('');
+
+        toast({
+          title: "Shared successfully",
+          description: "Your note has been published to Nostr"
+        });
+      } else {
+        throw new Error('Failed to publish share');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+      toast({
+        variant: "destructive",
+        title: "Share failed",
+        description: error instanceof Error ? error.message : "Failed to share to Nostr"
+      });
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
+  const copyVideoUrl = (url: string) => {
+    navigator.clipboard.writeText(url)
+      .then(() => {
+        toast({
+          title: "URL Copied!",
+          description: "Video URL has been copied to your clipboard."
+        });
+      })
+      .catch((err) => {
+        console.error('Failed to copy URL:', err);
+        toast({
+          variant: "destructive",
+          title: "Copy Failed",
+          description: "Unable to copy URL. Please try again.",
+        });
+      });
+  };
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
