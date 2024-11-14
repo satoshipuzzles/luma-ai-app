@@ -451,60 +451,59 @@ export default function Home() {
     }
   };
 
-  // Handle sharing without author tag
-  const handleIndexShare = async () => {
-    if (!pubkey || !ndk) {
+ const handleShare = async () => {
+  if (!pubkey || !ndk) {
+    toast({
+      variant: "destructive",
+      title: "Cannot share",
+      description: "Please make sure you are connected to Nostr"
+    });
+    return;
+  }
+
+  if (!selectedGeneration || !selectedGeneration.videoUrl) {
+    toast({
+      variant: "destructive",
+      title: "No video to share",
+      description: "Please generate a video first."
+    });
+    return;
+  }
+
+  try {
+    setProcessingAction('share');
+
+    const event = new NDKEvent(ndk);
+    event.kind = NOTE_KIND;
+    event.content = `Check out this Animal Sunset video!\n\n${selectedGeneration.prompt}\n${selectedGeneration.videoUrl}\n#animalsunset`;
+    event.tags = [
+      ['t', 'animalsunset']
+    ];
+
+    const publishResult = await event.publish();
+
+    if (publishResult && publishResult.id) {
+      setShowShareDialog(false);
+      setShareText('');
+
       toast({
-        variant: "destructive",
-        title: "Cannot share",
-        description: "Please make sure you are connected to Nostr"
+        title: "Shared successfully",
+        description: "Your note has been published to Nostr"
       });
-      return;
+    } else {
+      throw new Error('Failed to publish share');
     }
-
-    if (!selectedGeneration || !selectedGeneration.videoUrl) {
-      toast({
-        variant: "destructive",
-        title: "No video to share",
-        description: "Please generate a video first."
-      });
-      return;
-    }
-
-    try {
-      setProcessingAction('share');
-
-      const event = new NDKEvent(ndk);
-      event.kind = NOTE_KIND;
-      event.content = `Check out this Animal Sunset video!\n\n${selectedGeneration.prompt}\n${selectedGeneration.videoUrl}\n#animalsunset`;
-      event.tags = [
-        ['t', 'animalsunset']
-      ];
-
-      const publishResult = await event.publish();
-
-      if (publishResult && publishResult.id) {
-        setShowShareDialog(false);
-        setShareText('');
-
-        toast({
-          title: "Shared successfully",
-          description: "Your note has been published to Nostr"
-        });
-      } else {
-        throw new Error('Failed to publish share');
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-      toast({
-        variant: "destructive",
-        title: "Share failed",
-        description: error instanceof Error ? error.message : "Failed to share to Nostr"
-      });
-    } finally {
-      setProcessingAction(null);
-    }
-  };
+  } catch (error) {
+    console.error('Error sharing:', error);
+    toast({
+      variant: "destructive",
+      title: "Share failed",
+      description: error instanceof Error ? error.message : "Failed to share to Nostr"
+    });
+  } finally {
+    setProcessingAction(null);
+  }
+};
 
   // Render login screen if not connected
   if (!pubkey) {
