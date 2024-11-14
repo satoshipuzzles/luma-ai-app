@@ -26,7 +26,9 @@ import { SettingsModal } from '../components/SettingsModal';
 import { ShareDialog } from '../components/ShareDialog';
 import { useNostr } from '../contexts/NostrContext';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { DEFAULT_RELAY } from '../lib/nostr';
 
+// Types
 interface StoredGeneration {
   id: string;
   prompt: string;
@@ -36,10 +38,7 @@ interface StoredGeneration {
   pubkey: string;
 }
 
-const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
-const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
-const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
-
+// Utility Functions
 const formatDate = (dateString: string) => {
   try {
     const date = new Date(dateString);
@@ -124,8 +123,10 @@ const downloadVideo = async (url: string, filename: string) => {
 };
 
 export default function Home() {
-  const { pubkey, profile, connect } = useNostr();
+  // Get Nostr context
+  const { pubkey, profile, ndk, connect } = useNostr();
 
+  // State Management
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
@@ -144,6 +145,7 @@ export default function Home() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
 
+  // Effects
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -226,7 +228,7 @@ export default function Home() {
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     const startTime = Date.now();
     
-    while (Date.now() - startTime < INVOICE_EXPIRY) {
+    while (Date.now() - startTime < 600000) { // 10 minutes
       try {
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
@@ -329,7 +331,7 @@ export default function Home() {
     const poll = async () => {
       const shouldStop = await checkStatus();
       if (!shouldStop) {
-        setTimeout(poll, GENERATION_POLL_INTERVAL);
+        setTimeout(poll, 2000); // 2 seconds
       }
     };
 
@@ -354,13 +356,13 @@ export default function Home() {
     setError('');
 
     try {
-      // Create Lightning invoice
+      // Create Lightning invoice for video generation
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
+        body: JSON.stringify({ amount: 1000 }), // Example amount in sats
       });
 
       if (!invoiceResponse.ok) {
@@ -451,61 +453,6 @@ export default function Home() {
     }
   };
 
-  // Handle sharing without author tag
-  const handleIndexShare = async () => {
-    if (!pubkey) {
-      toast({
-        variant: "destructive",
-        title: "Cannot share",
-        description: "Please make sure you are connected to Nostr"
-      });
-      return;
-    }
-
-    if (!selectedGeneration || !selectedGeneration.videoUrl) {
-      toast({
-        variant: "destructive",
-        title: "No video to share",
-        description: "Please generate a video first."
-      });
-      return;
-    }
-
-    try {
-      setProcessingAction('share');
-
-      const event = new NDKEvent(ndk);
-      event.kind = NOTE_KIND;
-      event.content = `Check out this Animal Sunset video!\n\n${selectedGeneration.prompt}\n${selectedGeneration.videoUrl}\n#animalsunset`;
-      event.tags = [
-        ['t', 'animalsunset']
-      ];
-
-      const publishResult = await event.publish();
-
-      if (publishResult && publishResult.id) {
-        setShowShareDialog(false);
-        setShareText('');
-
-        toast({
-          title: "Shared successfully",
-          description: "Your note has been published to Nostr"
-        });
-      } else {
-        throw new Error('Failed to publish share');
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-      toast({
-        variant: "destructive",
-        title: "Share failed",
-        description: error instanceof Error ? error.message : "Failed to share to Nostr"
-      });
-    } finally {
-      setProcessingAction(null);
-    }
-  };
-
   // Render login screen if not connected
   if (!pubkey) {
     return (
@@ -513,7 +460,7 @@ export default function Home() {
         <div className="max-w-md w-full p-6 space-y-6">
           <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to interact with the gallery</p>
+            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
             <button
               onClick={connect}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
@@ -706,14 +653,6 @@ export default function Home() {
                             loop
                             playsInline
                             src={selectedGeneration.videoUrl}
-                            onError={(e) => {
-                              console.error('Video failed to load:', e);
-                              toast({
-                                variant: "destructive",
-                                title: "Video Load Failed",
-                                description: "Failed to load the video. Please try again.",
-                              });
-                            }}
                           />
                         </div>
 
@@ -935,7 +874,7 @@ export default function Home() {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">Please pay {LIGHTNING_INVOICE_AMOUNT} sats to proceed.</p>
+            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
             
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
@@ -990,7 +929,6 @@ export default function Home() {
           videoUrl={selectedGeneration.videoUrl!}
           prompt={selectedGeneration.prompt}
           isPublic={userSettings.publicGenerations}
-          onShare={handleIndexShare}
         />
       )}
 
@@ -1001,5 +939,6 @@ export default function Home() {
         pubkey={pubkey}
         onSettingsChange={setUserSettings}
       />
-    }
+    </div>
+  );
 }
