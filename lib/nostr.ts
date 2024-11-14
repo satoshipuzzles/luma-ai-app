@@ -137,7 +137,7 @@ export async function createZapInvoice(
   return paymentRequest;
 }
 
-export async function getLightningAddress(pubkey: string): Promise<string | null> {
+export async function fetchLightningAddress(pubkey: string): Promise<string | null> {
   try {
     const profileEvent = await fetchProfile(pubkey);
     if (!profileEvent) return null;
@@ -195,7 +195,7 @@ export {
   publishVideo,
   fetchLightningDetails,
   createZapInvoice,
-  getLightningAddress,
+  fetchLightningAddress, // Renamed from getLightningAddress
   publishComment,
   shareToNostr,
   fetchProfile,
