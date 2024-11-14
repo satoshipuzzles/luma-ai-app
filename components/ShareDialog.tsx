@@ -11,7 +11,7 @@ interface ShareDialogProps {
   videoUrl: string;
   prompt: string;
   isPublic: boolean;
-  onShare: () => void; // Added onShare callback
+  onShare: () => void; // Callback to handle sharing
 }
 
 export function ShareDialog({ isOpen, onClose, videoUrl, prompt, isPublic, onShare }: ShareDialogProps) {
@@ -97,7 +97,7 @@ export function ShareDialog({ isOpen, onClose, videoUrl, prompt, isPublic, onSha
                        focus:ring-purple-500"
               rows={4}
               value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
+              onChange={(e) => setNoteContent(`${e.target.value}\n#animalsunset`)}
               placeholder="Write your note..."
             />
             <button
