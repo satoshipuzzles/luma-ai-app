@@ -941,12 +941,14 @@ export default function Home() {
       {/* Share Dialog */}
       {showShareDialog && selectedGeneration && (
         <ShareDialog
-          isOpen={showShareDialog}
-          onClose={() => setShowShareDialog(false)}
-          videoUrl={selectedGeneration.videoUrl!}
-          prompt={selectedGeneration.prompt}
-          isPublic={userSettings.publicGenerations}
-        />
+  isOpen={showShareDialog}
+  onClose={() => setShowShareDialog(false)}
+  videoUrl={selectedGeneration.videoUrl!}
+  prompt={selectedGeneration.prompt}
+  isPublic={userSettings.publicGenerations}
+  onShare={() => console.log("Video shared!")}
+/>
+
       )}
 
       {/* Settings Modal */}
