@@ -190,6 +190,7 @@ export function formatPubkey(pubkey: string): string {
   return `${pubkey.slice(0, 6)}...${pubkey.slice(-6)}`;
 }
 
+// Export all functions, ensuring `getLightningAddress` is included
 export {
   publishToRelays,
   publishVideo,
