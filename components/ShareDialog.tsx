@@ -11,7 +11,7 @@ interface ShareDialogProps {
   videoUrl: string;
   prompt: string;
   isPublic: boolean;
-  onShare: () => void; // Callback to handle sharing
+  onShare: () => void; // Added onShare callback
 }
 
 export function ShareDialog({ isOpen, onClose, videoUrl, prompt, isPublic, onShare }: ShareDialogProps) {
@@ -49,6 +49,7 @@ export function ShareDialog({ isOpen, onClose, videoUrl, prompt, isPublic, onSha
         title: "Shared to Nostr",
         description: "Your note has been published successfully",
       });
+      onShare(); // Trigger external share logic if needed
       onClose();
     } catch (error) {
       console.error('Error sharing to Nostr:', error);
