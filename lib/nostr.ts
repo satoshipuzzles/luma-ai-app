@@ -197,6 +197,10 @@ export async function shareToNostr(
 
   await publishToRelays(event);
 }
+export async function fetchProfile(pubkey: string): Promise<Event | null> {
+  const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
+  return events.length > 0 ? events[0] : null;
+}
 
 // Helper function to fetch multiple events
 export async function fetchEvents(filter: any): Promise<Event[]> {
