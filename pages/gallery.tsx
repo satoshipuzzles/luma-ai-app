@@ -6,7 +6,6 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import { NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -17,7 +16,7 @@ import {
   Globe,
   Send
 } from 'lucide-react';
-import { publishVideo, shareToNostr } from '../lib/nostr';
+import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr'; // Import necessary functions
 
 const ANIMAL_KIND = 75757;
 const PROFILE_KIND = 0;
@@ -35,7 +34,7 @@ interface CommentPost {
 }
 
 export default function Gallery() {
-  const { pubkey, profile: userProfile, ndk, connect } = useNostr();
+  const { pubkey, profile: userProfile, connect } = useNostr();
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,18 +47,17 @@ export default function Gallery() {
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    if (ndk) {
+    if (pubkey) {
       fetchPosts();
     }
-  }, [ndk]);
+  }, [pubkey]);
 
   const fetchPosts = async () => {
-    if (!ndk) return;
-
     try {
       setLoading(true);
       setError(null);
 
+      // Fetch main events (animal videos)
       const mainEventsSet = await fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 50
@@ -71,18 +69,21 @@ export default function Gallery() {
 
       const mainEvents = Array.from(mainEventsSet); // Convert Set to Array
 
+      // Fetch comments related to main events
       const commentEventsSet = await fetchEvents({
-        kinds: [ANIMAL_KIND],
+        kinds: [NOTE_KIND], // Assuming comments are of kind NOTE_KIND
         limit: 200,
         '#e': mainEvents.map(event => event.id)
       });
 
       const commentEvents = commentEventsSet ? Array.from(commentEventsSet) : [];
 
+      // Collect all pubkeys from main events and comments
       const profilePubkeys = new Set<string>();
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
       commentEvents.forEach(event => profilePubkeys.add(event.pubkey));
 
+      // Fetch profile events
       const profileEventsSet = await fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
@@ -153,7 +154,7 @@ export default function Gallery() {
         about: parsed.about,
         lud06: parsed.lud06,
         lud16: parsed.lud16,
-        lnurl: parsed.lud06, // Ensure LNURL is part of the profile
+        lnurl: parsed.lud06, // Adjust if lnurl is stored differently
       };
     } catch (e) {
       console.error('Error parsing profile:', e);
@@ -241,7 +242,7 @@ export default function Gallery() {
   };
 
   const handleComment = async () => {
-    if (!selectedPost || !newComment.trim() || !pubkey || !ndk) {
+    if (!selectedPost || !newComment.trim() || !pubkey) {
       toast({
         variant: "destructive",
         title: "Cannot post comment",
@@ -253,28 +254,11 @@ export default function Gallery() {
     try {
       setProcessingAction('comment');
       
-      const event = {
-        kind: ANIMAL_KIND,
-        content: newComment,
-        tags: [['e', selectedPost.event.id, '', 'reply']],
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-      };
+      const commentContent = newComment.trim();
+      const parentId = selectedPost.event.id;
 
-      const eventHash = getEventHash(event);
-      const sig = await window.nostr?.signEvent({ ...event, id: eventHash }) as string;
-
-      if (!validateEvent({ ...event, id: eventHash, sig })) {
-        throw new Error('Invalid event');
-      }
-
-      // Publish to relays
-      const relays = [DEFAULT_RELAY, ...BACKUP_RELAYS];
-      const published = await publishToRelays(event);
-
-      if (!published.id) {
-        throw new Error('Failed to publish comment');
-      }
+      // Publish the comment
+      await publishComment(commentContent, parentId);
 
       setShowCommentModal(false);
       setNewComment('');
@@ -306,7 +290,7 @@ export default function Gallery() {
   };
 
   const handleShare = async (post: VideoPost) => {
-    if (!pubkey || !ndk) {
+    if (!pubkey) {
       toast({
         variant: "destructive",
         title: "Cannot share",
@@ -317,39 +301,17 @@ export default function Gallery() {
 
     try {
       setProcessingAction('share');
-      
-      const event = {
-        kind: NOTE_KIND,
-        content: `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`,
-        tags: [
-          ['t', 'animalsunset']
-        ],
-        pubkey,
-        created_at: Math.floor(Date.now() / 1000),
-      };
 
-      const eventHash = getEventHash(event);
-      const sig = await window.nostr?.signEvent({ ...event, id: eventHash }) as string;
+      const shareContent = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}\n${post.event.content}\n#animalsunset`;
 
-      if (!validateEvent({ ...event, id: eventHash, sig })) {
-        throw new Error('Invalid event');
-      }
-
-      // Publish to relays
-      const relays = [DEFAULT_RELAY, ...BACKUP_RELAYS];
-      const published = await publishToRelays(event);
-
-      if (!published.id) {
-        throw new Error('Failed to publish share');
-      }
-
-      setShowShareModal(false);
-      setShareText('');
+      await shareToNostr(shareContent, post.event.content);
 
       toast({
         title: "Shared successfully",
         description: "Your note has been published to Nostr"
       });
+
+      // Additional logic after sharing, e.g., updating UI
     } catch (error) {
       console.error('Error sharing:', error);
       toast({
@@ -520,6 +482,13 @@ export default function Gallery() {
                     controls
                     loop
                     playsInline
+                    onError={() => {
+                      toast({
+                        variant: "destructive",
+                        title: "Video Load Failed",
+                        description: "Failed to load the video. Please try again.",
+                      });
+                    }}
                   />
                 </div>
 
@@ -557,7 +526,7 @@ export default function Gallery() {
                   <button
                     onClick={() => {
                       setSelectedPost(post);
-                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`);
+                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}\n${post.event.content}\n#animalsunset`);
                       setShowShareModal(true);
                     }}
                     className="flex items-center space-x-2 text-gray-400 hover:text-white"
@@ -670,45 +639,6 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Share Modal */}
-      {showShareModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Share Video</h2>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <button
-                onClick={() => handleShare(selectedPost)}
-                disabled={processingAction === 'share'}
-                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 
-                         disabled:cursor-not-allowed text-white font-semibold py-2 px-4 
-                         rounded-lg transition-colors flex items-center space-x-2"
-              >
-                {processingAction === 'share' ? (
-                  <>
-                    <RefreshCw className="animate-spin h-4 w-4" />
-                    <span>Sharing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe size={16} />
-                    <span>Share to Nostr</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Share Dialog Component */}
       {showShareModal && selectedPost && (
         <ShareDialog
@@ -721,4 +651,4 @@ export default function Gallery() {
         />
       )}
     }
-}
+   
