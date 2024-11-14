@@ -252,58 +252,60 @@ export default function Gallery() {
     }
   };
 
-  const handleComment = async () => {
-    if (!selectedPost || !newComment.trim() || !pubkey || !ndk) {
-      toast({
-        variant: "destructive",
-        title: "Cannot post comment",
-        description: "Please make sure you are connected to Nostr"
-      });
-      return;
-    }
+const handleComment = async () => {
+  if (!selectedPost || !newComment.trim() || !pubkey || !ndk) {
+    toast({
+      variant: "destructive",
+      title: "Cannot post comment",
+      description: "Please make sure you are connected to Nostr"
+    });
+    return;
+  }
 
-    try {
-      setProcessingAction('comment');
+  try {
+    setProcessingAction('comment');
+    
+    const event = new NDKEvent(ndk);
+    event.kind = ANIMAL_KIND;
+    event.content = newComment;
+    event.tags = [['e', selectedPost.event.id, '', 'reply']];
+    
+    const publishResult = await event.publish();
+
+    // Check if the event has an ID after publishing
+    if (publishResult && event.id) { 
+      setShowCommentModal(false);
+      setNewComment('');
       
-      const event = new NDKEvent(ndk);
-      event.kind = ANIMAL_KIND;
-      event.content = newComment;
-      event.tags = [['e', selectedPost.event.id, '', 'reply']];
-      
-      const publishResult = await event.publish();
+      await fetchPosts();
 
-      if (publishResult && publishResult.id) { 
-        setShowCommentModal(false);
-        setNewComment('');
-        
-        await fetchPosts();
-
-        toast({
-          title: "Comment posted",
-          description: "Your comment has been published"
-        });
-
-        // Scroll to the commented post
-        setTimeout(() => {
-          const postElement = document.getElementById(`post-${selectedPost.event.id}`);
-          if (postElement) {
-            postElement.scrollIntoView({ behavior: 'smooth' });
-          }
-        }, 500);
-      } else {
-        throw new Error('Failed to publish comment');
-      }
-    } catch (error) {
-      console.error('Error posting comment:', error);
       toast({
-        variant: "destructive",
-        title: "Comment failed",
-        description: "Failed to post comment"
+        title: "Comment posted",
+        description: "Your comment has been published"
       });
-    } finally {
-      setProcessingAction(null);
+
+      // Scroll to the commented post
+      setTimeout(() => {
+        const postElement = document.getElementById(`post-${selectedPost.event.id}`);
+        if (postElement) {
+          postElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 500);
+    } else {
+      throw new Error('Failed to publish comment');
     }
-  };
+  } catch (error) {
+    console.error('Error posting comment:', error);
+    toast({
+      variant: "destructive",
+      title: "Comment failed",
+      description: "Failed to post comment"
+    });
+  } finally {
+    setProcessingAction(null);
+  }
+};
+
 
   const handleShare = async (post: VideoPost) => {
     if (!pubkey || !ndk) {
