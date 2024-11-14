@@ -6,7 +6,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
+import { NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -17,10 +17,11 @@ import {
   Globe,
   Send
 } from 'lucide-react';
+import { publishVideo, shareToNostr } from '../lib/nostr';
 
-const ANIMAL_KIND = 75757 as NDKKind;
-const PROFILE_KIND = 0 as NDKKind;
-const NOTE_KIND = 1 as NDKKind;
+const ANIMAL_KIND = 75757;
+const PROFILE_KIND = 0;
+const NOTE_KIND = 1;
 
 interface VideoPost {
   event: NostrEvent;
@@ -59,7 +60,7 @@ export default function Gallery() {
       setLoading(true);
       setError(null);
 
-      const mainEventsSet = await ndk.fetchEvents({
+      const mainEventsSet = await fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 50
       });
@@ -70,7 +71,7 @@ export default function Gallery() {
 
       const mainEvents = Array.from(mainEventsSet); // Convert Set to Array
 
-      const commentEventsSet = await ndk.fetchEvents({
+      const commentEventsSet = await fetchEvents({
         kinds: [ANIMAL_KIND],
         limit: 200,
         '#e': mainEvents.map(event => event.id)
@@ -82,7 +83,7 @@ export default function Gallery() {
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
       commentEvents.forEach(event => profilePubkeys.add(event.pubkey));
 
-      const profileEventsSet = await ndk.fetchEvents({
+      const profileEventsSet = await fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
       });
@@ -152,7 +153,7 @@ export default function Gallery() {
         about: parsed.about,
         lud06: parsed.lud06,
         lud16: parsed.lud16,
-        lnurl: parsed.lnurl, // Ensure LNURL is part of the profile
+        lnurl: parsed.lud06, // Ensure LNURL is part of the profile
       };
     } catch (e) {
       console.error('Error parsing profile:', e);
@@ -252,34 +253,46 @@ export default function Gallery() {
     try {
       setProcessingAction('comment');
       
-      const event = new NDKEvent(ndk);
-      event.kind = ANIMAL_KIND;
-      event.content = newComment;
-      event.tags = [['e', selectedPost.event.id, '', 'reply']];
-      
-      const publishResult = await event.publish();
+      const event = {
+        kind: ANIMAL_KIND,
+        content: newComment,
+        tags: [['e', selectedPost.event.id, '', 'reply']],
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+      };
 
-      if (publishResult && publishResult.id) { 
-        setShowCommentModal(false);
-        setNewComment('');
-        
-        await fetchPosts();
+      const eventHash = getEventHash(event);
+      const sig = await window.nostr?.signEvent({ ...event, id: eventHash }) as string;
 
-        toast({
-          title: "Comment posted",
-          description: "Your comment has been published"
-        });
+      if (!validateEvent({ ...event, id: eventHash, sig })) {
+        throw new Error('Invalid event');
+      }
 
-        // Scroll to the commented post
-        setTimeout(() => {
-          const postElement = document.getElementById(`post-${selectedPost.event.id}`);
-          if (postElement) {
-            postElement.scrollIntoView({ behavior: 'smooth' });
-          }
-        }, 500);
-      } else {
+      // Publish to relays
+      const relays = [DEFAULT_RELAY, ...BACKUP_RELAYS];
+      const published = await publishToRelays(event);
+
+      if (!published.id) {
         throw new Error('Failed to publish comment');
       }
+
+      setShowCommentModal(false);
+      setNewComment('');
+      
+      await fetchPosts();
+
+      toast({
+        title: "Comment posted",
+        description: "Your comment has been published"
+      });
+
+      // Scroll to the commented post
+      setTimeout(() => {
+        const postElement = document.getElementById(`post-${selectedPost.event.id}`);
+        if (postElement) {
+          postElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 500);
     } catch (error) {
       console.error('Error posting comment:', error);
       toast({
@@ -305,27 +318,38 @@ export default function Gallery() {
     try {
       setProcessingAction('share');
       
-      const event = new NDKEvent(ndk);
-      event.kind = NOTE_KIND;
-      event.content = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`;
-      event.tags = [
-        ['t', 'animalsunset'],
-        ['r', post.event.content] // Reference to the video URL
-      ];
-      
-      const publishResult = await event.publish();
+      const event = {
+        kind: NOTE_KIND,
+        content: `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`,
+        tags: [
+          ['t', 'animalsunset']
+        ],
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+      };
 
-      if (publishResult && publishResult.id) {
-        setShowShareModal(false);
-        setShareText('');
+      const eventHash = getEventHash(event);
+      const sig = await window.nostr?.signEvent({ ...event, id: eventHash }) as string;
 
-        toast({
-          title: "Shared successfully",
-          description: "Your note has been published to Nostr"
-        });
-      } else {
+      if (!validateEvent({ ...event, id: eventHash, sig })) {
+        throw new Error('Invalid event');
+      }
+
+      // Publish to relays
+      const relays = [DEFAULT_RELAY, ...BACKUP_RELAYS];
+      const published = await publishToRelays(event);
+
+      if (!published.id) {
         throw new Error('Failed to publish share');
       }
+
+      setShowShareModal(false);
+      setShareText('');
+
+      toast({
+        title: "Shared successfully",
+        description: "Your note has been published to Nostr"
+      });
     } catch (error) {
       console.error('Error sharing:', error);
       toast({
@@ -355,18 +379,19 @@ export default function Gallery() {
       
       toast({
         title: "Download started",
-        description: "Your video is being downloaded"
+        description: "Your video is being downloaded",
+        duration: 2000
       });
-    } catch (error) {
-      console.error('Download failed:', error);
+    } catch (err) {
+      console.error('Download failed:', err);
       toast({
         variant: "destructive",
         title: "Download failed",
-        description: "Please try again"
+        description: "Please try again",
       });
     }
   };
-  
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -683,6 +708,17 @@ export default function Gallery() {
           </div>
         </div>
       )}
-    </div>
-  );
+
+      {/* Share Dialog Component */}
+      {showShareModal && selectedPost && (
+        <ShareDialog
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          videoUrl={selectedPost.event.content}
+          prompt={selectedPost.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+          isPublic={true} // Or derive from user settings if applicable
+          onShare={handleShare}
+        />
+      )}
+    }
 }
