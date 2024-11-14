@@ -839,13 +839,14 @@ const saveGeneration = (generation: StoredGeneration) => {
 
       {/* Share Dialog */}
       {showShareDialog && selectedGeneration && (
-        <ShareDialog
-          isOpen={showShareDialog}
-          onClose={() => setShowShareDialog(false)}
-          videoUrl={selectedGeneration.videoUrl!}
-          prompt={selectedGeneration.prompt}
-          isPublic={userSettings.publicGenerations}
-        />
+    <ShareDialog
+  isOpen={showShareDialog}
+  onClose={() => setShowShareDialog(false)}
+  videoUrl={selectedGeneration.videoUrl!}
+  prompt={selectedGeneration.prompt}
+  isPublic={userSettings.publicGenerations}
+  onShare={handleVideoShare} 
+/>
       )}
 
       {/* Settings Modal */}
