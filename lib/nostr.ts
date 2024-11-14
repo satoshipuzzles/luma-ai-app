@@ -137,6 +137,19 @@ export async function createZapInvoice(
   return paymentRequest;
 }
 
+export async function getLightningAddress(pubkey: string): Promise<string | null> {
+  try {
+    const profileEvent = await fetchProfile(pubkey);
+    if (!profileEvent) return null;
+
+    const profile = JSON.parse(profileEvent.content);
+    return profile.lud16 || profile.lud06 || null;
+  } catch (error) {
+    console.error('Error fetching Lightning address:', error);
+    return null;
+  }
+}
+
 export async function publishComment(
   content: string,
   parentId: string,
@@ -176,3 +189,16 @@ export async function fetchEvents(filter: any): Promise<Event[]> {
 export function formatPubkey(pubkey: string): string {
   return `${pubkey.slice(0, 6)}...${pubkey.slice(-6)}`;
 }
+
+export {
+  publishToRelays,
+  publishVideo,
+  fetchLightningDetails,
+  createZapInvoice,
+  getLightningAddress,
+  publishComment,
+  shareToNostr,
+  fetchProfile,
+  fetchEvents,
+  formatPubkey,
+};
