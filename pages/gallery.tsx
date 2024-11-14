@@ -4,9 +4,8 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
+import { Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
-import { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
 import {
   Download,
   MessageSquare,
@@ -17,53 +16,26 @@ import {
   Globe,
   Send
 } from 'lucide-react';
+import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr'; // Import necessary functions
+import ShareDialog from '../components/ShareDialog'; // <-- Imported ShareDialog
 
-const ANIMAL_KIND = 75757 as NDKKind;
-const PROFILE_KIND = 0 as NDKKind;
-const NOTE_KIND = 1 as NDKKind;
+const ANIMAL_KIND = 75757;
+const PROFILE_KIND = 0;
+const NOTE_KIND = 1;
 
 interface VideoPost {
-  event: AnimalKind;
+  event: NostrEvent;
   profile?: Profile;
   comments: Array<CommentPost>;
 }
 
 interface CommentPost {
-  event: AnimalKind;
+  event: NostrEvent;
   profile?: Profile;
 }
 
-function convertToAnimalKind(event: NDKEvent): AnimalKind {
-  return {
-    id: event.id || '',
-    pubkey: event.pubkey || '',
-    created_at: Math.floor(event.created_at || Date.now() / 1000),
-    kind: 75757,
-    tags: event.tags.map(tag => [tag[0] || '', tag[1] || '']) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
-    content: event.content || '',
-    sig: event.sig || ''
-  };
-}
-
-function parseProfile(content: string): Profile | undefined {
-  try {
-    const parsed = JSON.parse(content);
-    return {
-      name: parsed.name,
-      picture: parsed.picture,
-      about: parsed.about,
-      lud06: parsed.lud06,
-      lud16: parsed.lud16,
-      lnurl: parsed.lnurl, // Ensure LNURL is part of the profile
-    };
-  } catch (e) {
-    console.error('Error parsing profile:', e);
-    return undefined;
-  }
-}
-
 export default function Gallery() {
-  const { pubkey, profile: userProfile, ndk, connect } = useNostr();
+  const { pubkey, profile: userProfile, connect } = useNostr();
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,86 +43,85 @@ export default function Gallery() {
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [newComment, setNewComment] = useState('');
+  const [sendingZap, setSendingZap] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
 
   useEffect(() => {
-    if (ndk) {
+    if (pubkey) {
       fetchPosts();
     }
-  }, [ndk]);
+  }, [pubkey]);
 
   const fetchPosts = async () => {
-    if (!ndk) return;
-
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch main video events
-      const mainEvents = await ndk.fetchEvents({
+      // Fetch main events (animal videos)
+      let mainEventsSet = await fetchEvents({
         kinds: [ANIMAL_KIND],
-        limit: 100
+        limit: 50
       });
 
-      if (!mainEvents) {
+      if (!mainEventsSet) {
         throw new Error('No events returned from relay');
       }
 
-      // Fetch comment events related to main events
-      const commentEvents = await ndk.fetchEvents({
-        kinds: [ANIMAL_KIND],
-        '#e': Array.from(mainEvents).map(event => event.id),
-        limit: 500
+      // Convert Set to Array and filter out events without an ID
+      const mainEvents = Array.from(mainEventsSet).filter((event): event is NostrEvent & { id: string } => !!event.id);
+
+      // Fetch comments related to main events
+      let commentEventsSet = await fetchEvents({
+        kinds: [NOTE_KIND], // Assuming comments are of kind NOTE_KIND
+        limit: 200,
+        '#e': mainEvents.map(event => event.id)
       });
 
-      // Collect all unique pubkeys from main and comment events
+      const commentEvents = commentEventsSet ? Array.from(commentEventsSet).filter((comment): comment is NostrEvent & { id: string } => !!comment.id) : [];
+
+      // Collect all pubkeys from main events and comments
       const profilePubkeys = new Set<string>();
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
-      commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
+      commentEvents.forEach(event => profilePubkeys.add(event.pubkey));
 
       // Fetch profile events
-      const profileEvents = await ndk.fetchEvents({
+      const profileEventsSet = await fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
       });
 
+      const profileEvents = profileEventsSet ? Array.from(profileEventsSet) : [];
+
       const profileMap = new Map<string, Profile>();
-      profileEvents?.forEach(event => {
+      profileEvents.forEach(event => {
         const profile = parseProfile(event.content);
         if (profile) {
           profileMap.set(event.pubkey, profile);
         }
       });
 
-      // Process main events into VideoPost objects
-      const processedPosts = await Promise.all(
-        Array.from(mainEvents).map(async (event) => {
-          const postComments = Array.from(commentEvents || [])
-            .filter(comment => 
-              comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
-            )
-            .map(comment => ({
-              event: convertToAnimalKind(comment),
-              profile: profileMap.get(comment.pubkey)
-            }));
+      const processedPosts = mainEvents.map(event => ({
+        event,
+        profile: profileMap.get(event.pubkey),
+        comments: commentEvents
+          .filter(comment =>
+            comment.tags?.some(tag => tag[0] === 'e' && tag[1] === event.id) ?? false
+          )
+          .map(comment => ({
+            event: comment,
+            profile: profileMap.get(comment.pubkey)
+          }))
+      }));
 
-          return {
-            event: convertToAnimalKind(event),
-            profile: profileMap.get(event.pubkey),
-            comments: postComments
-          };
-        })
-      );
-
-      // Filter out posts without videoUrl (assuming video URL is in content)
-      const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.endsWith('.mp4'));
+      // Filter out posts without .mp4 URLs
+      const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.includes('.mp4'));
 
       // Deduplicate posts based on video URL
       const uniquePostsMap = new Map<string, VideoPost>();
       filteredPosts.forEach(post => {
         if (!uniquePostsMap.has(post.event.content)) {
-          uniquePostsMap.set(post.event.content, post);
+          uniquePostsMap.set(post.event.content, post as VideoPost); // Type assertion is safe here
         }
       });
       const uniquePosts = Array.from(uniquePostsMap.values());
@@ -176,6 +147,23 @@ export default function Gallery() {
     }
   };
 
+  const parseProfile = (content: string): Profile | undefined => {
+    try {
+      const parsed = JSON.parse(content);
+      return {
+        name: parsed.name,
+        picture: parsed.picture,
+        about: parsed.about,
+        lud06: parsed.lud06,
+        lud16: parsed.lud16,
+        lnurl: parsed.lud06, // Adjust if lnurl is stored differently
+      };
+    } catch (e) {
+      console.error('Error parsing profile:', e);
+      return undefined;
+    }
+  };
+
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -196,6 +184,7 @@ export default function Gallery() {
     }
 
     try {
+      setSendingZap(true);
       setProcessingAction('zap');
 
       // Fetch the lightning invoice using the author's LNURL
@@ -209,7 +198,7 @@ export default function Gallery() {
         throw new Error(`LNURL endpoint returned an error: ${lnurlData.reason || 'Unknown reason'}`);
       }
 
-      const { pr: paymentRequest } = lnurlData; // 'pr' is the payment request
+      const paymentRequest: string = lnurlData.pr; // 'pr' is the payment request
 
       if (!paymentRequest) {
         throw new Error('No payment request found in LNURL response');
@@ -232,14 +221,15 @@ export default function Gallery() {
       }
 
       // Optionally, open the user's lightning wallet with the payment request
-      // Example: window.location.href = `lightning:${paymentRequest}`;
+      // Example:
+      // window.location.href = `lightning:${paymentRequest}`;
       
       toast({
         title: "Zap Initiated",
         description: "Please complete the payment using your lightning wallet.",
       });
 
-      // Note: Monitoring payment status requires additional implementation
+      // Monitoring payment status can be implemented here if desired
     } catch (error) {
       console.error('Error sending zap:', error);
       toast({
@@ -248,32 +238,30 @@ export default function Gallery() {
         description: error instanceof Error ? error.message : "Failed to send zap"
       });
     } finally {
+      setSendingZap(false);
       setProcessingAction(null);
     }
   };
 
-const handleComment = async () => {
-  if (!selectedPost || !newComment.trim() || !pubkey || !ndk) {
-    toast({
-      variant: "destructive",
-      title: "Cannot post comment",
-      description: "Please make sure you are connected to Nostr"
-    });
-    return;
-  }
+  const handleComment = async () => {
+    if (!selectedPost || !newComment.trim() || !pubkey) {
+      toast({
+        variant: "destructive",
+        title: "Cannot post comment",
+        description: "Please make sure you are connected to Nostr"
+      });
+      return;
+    }
 
-  try {
-    setProcessingAction('comment');
-    
-    const event = new NDKEvent(ndk);
-    event.kind = ANIMAL_KIND;
-    event.content = newComment;
-    event.tags = [['e', selectedPost.event.id, '', 'reply']];
-    
-    const publishResult = await event.publish();
+    try {
+      setProcessingAction('comment');
+      
+      const commentContent = newComment.trim();
+      const parentId = selectedPost.event.id;
 
-    // Check if the event has an ID after publishing
-    if (publishResult && event.id) { 
+      // Publish the comment
+      await publishComment(commentContent, parentId);
+
       setShowCommentModal(false);
       setNewComment('');
       
@@ -291,24 +279,20 @@ const handleComment = async () => {
           postElement.scrollIntoView({ behavior: 'smooth' });
         }
       }, 500);
-    } else {
-      throw new Error('Failed to publish comment');
+    } catch (error) {
+      console.error('Error posting comment:', error);
+      toast({
+        variant: "destructive",
+        title: "Comment failed",
+        description: "Failed to post comment"
+      });
+    } finally {
+      setProcessingAction(null);
     }
-  } catch (error) {
-    console.error('Error posting comment:', error);
-    toast({
-      variant: "destructive",
-      title: "Comment failed",
-      description: "Failed to post comment"
-    });
-  } finally {
-    setProcessingAction(null);
-  }
-};
-
+  };
 
   const handleShare = async (post: VideoPost) => {
-    if (!pubkey || !ndk) {
+    if (!pubkey) {
       toast({
         variant: "destructive",
         title: "Cannot share",
@@ -319,29 +303,17 @@ const handleComment = async () => {
 
     try {
       setProcessingAction('share');
-      
-      const event = new NDKEvent(ndk);
-      event.kind = NOTE_KIND;
-      event.content = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`;
-      event.tags = [
-        ['t', 'animalsunset'],
-        ['p', post.profile?.pubkey || ''], // Tagging the author
-        ['r', post.event.content] // Reference to the video URL
-      ];
-      
-      const publishResult = await event.publish();
 
-      if (publishResult && publishResult.id) {
-        setShowShareModal(false);
-        setShareText('');
+      const shareContent = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}\n${post.event.content}\n#animalsunset`;
 
-        toast({
-          title: "Shared successfully",
-          description: "Your note has been published to Nostr"
-        });
-      } else {
-        throw new Error('Failed to publish share');
-      }
+      await shareToNostr(shareContent, post.event.content);
+
+      toast({
+        title: "Shared successfully",
+        description: "Your note has been published to Nostr"
+      });
+
+      // Additional logic after sharing, e.g., updating UI
     } catch (error) {
       console.error('Error sharing:', error);
       toast({
@@ -371,18 +343,19 @@ const handleComment = async () => {
       
       toast({
         title: "Download started",
-        description: "Your video is being downloaded"
+        description: "Your video is being downloaded",
+        duration: 2000
       });
-    } catch (error) {
-      console.error('Download failed:', error);
+    } catch (err) {
+      console.error('Download failed:', err);
       toast({
         variant: "destructive",
         title: "Download failed",
-        description: "Please try again"
+        description: "Please try again",
       });
     }
   };
-  
+
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -511,6 +484,13 @@ const handleComment = async () => {
                     controls
                     loop
                     playsInline
+                    onError={() => {
+                      toast({
+                        variant: "destructive",
+                        title: "Video Load Failed",
+                        description: "Failed to load the video. Please try again.",
+                      });
+                    }}
                   />
                 </div>
 
@@ -523,7 +503,7 @@ const handleComment = async () => {
                 <div className="p-4 flex flex-wrap items-center gap-4">
                   <button
                     onClick={() => handleZap(post)}
-                    disabled={processingAction === 'zap'}
+                    disabled={sendingZap || processingAction === 'zap'}
                     className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {processingAction === 'zap' ? (
@@ -548,7 +528,7 @@ const handleComment = async () => {
                   <button
                     onClick={() => {
                       setSelectedPost(post);
-                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`);
+                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}\n${post.event.content}\n#animalsunset`);
                       setShowShareModal(true);
                     }}
                     className="flex items-center space-x-2 text-gray-400 hover:text-white"
@@ -621,7 +601,9 @@ const handleComment = async () => {
             </div>
             
             <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none 
+                       border border-gray-700 focus:border-purple-500 focus:ring-2 
+                       focus:ring-purple-500"
               rows={4}
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
@@ -638,7 +620,9 @@ const handleComment = async () => {
               <button
                 onClick={handleComment}
                 disabled={!newComment.trim() || processingAction === 'comment'}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 
+                         disabled:cursor-not-allowed text-white font-semibold py-2 px-4 
+                         rounded-lg transition-colors flex items-center space-x-2"
               >
                 {processingAction === 'comment' ? (
                   <>
@@ -657,55 +641,16 @@ const handleComment = async () => {
         </div>
       )}
 
-      {/* Share Modal */}
+      {/* Share Dialog Component */}
       {showShareModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Share Video</h2>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={shareText}
-              onChange={(e) => setShareText(e.target.value)}
-              placeholder="Add a message..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleShare(selectedPost)}
-                disabled={processingAction === 'share'}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
-              >
-                {processingAction === 'share' ? (
-                  <>
-                    <RefreshCw className="animate-spin h-4 w-4" />
-                    <span>Sharing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe size={16} />
-                    <span>Share to Nostr</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ShareDialog
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          videoUrl={selectedPost.event.content}
+          prompt={selectedPost.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+          isPublic={true} // Or derive from user settings if applicable
+          onShare={handleShare}
+        />
       )}
     </div>
   );
