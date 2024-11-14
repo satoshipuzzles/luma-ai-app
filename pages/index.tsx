@@ -26,9 +26,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { ShareDialog } from '../components/ShareDialog';
 import { useNostr } from '../contexts/NostrContext';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { DEFAULT_RELAY } from '../lib/nostr';
 
-// Types
 interface StoredGeneration {
   id: string;
   prompt: string;
@@ -38,7 +36,10 @@ interface StoredGeneration {
   pubkey: string;
 }
 
-// Utility Functions
+const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
+const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
+const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
+
 const formatDate = (dateString: string) => {
   try {
     const date = new Date(dateString);
@@ -123,10 +124,8 @@ const downloadVideo = async (url: string, filename: string) => {
 };
 
 export default function Home() {
-  // Get Nostr context
-  const { pubkey, profile, ndk, connect } = useNostr();
+  const { pubkey, profile, connect } = useNostr();
 
-  // State Management
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
@@ -144,9 +143,7 @@ export default function Home() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const [shareError, setShareError] = useState<string | null>(null);
 
-  // Effects
   useEffect(() => {
     if (pubkey) {
       const stored = getGenerations().filter((g) => g.pubkey === pubkey);
@@ -229,7 +226,7 @@ export default function Home() {
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     const startTime = Date.now();
     
-    while (Date.now() - startTime < 600000) { // 10 minutes
+    while (Date.now() - startTime < INVOICE_EXPIRY) {
       try {
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
@@ -332,7 +329,7 @@ export default function Home() {
     const poll = async () => {
       const shouldStop = await checkStatus();
       if (!shouldStop) {
-        setTimeout(poll, 2000); // 2 seconds
+        setTimeout(poll, GENERATION_POLL_INTERVAL);
       }
     };
 
@@ -357,13 +354,13 @@ export default function Home() {
     setError('');
 
     try {
-      // Create Lightning invoice for video generation
+      // Create Lightning invoice
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount: 1000 }), // Example amount in sats
+        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
       });
 
       if (!invoiceResponse.ok) {
@@ -454,7 +451,8 @@ export default function Home() {
     }
   };
 
-  const handleShare = async (post: VideoPost) => {
+  // Handle sharing without author tag
+  const handleIndexShare = async () => {
     if (!pubkey || !ndk) {
       toast({
         variant: "destructive",
@@ -464,20 +462,29 @@ export default function Home() {
       return;
     }
 
+    if (!selectedGeneration || !selectedGeneration.videoUrl) {
+      toast({
+        variant: "destructive",
+        title: "No video to share",
+        description: "Please generate a video first."
+      });
+      return;
+    }
+
     try {
       setProcessingAction('share');
-      
+
       const event = new NDKEvent(ndk);
       event.kind = NOTE_KIND;
-      event.content = `Check out this video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`;
+      event.content = `Check out this Animal Sunset video!\n\n${selectedGeneration.prompt}\n${selectedGeneration.videoUrl}\n#animalsunset`;
       event.tags = [
         ['t', 'animalsunset']
       ];
-      
+
       const publishResult = await event.publish();
 
       if (publishResult && publishResult.id) {
-        setShowShareModal(false);
+        setShowShareDialog(false);
         setShareText('');
 
         toast({
@@ -499,24 +506,7 @@ export default function Home() {
     }
   };
 
-  const copyVideoUrl = (url: string) => {
-    navigator.clipboard.writeText(url)
-      .then(() => {
-        toast({
-          title: "URL Copied!",
-          description: "Video URL has been copied to your clipboard."
-        });
-      })
-      .catch((err) => {
-        console.error('Failed to copy URL:', err);
-        toast({
-          variant: "destructive",
-          title: "Copy Failed",
-          description: "Unable to copy URL. Please try again.",
-        });
-      });
-  };
-
+  // Render login screen if not connected
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -716,6 +706,14 @@ export default function Home() {
                             loop
                             playsInline
                             src={selectedGeneration.videoUrl}
+                            onError={(e) => {
+                              console.error('Video failed to load:', e);
+                              toast({
+                                variant: "destructive",
+                                title: "Video Load Failed",
+                                description: "Failed to load the video. Please try again.",
+                              });
+                            }}
                           />
                         </div>
 
@@ -937,7 +935,7 @@ export default function Home() {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            <p className="text-sm text-gray-300">Please pay {LIGHTNING_INVOICE_AMOUNT} sats to proceed.</p>
             
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
@@ -992,6 +990,7 @@ export default function Home() {
           videoUrl={selectedGeneration.videoUrl!}
           prompt={selectedGeneration.prompt}
           isPublic={userSettings.publicGenerations}
+          onShare={handleIndexShare}
         />
       )}
 
