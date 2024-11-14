@@ -17,6 +17,8 @@ import {
   Send
 } from 'lucide-react';
 import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr'; // Import necessary functions
+import ShareDialog from '../components/ShareDialog';
+
 
 const ANIMAL_KIND = 75757;
 const PROFILE_KIND = 0;
