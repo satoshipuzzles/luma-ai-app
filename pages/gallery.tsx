@@ -291,12 +291,21 @@ export default function Gallery() {
     }
   };
 
-  const handleShare = async (post: VideoPost) => {
+  const handleShare = async () => { // Updated to accept no parameters
+    if (!selectedPost) {
+      toast({
+        variant: "destructive",
+        title: "No Post Selected",
+        description: "Please select a post to share."
+      });
+      return;
+    }
+
     if (!pubkey) {
       toast({
         variant: "destructive",
-        title: "Cannot share",
-        description: "Please make sure you are connected to Nostr"
+        title: "Cannot Share",
+        description: "Please ensure you are connected to Nostr."
       });
       return;
     }
@@ -304,13 +313,13 @@ export default function Gallery() {
     try {
       setProcessingAction('share');
 
-      const shareContent = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}\n${post.event.content}\n#animalsunset`;
+      const shareContent = `Check out this Animal Sunset video!\n\n${selectedPost.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}\n${selectedPost.event.content}\n#animalsunset`;
 
-      await shareToNostr(shareContent, post.event.content);
+      await shareToNostr(shareContent, selectedPost.event.content);
 
       toast({
-        title: "Shared successfully",
-        description: "Your note has been published to Nostr"
+        title: "Shared Successfully",
+        description: "Your note has been published to Nostr."
       });
 
       // Additional logic after sharing, e.g., updating UI
@@ -318,8 +327,8 @@ export default function Gallery() {
       console.error('Error sharing:', error);
       toast({
         variant: "destructive",
-        title: "Share failed",
-        description: error instanceof Error ? error.message : "Failed to share to Nostr"
+        title: "Share Failed",
+        description: error instanceof Error ? error.message : "Failed to share to Nostr."
       });
     } finally {
       setProcessingAction(null);
@@ -649,7 +658,7 @@ export default function Gallery() {
           videoUrl={selectedPost.event.content}
           prompt={selectedPost.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
           isPublic={true} // Or derive from user settings if applicable
-          onShare={handleShare}
+          onShare={handleShare} // Corrected handleShare without parameters
         />
       )}
     </div>
