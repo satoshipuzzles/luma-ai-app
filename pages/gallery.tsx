@@ -20,7 +20,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { ShareDialog } from '../components/ShareDialog';
 import ProfileAvatar from '../components/ProfileAvatar';
 import { useNostr } from '../contexts/NostrContext';
-import { handleShare } from '../utils/nostr';
+import { handleShare } from '../utils/share';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
 
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
