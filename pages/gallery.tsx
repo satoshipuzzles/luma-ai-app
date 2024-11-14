@@ -104,7 +104,7 @@ export default function Gallery() {
         profile: profileMap.get(event.pubkey),
         comments: commentEvents
           .filter(comment =>
-            comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
+            comment.tags?.some(tag => tag[0] === 'e' && tag[1] === event.id) ?? false
           )
           .map(comment => ({
             event: comment,
@@ -651,4 +651,13 @@ export default function Gallery() {
         />
       )}
     }
-   
+    ```
+
+## **Key Changes Explained**
+
+1. **Importing `fetchEvents` and Other Necessary Functions:**
+
+   Ensure that you import `fetchEvents`, `publishVideo`, `shareToNostr`, and `publishComment` from your `lib/nostr.ts`:
+
+   ```typescript
+   import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr';
