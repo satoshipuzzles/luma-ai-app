@@ -1,3 +1,5 @@
+// components/ShareDialog.tsx
+
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { publishVideo, shareToNostr } from '../lib/nostr';
@@ -9,11 +11,12 @@ interface ShareDialogProps {
   videoUrl: string;
   prompt: string;
   isPublic: boolean;
+  onShare: () => void; // Callback to handle sharing
 }
 
-export function ShareDialog({ isOpen, onClose, videoUrl, prompt, isPublic }: ShareDialogProps) {
+export function ShareDialog({ isOpen, onClose, videoUrl, prompt, isPublic, onShare }: ShareDialogProps) {
   const [publishing, setPublishing] = useState(false);
-  const [noteContent, setNoteContent] = useState(`${prompt}\n\n${videoUrl}`);
+  const [noteContent, setNoteContent] = useState(`${prompt}\n\n${videoUrl}\n#animalsunset`);
 
   if (!isOpen) return null;
 
