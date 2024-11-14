@@ -643,14 +643,14 @@ export default function Gallery() {
 
       {/* Share Dialog Component */}
       {showShareModal && selectedPost && (
-        <ShareDialog
-          isOpen={showShareModal}
-          onClose={() => setShowShareModal(false)}
-          videoUrl={selectedPost.event.content}
-          prompt={selectedPost.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
-          isPublic={true} // Or derive from user settings if applicable
-          onShare={handleShare}
-        />
+  <ShareDialog
+  isOpen={showShareModal}
+  onClose={() => setShowShareModal(false)}
+  videoUrl={selectedPost.event.content}
+  prompt={selectedPost.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+  isPublic={true} // Or derive from user settings if applicable
+  onShare={() => handleShare(selectedPost)} // Pass the selectedPost as argument
+/>
       )}
     </div>
   );
