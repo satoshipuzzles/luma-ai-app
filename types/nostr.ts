@@ -30,6 +30,7 @@ export interface Profile {
   about?: string;
   lud06?: string;  // LNURL
   lud16?: string;  // Lightning Address
+  lnurl?: string; // Added LNURL property
 }
 
 export type NostrEventKind = AnimalKind | HistoryKind | ProfileKind;
