@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
+import { Profile, NostrEvent } from '../types/nostr';
 import { useNostr } from '../contexts/NostrContext';
 import { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
 import {
@@ -23,43 +23,14 @@ const PROFILE_KIND = 0 as NDKKind;
 const NOTE_KIND = 1 as NDKKind;
 
 interface VideoPost {
-  event: AnimalKind;
+  event: NostrEvent;
   profile?: Profile;
   comments: Array<CommentPost>;
 }
 
 interface CommentPost {
-  event: AnimalKind;
+  event: NostrEvent;
   profile?: Profile;
-}
-
-function convertToAnimalKind(event: NDKEvent): AnimalKind {
-  return {
-    id: event.id || '',
-    pubkey: event.pubkey || '',
-    created_at: Math.floor(event.created_at || Date.now() / 1000),
-    kind: 75757,
-    tags: event.tags.map(tag => [tag[0] || '', tag[1] || '']) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
-    content: event.content || '',
-    sig: event.sig || ''
-  };
-}
-
-function parseProfile(content: string): Profile | undefined {
-  try {
-    const parsed = JSON.parse(content);
-    return {
-      name: parsed.name,
-      picture: parsed.picture,
-      about: parsed.about,
-      lud06: parsed.lud06,
-      lud16: parsed.lud16,
-      lnurl: parsed.lnurl, // Ensure LNURL is part of the profile
-    };
-  } catch (e) {
-    console.error('Error parsing profile:', e);
-    return undefined;
-  }
 }
 
 export default function Gallery() {
@@ -71,6 +42,7 @@ export default function Gallery() {
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [newComment, setNewComment] = useState('');
+  const [sendingZap, setSendingZap] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [shareText, setShareText] = useState('');
 
@@ -87,29 +59,25 @@ export default function Gallery() {
       setLoading(true);
       setError(null);
 
-      // Fetch main video events
       const mainEvents = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
-        limit: 100
+        limit: 50
       });
 
       if (!mainEvents) {
         throw new Error('No events returned from relay');
       }
 
-      // Fetch comment events related to main events
       const commentEvents = await ndk.fetchEvents({
         kinds: [ANIMAL_KIND],
-        '#e': Array.from(mainEvents).map(event => event.id),
-        limit: 500
+        limit: 200,
+        '#e': Array.from(mainEvents).map(event => event.id)
       });
 
-      // Collect all unique pubkeys from main and comment events
       const profilePubkeys = new Set<string>();
       mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
       commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
 
-      // Fetch profile events
       const profileEvents = await ndk.fetchEvents({
         kinds: [PROFILE_KIND],
         authors: Array.from(profilePubkeys)
@@ -123,28 +91,19 @@ export default function Gallery() {
         }
       });
 
-      // Process main events into VideoPost objects
-      const processedPosts = await Promise.all(
-        Array.from(mainEvents).map(async (event) => {
-          const postComments = Array.from(commentEvents || [])
-            .filter(comment => 
-              comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
-            )
-            .map(comment => ({
-              event: convertToAnimalKind(comment),
-              profile: profileMap.get(comment.pubkey)
-            }));
+      const processedPosts = mainEvents.map(event => ({
+        event,
+        profile: profileMap.get(event.pubkey),
+        comments: (commentEvents || []).filter(comment =>
+          comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
+        ).map(comment => ({
+          event: comment,
+          profile: profileMap.get(comment.pubkey)
+        }))
+      }));
 
-          return {
-            event: convertToAnimalKind(event),
-            profile: profileMap.get(event.pubkey),
-            comments: postComments
-          };
-        })
-      );
-
-      // Filter out posts without videoUrl (assuming video URL is in content)
-      const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.endsWith('.mp4'));
+      // Filter out posts without .mp4 URLs
+      const filteredPosts = processedPosts.filter(post => post.event.content && post.event.content.includes('.mp4'));
 
       // Deduplicate posts based on video URL
       const uniquePostsMap = new Map<string, VideoPost>();
@@ -176,6 +135,23 @@ export default function Gallery() {
     }
   };
 
+  const parseProfile = (content: string): Profile | undefined => {
+    try {
+      const parsed = JSON.parse(content);
+      return {
+        name: parsed.name,
+        picture: parsed.picture,
+        about: parsed.about,
+        lud06: parsed.lud06,
+        lud16: parsed.lud16,
+        lnurl: parsed.lnurl, // Ensure LNURL is part of the profile
+      };
+    } catch (e) {
+      console.error('Error parsing profile:', e);
+      return undefined;
+    }
+  };
+
   const handleZap = async (post: VideoPost) => {
     if (!pubkey) {
       toast({
@@ -196,6 +172,7 @@ export default function Gallery() {
     }
 
     try {
+      setSendingZap(true);
       setProcessingAction('zap');
 
       // Fetch the lightning invoice using the author's LNURL
@@ -209,7 +186,7 @@ export default function Gallery() {
         throw new Error(`LNURL endpoint returned an error: ${lnurlData.reason || 'Unknown reason'}`);
       }
 
-      const { pr: paymentRequest } = lnurlData; // 'pr' is the payment request
+      const paymentRequest: string = lnurlData.pr; // 'pr' is the payment request
 
       if (!paymentRequest) {
         throw new Error('No payment request found in LNURL response');
@@ -232,14 +209,15 @@ export default function Gallery() {
       }
 
       // Optionally, open the user's lightning wallet with the payment request
-      // Example: window.location.href = `lightning:${paymentRequest}`;
+      // Example:
+      // window.location.href = `lightning:${paymentRequest}`;
       
       toast({
         title: "Zap Initiated",
         description: "Please complete the payment using your lightning wallet.",
       });
 
-      // Note: Monitoring payment status requires additional implementation
+      // Monitoring payment status can be implemented here if desired
     } catch (error) {
       console.error('Error sending zap:', error);
       toast({
@@ -248,6 +226,7 @@ export default function Gallery() {
         description: error instanceof Error ? error.message : "Failed to send zap"
       });
     } finally {
+      setSendingZap(false);
       setProcessingAction(null);
     }
   };
@@ -323,7 +302,6 @@ export default function Gallery() {
       event.content = `Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n${post.event.content}\n#animalsunset`;
       event.tags = [
         ['t', 'animalsunset'],
-        ['p', post.profile?.pubkey || ''], // Tagging the author
         ['r', post.event.content] // Reference to the video URL
       ];
       
@@ -521,7 +499,7 @@ export default function Gallery() {
                 <div className="p-4 flex flex-wrap items-center gap-4">
                   <button
                     onClick={() => handleZap(post)}
-                    disabled={processingAction === 'zap'}
+                    disabled={sendingZap || processingAction === 'zap'}
                     className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {processingAction === 'zap' ? (
