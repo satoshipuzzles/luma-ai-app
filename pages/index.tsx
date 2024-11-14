@@ -453,7 +453,7 @@ export default function Home() {
 
   // Handle sharing without author tag
   const handleIndexShare = async () => {
-    if (!pubkey || !ndk) {
+    if (!pubkey) {
       toast({
         variant: "destructive",
         title: "Cannot share",
