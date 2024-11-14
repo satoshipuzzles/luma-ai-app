@@ -859,4 +859,4 @@ export default function Gallery() {
   );
 }
 
-export default Home;
+export default Gallery;
