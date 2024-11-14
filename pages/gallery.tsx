@@ -1,378 +1,403 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
+import QRCode from 'qrcode.react';
+import { 
+  Menu, 
+  X, 
+  Copy, 
+  Check, 
+  Settings, 
+  Upload, 
+  RefreshCw, 
+  Download,
+  Share2, 
+  AlertCircle 
+} from 'lucide-react';
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind, ProfileKind, Profile, NostrEvent } from '../types/nostr';
+import { SettingsModal } from '../components/SettingsModal';
+import { ShareDialog } from '../components/ShareDialog';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import { useNostr } from '../contexts/NostrContext';
-import { NDKEvent, NDKFilter, NDKKind } from '@nostr-dev-kit/ndk';
-import {
-  Download,
-  MessageSquare,
-  Zap,
-  X,
-  Share2,
-  RefreshCw,
-  Globe,
-  Send,
-  UserCircle
-} from 'lucide-react';
+import { handleShare } from '../utils/nostr';
+import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
 
-const ANIMAL_KIND = 75757 as NDKKind;
-const PROFILE_KIND = 0 as NDKKind;
-const NOTE_KIND = 1 as NDKKind;
+const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
+const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
+const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 
-interface VideoPost {
-  event: AnimalKind;
-  profile?: Profile;
-  comments: Array<CommentPost>;
+interface StoredGeneration {
+  id: string;
+  prompt: string;
+  videoUrl?: string;
+  state: string;
+  createdAt: string;
+  pubkey: string;
 }
 
-interface CommentPost {
-  event: AnimalKind;
-  profile?: Profile;
-}
-
-const ProfileAvatar = ({ 
-  profile, 
-  size = 'md',
-  className = '' 
-}) => {
-  const [imageError, setImageError] = useState(false);
-
-  const sizeClasses = {
-    sm: 'w-6 h-6',
-    md: 'w-8 h-8',
-    lg: 'w-10 h-10'
-  };
-
-  if (!profile?.picture || imageError) {
-    return (
-      <div className={`${sizeClasses[size]} ${className} bg-gray-700 rounded-full flex items-center justify-center`}>
-        <UserCircle className="text-gray-400" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={profile.picture}
-      alt={profile.name || "Profile"}
-      className={`${sizeClasses[size]} ${className} rounded-full object-cover`}
-      onError={() => setImageError(true)}
-    />
-  );
+const getGenerations = (): StoredGeneration[] => {
+  if (typeof window === 'undefined') return [];
+  const stored = localStorage.getItem('generations');
+  return stored ? JSON.parse(stored) : [];
 };
 
-function convertToAnimalKind(event: NDKEvent): AnimalKind {
-  return {
-    id: event.id || '',
-    pubkey: event.pubkey || '',
-    created_at: Math.floor(event.created_at || Date.now() / 1000),
-    kind: 75757,
-    tags: event.tags.map(tag => [tag[0] || '', tag[1] || '']) as Array<['title' | 'r' | 'type' | 'e' | 'p', string]>,
-    content: event.content || '',
-    sig: event.sig || ''
-  };
-}
-
-function parseProfile(content: string): Profile | undefined {
-  try {
-    const parsed = JSON.parse(content);
-    return {
-      name: parsed.name,
-      picture: parsed.picture,
-      about: parsed.about,
-      lud06: parsed.lud06,
-      lud16: parsed.lud16
-    };
-  } catch (e) {
-    console.error('Error parsing profile:', e);
-    return undefined;
-  }
-}
-
-const handleZap = async ({
-  profile,
-  amount = 1000,
-  comment = '',
-  onSuccess,
-  onError,
-  onStart,
-  onEnd
-}) => {
-  if (!profile) {
-    throw new Error('No profile provided for zap recipient');
-  }
-
-  try {
-    onStart?.();
-
-    const lnAddress = profile.lud16 || profile.lud06;
-    if (!lnAddress) {
-      throw new Error('No lightning address found for this user');
-    }
-
-    const response = await fetch('/api/create-invoice', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        lnAddress,
-        amount,
-        comment
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create invoice');
-    }
-
-    const data = await response.json();
-    if (!data.paymentRequest) {
-      throw new Error('No payment request received');
-    }
-
-    await navigator.clipboard.writeText(data.paymentRequest);
-    onSuccess?.(data.paymentRequest);
-    
-    return data.paymentRequest;
-  } catch (error) {
-    console.error('Zap error:', error);
-    onError?.(error instanceof Error ? error.message : 'Failed to send zap');
-    throw error;
-  } finally {
-    onEnd?.();
-  }
+const saveGeneration = (generation: StoredGeneration) => {
+  const generations = getGenerations();
+  generations.unshift(generation);
+  localStorage.setItem('generations', JSON.stringify(generations));
 };
 
-export default function Gallery() {
-  const { pubkey, profile: userProfile, ndk, connect } = useNostr();
-  const [posts, setPosts] = useState<VideoPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
-  const [showCommentModal, setShowCommentModal] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [newComment, setNewComment] = useState('');
-  const [commentParentId, setCommentParentId] = useState<string | null>(null);
-  const [sendingZap, setSendingZap] = useState(false);
-  const [processingAction, setProcessingAction] = useState<string | null>(null);
-  const [shareText, setShareText] = useState('');
+export default function Home() {
+  const { pubkey, profile, ndk, connect } = useNostr();
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [generations, setGenerations] = useState<StoredGeneration[]>([]);
+  const [error, setError] = useState('');
+  const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
+  const [paymentHash, setPaymentHash] = useState<string | null>(null);
+  const [isLooping, setIsLooping] = useState(true);
+  const [startImageUrl, setStartImageUrl] = useState<string | null>(null);
+  const [isExtending, setIsExtending] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [processingAction, setProcessingAction] = useState<string | null>(null);
 
   useEffect(() => {
-    if (ndk) {
-      fetchPosts();
+    if (pubkey) {
+      const stored = getGenerations().filter((g) => g.pubkey === pubkey);
+      setGenerations(stored);
+      if (stored.length > 0) {
+        setSelectedGeneration(stored[0]);
+      }
+      const savedSettings = localStorage.getItem(`settings-${pubkey}`);
+      if (savedSettings) {
+        setUserSettings(JSON.parse(savedSettings));
+      }
     }
-  }, [ndk]);
+  }, [pubkey]);
 
-  const fetchPosts = async () => {
-    if (!ndk) return;
+  useEffect(() => {
+    if (selectedGeneration && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, [selectedGeneration]);
+
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploadingImage(true);
+      setError('');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('https://nostr.build/api/v2/upload/files', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setStartImageUrl(result.data[0].url);
+        toast({
+          title: "Image uploaded",
+          description: "Start image has been set",
+        });
+        return result.data[0].url;
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (err) {
+      setError('Failed to upload image. Please try again.');
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: "Please try again",
+      });
+      return null;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleCopyInvoice = async () => {
+    if (paymentRequest) {
+      try {
+        await navigator.clipboard.writeText(paymentRequest);
+        setHasCopied(true);
+        toast({
+          title: "Copied",
+          description: "Invoice copied to clipboard",
+        });
+        setTimeout(() => setHasCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy invoice:', err);
+        toast({
+          variant: "destructive",
+          title: "Copy failed",
+          description: "Please try again",
+        });
+      }
+    }
+  };
+
+  const waitForPayment = async (paymentHash: string): Promise<boolean> => {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < INVOICE_EXPIRY) {
+      try {
+        const response = await fetch('/api/check-lnbits-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentHash }),
+        });
+
+        if (!response.ok) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          continue;
+        }
+
+        const data = await response.json();
+        if (data.paid) {
+          toast({
+            title: "Payment received",
+            description: "Starting video generation",
+          });
+          return true;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } catch (err) {
+        console.error('Error checking payment status:', err);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+
+    toast({
+      variant: "destructive",
+      title: "Payment expired",
+      description: "Please try again",
+    });
+    return false;
+  };
+
+  const pollForCompletion = async (generationId: string) => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/check-status?id=${generationId}`);
+        if (!response.ok) {
+          throw new Error('Failed to check status');
+        }
+
+        const data = await response.json();
+
+        if (data.state === 'completed' && data.assets?.video) {
+          setGenerations((prevGenerations) => {
+            const updatedGenerations = prevGenerations.map((g) =>
+              g.id === generationId 
+                ? { ...g, state: 'completed', videoUrl: data.assets.video, createdAt: data.created_at }
+                : g
+            );
+            localStorage.setItem('generations', JSON.stringify(updatedGenerations));
+            return updatedGenerations;
+          });
+
+          setSelectedGeneration((prevSelected) => {
+            if (prevSelected?.id === generationId) {
+              return {
+                ...prevSelected,
+                state: 'completed',
+                videoUrl: data.assets.video,
+                createdAt: data.created_at,
+              };
+            }
+            return prevSelected;
+          });
+
+          setLoading(false);
+          return true;
+        }
+
+        // Update generation state
+        setGenerations((prevGenerations) => {
+          const updatedGenerations = prevGenerations.map((g) =>
+            g.id === generationId ? { ...g, state: data.state, createdAt: data.created_at } : g
+          );
+          return updatedGenerations;
+        });
+
+        setSelectedGeneration((prevSelected) => {
+          if (prevSelected?.id === generationId) {
+            return {
+              ...prevSelected,
+              state: data.state,
+              createdAt: data.created_at,
+            };
+          }
+          return prevSelected;
+        });
+
+        return false;
+      } catch (err) {
+        console.error('Status check error:', err);
+        return true;
+      }
+    };
+
+    const poll = async () => {
+      const shouldStop = await checkStatus();
+      if (!shouldStop) {
+        setTimeout(poll, GENERATION_POLL_INTERVAL);
+      }
+    };
+
+    poll();
+  };
+
+  const generateVideo = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!prompt || !pubkey || isPublishing) return;
 
     try {
       setLoading(true);
-      setError(null);
+      setError('');
+      setIsPublishing(true);
 
-      const mainEvents = await ndk.fetchEvents({
-        kinds: [ANIMAL_KIND],
-        limit: 50
+      // Create Lightning invoice
+      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
       });
 
-      if (!mainEvents) {
-        throw new Error('No events returned from relay');
+      if (!invoiceResponse.ok) {
+        const errorData = await invoiceResponse.json();
+        throw new Error(errorData.error || 'Failed to create invoice');
       }
 
-      const commentEvents = await ndk.fetchEvents({
-        kinds: [ANIMAL_KIND],
-        limit: 200,
-        '#e': Array.from(mainEvents).map(event => event.id)
+      const invoiceData = await invoiceResponse.json();
+      const { payment_request, payment_hash } = invoiceData;
+
+      setPaymentRequest(payment_request);
+      setPaymentHash(payment_hash);
+
+      const paymentConfirmed = await waitForPayment(payment_hash);
+      if (!paymentConfirmed) {
+        throw new Error('Payment not confirmed');
+      }
+
+      setPaymentRequest(null);
+      setPaymentHash(null);
+
+      // Generate video
+      const generationBody: any = { 
+        prompt,
+        loop: isLooping
+      };
+
+      if (isExtending && selectedVideoId) {
+        generationBody.extend = true;
+        generationBody.videoId = selectedVideoId;
+      } else if (startImageUrl) {
+        generationBody.startImageUrl = startImageUrl;
+      }
+
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(generationBody),
       });
 
-      const profilePubkeys = new Set<string>();
-      mainEvents.forEach(event => profilePubkeys.add(event.pubkey));
-      commentEvents?.forEach(event => profilePubkeys.add(event.pubkey));
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate video');
+      }
 
-      const profileEvents = await ndk.fetchEvents({
-        kinds: [PROFILE_KIND],
-        authors: Array.from(profilePubkeys)
-      });
+      const data = await response.json();
 
-      const profileMap = new Map<string, Profile>();
-      profileEvents?.forEach(event => {
-        const profile = parseProfile(event.content);
-        if (profile) {
-          profileMap.set(event.pubkey, profile);
-        }
-      });
+      if (!data.id) {
+        throw new Error('Invalid response from server');
+      }
 
-      const processedPosts = await Promise.all(
-        Array.from(mainEvents).map(async (event) => {
-          const postComments = Array.from(commentEvents || [])
-            .filter(comment => 
-              comment.tags.some(tag => tag[0] === 'e' && tag[1] === event.id)
-            )
-            .map(comment => ({
-              event: convertToAnimalKind(comment),
-              profile: profileMap.get(comment.pubkey)
-            }));
+      const newGeneration: StoredGeneration = {
+        id: data.id,
+        prompt,
+        state: data.state || 'queued',
+        createdAt: data.created_at || new Date().toISOString(),
+        pubkey,
+        videoUrl: data.assets?.video,
+      };
 
-          return {
-            event: convertToAnimalKind(event),
-            profile: profileMap.get(event.pubkey),
-            comments: postComments
-          };
-        })
-      );
+      saveGeneration(newGeneration);
+      setGenerations((prev) => [newGeneration, ...prev]);
+      setSelectedGeneration(newGeneration);
+      setPrompt('');
+      pollForCompletion(data.id);
 
-      setPosts(processedPosts);
       toast({
-        title: "Gallery updated",
-        description: `Loaded ${processedPosts.length} videos`
+        title: "Generation started",
+        description: "Your video is being generated",
       });
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load gallery');
+    } catch (err: any) {
+      console.error('Generation error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate video');
       toast({
         variant: "destructive",
-        title: "Failed to load gallery",
-        description: "Please try refreshing the page"
+        title: "Generation failed",
+        description: err instanceof Error ? err.message : "Please try again",
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleVideoZap = async (post: VideoPost) => {
-    if (!pubkey) {
-      toast({
-        title: "Connect Required",
-        description: "Please connect your Nostr account first",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      setSendingZap(true);
-      setProcessingAction('zap');
-
-      await handleZap({
-        profile: post.profile,
-        amount: 1000,
-        comment: 'Zap for your Animal Sunset video!',
-        onSuccess: () => {
-          toast({
-            title: "Invoice copied!",
-            description: "Lightning invoice has been copied to your clipboard"
-          });
-        },
-        onError: (error) => {
-          toast({
-            variant: "destructive",
-            title: "Zap failed",
-            description: error
-          });
-        }
-      });
-    } finally {
-      setSendingZap(false);
-      setProcessingAction(null);
-    }
-  };
-
-  const handleComment = async () => {
-    if (!selectedPost || !newComment.trim() || !pubkey || !ndk) {
-      toast({
-        variant: "destructive",
-        title: "Cannot post comment",
-        description: "Please make sure you are connected to Nostr"
-      });
-      return;
-    }
-
-    if (isPublishing) {
-      return; // Prevent duplicate submissions
-    }
-
-    try {
-      setIsPublishing(true);
-      setProcessingAction('comment');
-      
-      const event = new NDKEvent(ndk);
-      event.kind = ANIMAL_KIND;
-      event.content = newComment;
-      event.tags = [['e', selectedPost.event.id, '', 'reply']];
-      
-      await event.publish();
-
-      setShowCommentModal(false);
-      setNewComment('');
-      setCommentParentId(null);
-      
-      await fetchPosts();
-
-      toast({
-        title: "Comment posted",
-        description: "Your comment has been published"
-      });
-    } catch (error) {
-      console.error('Error posting comment:', error);
-      toast({
-        variant: "destructive",
-        title: "Comment failed",
-        description: "Failed to post comment"
-      });
-    } finally {
       setIsPublishing(false);
-      setProcessingAction(null);
     }
   };
 
-  const handleShare = async (post: VideoPost) => {
-    if (!pubkey || !ndk) {
+  const handleVideoShare = async (generation: StoredGeneration) => {
+    if (!pubkey || !ndk || !generation.videoUrl) {
       toast({
         variant: "destructive",
         title: "Cannot share",
-        description: "Please make sure you are connected to Nostr"
+        description: "Please make sure you are connected and the video is ready"
       });
       return;
     }
 
-    if (isPublishing) {
-      return; // Prevent duplicate submissions
-    }
+    if (isPublishing) return;
 
     try {
       setIsPublishing(true);
       setProcessingAction('share');
       
-      const event = new NDKEvent(ndk);
-      event.kind = NOTE_KIND;
-      event.content = shareText || `Check out this Animal Sunset video!\n\n${
-        post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'
-      }\n#animalsunset`;
-      event.tags = [
-        ['t', 'animalsunset'],
-        ['r', post.event.content]
-      ];
-      
-      await event.publish();
+      await handleShare(
+        ndk,
+        `Generated with Animal Sunset:\n\n${generation.prompt}\n\n#animalsunset`,
+        generation.id,
+        'gallery'
+      );
 
-      setShowShareModal(false);
-      setShareText('');
-
+      setShowShareDialog(false);
       toast({
         title: "Shared successfully",
-        description: "Your note has been published to Nostr"
+        description: "Your video has been shared to the gallery"
       });
     } catch (error) {
       console.error('Error sharing:', error);
       toast({
         variant: "destructive",
         title: "Share failed",
-        description: "Failed to share to Nostr"
+        description: "Failed to share to gallery"
       });
     } finally {
       setIsPublishing(false);
@@ -380,42 +405,14 @@ export default function Gallery() {
     }
   };
 
-  const handleDownload = async (url: string, filename: string) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch video');
-      
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
-      
-      toast({
-        title: "Download started",
-        description: "Your video is being downloaded"
-      });
-    } catch (error) {
-      console.error('Download failed:', error);
-      toast({
-        variant: "destructive",
-        title: "Download failed",
-        description: "Please try again"
-      });
-    }
-  };
-
+  // Render login screen if not connected
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
         <div className="max-w-md w-full p-6 space-y-6">
-          <h1 className="text-3xl font-bold text-center">Animal Gallery 🌞🦒</h1>
+          <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to interact with the gallery</p>
+            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
             <button
               onClick={connect}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
@@ -428,262 +425,438 @@ export default function Gallery() {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center">
-        <div className="flex items-center space-x-2">
-          <RefreshCw className="animate-spin h-8 w-8 text-purple-500" />
-          <span className="text-lg">Loading gallery...</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-        <title>Gallery | Animal Sunset 🌞🦒</title>
-        <meta name="description" content="Discover AI-generated animal videos" />
+        <title>Animal Sunset 🌞🦒</title>
+        <link rel="icon" href="https://animalsunset.com/favicon.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
+        <meta property="og:title" content="Animal Sunset 🌞🦒" />
+        <meta property="og:description" content="AI-powered video generator." />
+        <meta property="og:image" content="https://animalsunset.com/og-image.png" />
+        <meta property="og:url" content="https://animalsunset.com" />
+        <meta property="og:type" content="website" />
       </Head>
 
-      {/* Header */}
-      <div className="bg-[#1a1a1a] p-4 border-b border-gray-800">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <Navigation />
-          {userProfile && (
-            <div className="flex items-center space-x-2">
-              <ProfileAvatar profile={userProfile} />
-              <span className="hidden md:inline">{userProfile.name || 'Anonymous'}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Animal Gallery</h1>
-          <button
-            onClick={fetchPosts}
-       className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
-            <RefreshCw size={16} />
-            <span>Refresh</span>
-          </button>
-        </div>
-
-        {error ? (
-          <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-            {error}
-          </div>
-        ) : posts.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            No videos found in the gallery yet.
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {posts.map(post => (
-              <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
-                <div className="p-4 flex items-center space-x-3">
-                  <ProfileAvatar profile={post.profile} size="lg" />
-                  <div>
-                    <div className="font-medium">
-                      {post.profile?.name || "Anonymous"}
-                    </div>
-                    <div className="text-sm text-gray-400">
-                      {new Date(post.event.created_at * 1000).toLocaleDateString()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="relative pt-[56.25%] bg-black">
-                  <video
-                    src={post.event.content}
-                    className="absolute top-0 left-0 w-full h-full object-contain"
-                    controls
-                    loop
-                    playsInline
-                  />
-                </div>
-
-                <div className="p-4 pb-2">
-                  <p className="text-lg font-medium">
-                    {post.event.tags?.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
-                  </p>
-                </div>
-
-                <div className="p-4 flex flex-wrap items-center gap-4">
-                  <button
-                    onClick={() => handleVideoZap(post)}
-                    disabled={sendingZap || processingAction === 'zap'}
-                    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {processingAction === 'zap' ? (
-                      <RefreshCw className="animate-spin h-5 w-5" />
-                    ) : (
-                      <Zap size={20} />
-                    )}
-                    <span>Zap</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedPost(post);
-                      setShowCommentModal(true);
-                    }}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                  >
-                    <MessageSquare size={20} />
-                    <span>{post.comments.length}</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedPost(post);
-                      setShareText(`Check out this Animal Sunset video!\n\n${post.event.tags?.find(tag => tag[0] === 'title')?.[1]}\n`);
-                      setShowShareModal(true);
-                    }}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                  >
-                    <Share2 size={20} />
-                    <span>Share</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleDownload(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
-                  >
-                    <Download size={20} />
-                    <span>Download</span>
-                  </button>
-                </div>
-
-                {post.comments.length > 0 && (
-                  <div className="border-t border-gray-800">
-                    <div className="p-4 space-y-4">
-                      {post.comments.map(comment => (
-                        <div key={comment.event.id} className="flex items-start space-x-3">
-                          <ProfileAvatar profile={comment.profile} size="sm" />
-                          <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
-                            <div className="font-medium text-gray-300 mb-1">
-                              {comment.profile?.name || "Anonymous"}
-                            </div>
-                            <div className="text-sm text-gray-200">
-                              {comment.event.content}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+      {/* Mobile Header */}
+      <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="text-white p-2 hover:bg-gray-700 rounded-lg"
+          aria-label="Toggle menu"
+        >
+          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+        <Navigation />
+        {profile && (
+        <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-gray-700 rounded-lg"
+              aria-label="Settings"
+            >
+              <Settings size={20} />
+            </button>
+            <ProfileAvatar profile={profile} size="sm" />
           </div>
         )}
       </div>
 
-      {/* Comment Modal */}
-      {showCommentModal && selectedPost && (
+      {/* Main Layout */}
+      <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
+        {/* Sidebar */}
+        <div 
+          className={`
+            fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
+            transition-transform duration-300 ease-in-out
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          `}
+        >
+          <div className="p-6 space-y-4 h-full overflow-y-auto">
+            <h2 className="text-2xl font-bold hidden md:block">Your Generations</h2>
+            {generations.length > 0 ? (
+              <ul className="space-y-2">
+                {generations.map((generation) => (
+                  <li
+                    key={generation.id}
+                    className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
+                      selectedGeneration?.id === generation.id
+                        ? 'bg-purple-700'
+                        : 'hover:bg-gray-700'
+                    }`}
+                    onClick={() => setSelectedGeneration(generation)}
+                  >
+                    <div className="text-sm font-medium">{generation.prompt}</div>
+                    <div className="text-xs text-gray-400">
+                      {new Date(generation.createdAt).toLocaleDateString()}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-400">No generations yet.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Overlay */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col w-full md:w-auto">
+          {/* Desktop Header */}
+          <div className="hidden md:flex bg-[#1a1a1a] p-4 items-center justify-between border-b border-gray-800">
+            <Navigation />
+            {profile && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 hover:bg-gray-700 rounded-lg"
+                  aria-label="Settings"
+                >
+                  <Settings size={20} />
+                </button>
+                <ProfileAvatar profile={profile} />
+                <span>{profile.name || 'Anonymous'}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Content Area */}
+          <div className="flex-1 overflow-auto p-4">
+            {selectedGeneration ? (
+              <div className="max-w-4xl mx-auto">
+                <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
+                  {/* Generation Details */}
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <h2 className="text-lg md:text-xl font-bold break-words">
+                        {selectedGeneration.prompt}
+                      </h2>
+                      <div className="text-sm text-gray-400">
+                        {new Date(selectedGeneration.createdAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedGeneration(null)}
+                      className="text-gray-400 hover:text-white p-2"
+                      aria-label="Close"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Video Display */}
+                  <div className="border-t border-gray-800 pt-4">
+                    {selectedGeneration.videoUrl ? (
+                      <div className="space-y-4">
+                        <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden">
+                          <video
+                            key={selectedGeneration.videoUrl}
+                            className="absolute top-0 left-0 w-full h-full object-contain"
+                            controls
+                            autoPlay
+                            loop
+                            playsInline
+                            src={selectedGeneration.videoUrl}
+                          />
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleVideoShare(selectedGeneration)}
+                            disabled={processingAction === 'share'}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                          >
+                            {processingAction === 'share' ? (
+                              <>
+                                <RefreshCw className="animate-spin h-4 w-4" />
+                                <span>Sharing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Share2 size={16} />
+                                <span>Share to Gallery</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSelectedVideoId(selectedGeneration.id);
+                              setIsExtending(true);
+                              setSelectedGeneration(null);
+                            }}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                          >
+                            <RefreshCw size={16} />
+                            <span>Extend</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="relative h-48 md:h-64 bg-[#2a2a2a] rounded-lg overflow-hidden">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="space-y-4 text-center">
+                              <div className="inline-flex items-center space-x-2">
+                                <RefreshCw className="animate-spin h-6 w-6 text-purple-500" />
+                                <span className="text-purple-400 font-medium">
+                                  {selectedGeneration.state === 'failed' ? 'Generation failed' : 'Generating...'}
+                                </span>
+                              </div>
+                              {selectedGeneration.state !== 'failed' && (
+                                <div className="text-sm text-gray-400">
+                                  This usually takes 1-2 minutes
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-3xl mx-auto">
+                <form onSubmit={generateVideo} className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
+                  <textarea
+                    id="prompt-input"
+                    name="prompt"
+                    className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+                    rows={4}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Describe your video idea..."
+                    disabled={loading}
+                  />
+
+                  {/* Video Options */}
+                  <div className="space-y-4">
+                    {/* Loop Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Loop Video</label>
+                      <Switch
+                        checked={isLooping}
+                        onCheckedChange={setIsLooping}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Extend Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => { 
+                          setIsExtending(checked); 
+                          if (checked) setStartImageUrl(null);
+                        }}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Conditional Content */}
+                    {isExtending ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">
+                          Select Video to Extend
+                        </label>
+                        <select
+                          className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                          value={selectedVideoId || ''}
+                          onChange={(e) => setSelectedVideoId(e.target.value)}
+                          disabled={loading}
+                        >
+                          <option value="">Select a video...</option>
+                          {generations
+                            .filter(g => g.state === 'completed')
+                            .map((gen) => (
+                              <option key={gen.id} value={gen.id}>
+                                {gen.prompt}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Start Image (Optional)
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <label className="flex-1">
+                            <div className={`
+                              flex items-center justify-center w-full h-32 
+                              border-2 border-dashed border-gray-700 rounded-lg 
+                              cursor-pointer hover:border-purple-500
+                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                            `}>
+                              {startImageUrl ? (
+                                <div className="relative w-full h-full">
+                                  <img
+                                    src={startImageUrl}
+                                    alt="Start frame"
+                                    className="w-full h-full object-cover rounded-lg"
+                                  />
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      setStartImageUrl(null);
+                                    }}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <Upload size={24} className="text-gray-500" />
+                                  <span className="mt-2 text-sm text-gray-500">
+                                    {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleImageUpload(file);
+                              }}
+                              className="hidden"
+                              disabled={loading}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
+                      className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
+                    >
+                      {loading ? (
+                        <span className="flex items-center space-x-2">
+                          <RefreshCw className="animate-spin h-5 w-5" />
+                          <span>Generating...</span>
+                        </span>
+                      ) : (
+                        'Generate Video'
+                      )}
+                    </button>
+                  </div>
+
+                  {error && (
+                    <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
+                      <p className="font-medium">Error</p>
+                      <p className="text-sm">{error}</p>
+                    </div>
+                  )}
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Payment Modal */}
+      {paymentRequest && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
+          <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-sm w-full">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Add Comment</h2>
+              <h2 className="text-xl font-bold">Pay to Generate Video</h2>
               <button
-                onClick={() => setShowCommentModal(false)}
+                onClick={() => {
+                  setPaymentRequest(null);
+                  setPaymentHash(null);
+                  setLoading(false);
+                }}
                 className="text-gray-400 hover:text-white"
+                aria-label="Close"
               >
                 <X size={20} />
               </button>
             </div>
+            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
             
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Write your comment..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowCommentModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleComment}
-                disabled={!newComment.trim() || processingAction === 'comment'}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
-              >
-                {processingAction === 'comment' ? (
-                  <>
-                    <RefreshCw className="animate-spin h-4 w-4" />
-                    <span>Posting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send size={16} />
-                    <span>Post Comment</span>
-                  </>
-                )}
-              </button>
+            <div className="flex justify-center p-4 bg-white rounded-lg">
+              <QRCode 
+                value={paymentRequest} 
+                size={Math.min(window.innerWidth - 80, 256)}
+                level="H"
+                includeMargin={true}
+              />
             </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
+                <input
+                  type="text"
+                  value={paymentRequest}
+                  readOnly
+                  className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
+                />
+                <button
+                  onClick={handleCopyInvoice}
+                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+                >
+                  {hasCopied ? <Check size={16} /> : <Copy size={16} />}
+                  {hasCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
+                Waiting for payment confirmation...
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setPaymentRequest(null);
+                setPaymentHash(null);
+                setLoading(false);
+              }}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
-      {/* Share Modal */}
-      {showShareModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Share Video</h2>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={shareText}
-              onChange={(e) => setShareText(e.target.value)}
-              placeholder="Add a message..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleShare(selectedPost)}
-                disabled={processingAction === 'share'}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
-              >
-                {processingAction === 'share' ? (
-                  <>
-                    <RefreshCw className="animate-spin h-4 w-4" />
-                    <span>Sharing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe size={16} />
-                    <span>Share to Nostr</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Share Dialog */}
+      {showShareDialog && selectedGeneration && (
+        <ShareDialog
+          isOpen={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          videoUrl={selectedGeneration.videoUrl!}
+          prompt={selectedGeneration.prompt}
+          isPublic={userSettings.publicGenerations}
+        />
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        pubkey={pubkey}
+        onSettingsChange={setUserSettings}
+      />
     </div>
   );
 }
+
+export default Home;
