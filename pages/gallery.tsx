@@ -13,12 +13,13 @@ import {
   Share2, 
   AlertCircle 
 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { ShareDialog } from '../components/ShareDialog';
-import { ProfileAvatar } from '../components/ProfileAvatar';
+import  ProfileAvatar  from '../components/ProfileAvatar';
 import { useNostr } from '../contexts/NostrContext';
 import { handleShare } from '../utils/nostr';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
