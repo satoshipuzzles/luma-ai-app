@@ -1,16 +1,3 @@
-// lib/nostr.ts
-
-export {};
-
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent(event: any): Promise<any>; // Return type adjusted to Promise<any>
-    };
-  }
-}
-
 import { SimplePool } from 'nostr-tools/pool';
 import { getEventHash, validateEvent } from 'nostr-tools/pure';
 import { Event } from 'nostr-tools/event';
@@ -21,7 +8,6 @@ export const BACKUP_RELAYS = ['wss://relay.nostrfreaks.com'];
 
 const pool = new SimplePool();
 
-// Create a new interface where 'id' is required
 interface SignedEvent extends Event {
   id: string;
 }
@@ -36,7 +22,6 @@ export async function publishToRelays(
     throw new Error('Nostr extension not found');
   }
 
-  // Include the pubkey in the event before hashing and signing
   const pubkey = await window.nostr.getPublicKey();
   const finalEvent: Event = {
     ...event,
@@ -45,7 +30,6 @@ export async function publishToRelays(
   };
 
   finalEvent.id = getEventHash(finalEvent);
-  // Cast the result to 'SignedEvent'
   const signedEvent = (await window.nostr.signEvent(finalEvent)) as SignedEvent;
 
   if (!validateEvent(signedEvent)) {
@@ -53,14 +37,11 @@ export async function publishToRelays(
   }
 
   try {
-    // Publish to all relays simultaneously
     const pubs: Pub[] = pool.publish(relays, signedEvent);
 
-    // Create an array of promises that resolve when each pub confirms publication
     const publishPromises: Promise<void>[] = pubs.map((pub) => {
       return new Promise<void>((resolve, reject) => {
         if (!pub) {
-          // Handle the case where pub is null
           reject(new Error('Failed to publish to relay'));
           return;
         }
@@ -69,10 +50,8 @@ export async function publishToRelays(
       });
     });
 
-    // Wait until the event is published to at least one relay
     await Promise.any(publishPromises);
 
-    // Return the signed event
     return signedEvent;
   } catch (error) {
     console.error('Failed to publish event:', error);
@@ -85,7 +64,6 @@ export async function publishVideo(
   prompt: string,
   isPublic: boolean
 ): Promise<void> {
-  // Animal Kind Event (75757)
   const animalEvent: UnsignedEvent = {
     kind: 75757,
     tags: [
@@ -96,10 +74,8 @@ export async function publishVideo(
     content: videoUrl,
   };
 
-  // Get the signed event, which includes the 'id'
   const signedAnimalEvent = await publishToRelays(animalEvent);
 
-  // Now you can access the 'id' property without TypeScript errors
   const historyEvent: UnsignedEvent = {
     kind: 8008135,
     tags: [
@@ -123,17 +99,13 @@ export async function publishVideo(
 export async function fetchLightningDetails(
   pubkey: string
 ): Promise<{ lnurl?: string; lud16?: string } | null> {
-  const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
-
-  const profileEvent = events[0];
-  if (!profileEvent) return null;
-
   try {
+    const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
+    const profileEvent = events[0];
+    if (!profileEvent) return null;
+
     const profile = JSON.parse(profileEvent.content);
-    return {
-      lnurl: profile.lud06,
-      lud16: profile.lud16,
-    };
+    return { lnurl: profile.lud06, lud16: profile.lud16 };
   } catch (error) {
     console.error('Error parsing profile:', error);
     return null;
@@ -146,12 +118,10 @@ export async function createZapInvoice(
   comment?: string
 ): Promise<string> {
   const [username, domain] = lnAddress.split('@');
-
   if (!username || !domain) {
     throw new Error('Invalid LN address format');
   }
 
-  // Fetch LNURL pay endpoint
   const response = await fetch(`https://${domain}/.well-known/lnurlp/${username}`);
   const { callback, maxSendable, minSendable } = await response.json();
 
@@ -159,7 +129,6 @@ export async function createZapInvoice(
     throw new Error('Amount out of bounds');
   }
 
-  // Get payment request
   const callbackResponse = await fetch(
     `${callback}?amount=${amount}&comment=${encodeURIComponent(comment || '')}`
   );
@@ -182,10 +151,7 @@ export async function publishComment(
   await publishToRelays(event);
 }
 
-export async function shareToNostr(
-  content: string,
-  videoUrl: string
-): Promise<void> {
+export async function shareToNostr(content: string, videoUrl: string): Promise<void> {
   const event: UnsignedEvent = {
     kind: 1,
     tags: [
@@ -197,12 +163,16 @@ export async function shareToNostr(
 
   await publishToRelays(event);
 }
+
 export async function fetchProfile(pubkey: string): Promise<Event | null> {
   const events = await pool.list([DEFAULT_RELAY], [{ kinds: [0], authors: [pubkey] }]);
   return events.length > 0 ? events[0] : null;
 }
 
-// Helper function to fetch multiple events
 export async function fetchEvents(filter: any): Promise<Event[]> {
   return await pool.list([DEFAULT_RELAY], [filter]);
+}
+
+export function formatPubkey(pubkey: string): string {
+  return `${pubkey.slice(0, 6)}...${pubkey.slice(-6)}`;
 }
