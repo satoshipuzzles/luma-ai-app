@@ -651,13 +651,4 @@ export default function Gallery() {
         />
       )}
     }
-    ```
-
-## **Key Changes Explained**
-
-1. **Importing `fetchEvents` and Other Necessary Functions:**
-
-   Ensure that you import `fetchEvents`, `publishVideo`, `shareToNostr`, and `publishComment` from your `lib/nostr.ts`:
-
-   ```typescript
-   import { publishVideo, shareToNostr, fetchEvents, publishComment } from '../lib/nostr';
+  
