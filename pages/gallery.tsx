@@ -4,7 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { AnimalKind } from '../types/nostr';
 import { fetchProfile, formatPubkey } from '../lib/nostr';
-import { getLightningAddress } from '../lib/nostr';
+import { fetchProfile, formatPubkey, fetchLightningAddress } from '../lib/nostr';
 import { Download, MessageSquare, Zap, X, Share2, RefreshCw, Check, Copy } from 'lucide-react';
 import QRCode from 'qrcode.react';
 
