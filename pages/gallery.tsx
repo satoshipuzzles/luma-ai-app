@@ -48,7 +48,7 @@ const saveGeneration = (generation: StoredGeneration) => {
   localStorage.setItem('generations', JSON.stringify(generations));
 };
 
-export default function Home() {
+export default function Gallery() {
   const { pubkey, profile, ndk, connect } = useNostr();
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
