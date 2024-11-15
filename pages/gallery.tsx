@@ -69,7 +69,8 @@ export default function Gallery() {
     const initializeNDK = async () => {
       try {
         await ndk.connect(); // Establish connection to relays
-        // You can subscribe to events or perform other initializations here
+        // Optionally, specify relay URLs:
+        // await ndk.connect({ relayUrls: ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'] });
       } catch (err) {
         console.error('Error initializing NDK:', err);
         toast.error('Failed to initialize NDK.');
@@ -127,7 +128,7 @@ export default function Gallery() {
     ];
 
     try {
-      const events = await ndk.relayPool.getEvents(filters);
+      const events = await ndk.events.fetch(filters); // Corrected method
       if (events.length === 0) return null;
 
       const profileData = JSON.parse(events[0].content);
@@ -154,7 +155,7 @@ export default function Gallery() {
     ];
 
     try {
-      const events = await ndk.relayPool.getEvents(filters);
+      const events = await ndk.events.fetch(filters); // Corrected method
       return events as AnimalKind[];
     } catch (error) {
       console.error('Error fetching animal videos:', error);
@@ -222,7 +223,7 @@ export default function Gallery() {
     ];
 
     try {
-      const events = await ndk.relayPool.getEvents(filters);
+      const events = await ndk.events.fetch(filters); // Corrected method
       return events;
     } catch (error) {
       console.error('Error fetching comments:', error);
