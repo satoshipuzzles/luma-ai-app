@@ -24,7 +24,7 @@
     "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-toastify": "^9.1.1", // Newly added
+    "react-toastify": "^9.1.1", 
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "^3.3.0",
     "ws": "^8.15.1",
