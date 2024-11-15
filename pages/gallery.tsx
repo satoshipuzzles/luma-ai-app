@@ -16,7 +16,7 @@ import {
   Copy,
 } from 'lucide-react';
 import QRCode from 'qrcode.react';
-import { NDK } from '@nostr-dev-kit/ndk';
+import NDK from '@nostr-dev-kit/ndk'; // Corrected import
 
 // TypeScript Interfaces
 interface AnimalKind extends Event {
@@ -68,8 +68,11 @@ export default function Gallery() {
   useEffect(() => {
     const initializeNDK = async () => {
       try {
-        await ndk.init();
-        // Optionally, configure relays or other settings here
+        await ndk.init({
+          // You can specify relays here or use defaults
+          relayUrls: ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
+        });
+        // You can subscribe to events or perform other initializations here
       } catch (err) {
         console.error('Error initializing NDK:', err);
         toast.error('Failed to initialize NDK.');
@@ -77,7 +80,7 @@ export default function Gallery() {
     };
 
     initializeNDK();
-  }, []);
+  }, [ndk]);
 
   // Placeholder for user pubkey; replace with actual authentication logic
   const userPubkey = 'USER_PUBKEY_HERE';
@@ -126,10 +129,10 @@ export default function Gallery() {
       },
     ];
 
-    const events = await ndk.fetchEvents(filters);
-    if (events.length === 0) return null;
-
     try {
+      const events = await ndk.relayPool.getEvents(filters);
+      if (events.length === 0) return null;
+
       const profileData = JSON.parse(events[0].content);
       return {
         name: profileData.name,
@@ -139,7 +142,7 @@ export default function Gallery() {
         lud16: profileData.lud16,
       };
     } catch (error) {
-      console.error('Error parsing profile:', error);
+      console.error('Error fetching profile:', error);
       return null;
     }
   };
@@ -153,8 +156,13 @@ export default function Gallery() {
       },
     ];
 
-    const events = await ndk.fetchEvents(filters);
-    return events as AnimalKind[];
+    try {
+      const events = await ndk.relayPool.getEvents(filters);
+      return events as AnimalKind[];
+    } catch (error) {
+      console.error('Error fetching animal videos:', error);
+      return [];
+    }
   };
 
   // Function to Process Video Posts
@@ -216,8 +224,13 @@ export default function Gallery() {
       },
     ];
 
-    const events = await ndk.fetchEvents(filters);
-    return events;
+    try {
+      const events = await ndk.relayPool.getEvents(filters);
+      return events;
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+      return [];
+    }
   };
 
   // Handle Refresh Gallery
