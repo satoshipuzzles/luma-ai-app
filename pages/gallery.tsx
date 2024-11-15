@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode.react';
 
-// Define TypeScript interfaces
+// TypeScript Interfaces
 interface AnimalKind extends Event {
   kind: 75757;
   content: string; // Video URL
@@ -27,6 +27,8 @@ interface Profile {
   name?: string;
   picture?: string;
   about?: string;
+  lud06?: string;
+  lud16?: string;
 }
 
 interface VideoPost {
@@ -121,6 +123,8 @@ export default function Gallery() {
         name: profileData.name,
         picture: profileData.picture,
         about: profileData.about,
+        lud06: profileData.lud06,
+        lud16: profileData.lud16,
       };
     } catch (error) {
       console.error('Error parsing profile:', error);
@@ -160,7 +164,9 @@ export default function Gallery() {
     });
 
     // Fetch profiles
-    const uniquePubkeys = Array.from(new Set(events.map((event) => event.pubkey)));
+    const uniquePubkeys = Array.from(
+      new Set(events.map((event) => event.pubkey))
+    );
     const profilePromises = uniquePubkeys.map((pubkey) => fetchProfile(pubkey));
     const profiles = await Promise.all(profilePromises);
 
@@ -179,7 +185,33 @@ export default function Gallery() {
       }
     });
 
+    // Fetch comments for each post
+    const commentPromises = Array.from(postsMap.values()).map(
+      async (post) => {
+        const comments = await fetchComments(post.event.id);
+        post.comments = comments;
+      }
+    );
+    await Promise.all(commentPromises);
+
     return Array.from(postsMap.values());
+  };
+
+  // Function to Fetch Comments
+  const fetchComments = async (parentId: string): Promise<Event[]> => {
+    const filters: Filter[] = [
+      {
+        kinds: [1], // Assuming kind 1 is for comments
+        '#e': [parentId],
+        limit: 50,
+      },
+    ];
+
+    const events = await pool.list(
+      ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
+      filters
+    );
+    return events;
   };
 
   // Handle Refresh Gallery
@@ -208,14 +240,18 @@ export default function Gallery() {
         return;
       }
 
-      // Implement Lightning wallet zap using the connected wallet
-      // This is a complete implementation using LNURL-pay
+      // Retrieve the author's LNURL-pay endpoint
+      const lnurlPay = post.profile?.lud16 || post.profile?.lud06;
+      if (!lnurlPay) {
+        toast.error('Author has not set up LNURL-pay.');
+        return;
+      }
 
       // Generate LNURL-pay link (Assuming the author has set up an LNURL-pay)
-      const lnurlPay = `https://your-lnurl-pay-endpoint.com/pay?pubkey=${post.event.pubkey}`;
+      const lnurl = `lightning:${lnurlPay}`;
 
       // Redirect user to their Lightning wallet with the LNURL-pay link
-      window.location.href = `lightning:${lnurlPay}`;
+      window.location.href = lnurl;
       toast.success('Redirecting to your Lightning wallet for Zap.');
     } catch (err) {
       toast.error('Failed to send Zap.');
@@ -332,8 +368,17 @@ export default function Gallery() {
       setShowCommentModal(false);
       setNewComment('');
 
-      // Optionally, refresh posts to show new comment
-      handleRefresh();
+      // Refresh comments for the selected post
+      const updatedPosts = posts.map((post) => {
+        if (post.event.id === selectedPost.event.id) {
+          return {
+            ...post,
+            comments: [...post.comments, signedComment],
+          };
+        }
+        return post;
+      });
+      setPosts(updatedPosts);
     } catch (err) {
       toast.error('Failed to post comment.');
       console.error(err);
@@ -381,8 +426,8 @@ export default function Gallery() {
         return;
       }
 
-      const wallet = await window.nostr.getPublicKey();
-      setLightningWallet(wallet);
+      const pubkey = await window.nostr.getPublicKey();
+      setLightningWallet(pubkey);
       toast.success('Lightning wallet connected successfully!');
     } catch (err) {
       toast.error('Failed to connect Lightning wallet.');
@@ -794,7 +839,7 @@ export default function Gallery() {
               )}
             </div>
 
-            {/* Additional Settings Can Be Added Here */}
+            {/* Profile Information */}
             <div>
               <h3 className="text-lg font-semibold">Profile</h3>
               <p className="text-gray-300">
