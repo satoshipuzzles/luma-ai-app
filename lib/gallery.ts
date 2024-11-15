@@ -76,9 +76,20 @@ export const processVideoPosts = async (events: AnimalKind[]): Promise<VideoPost
   // Fetch profiles for all unique pubkeys in parallel
   const uniquePubkeys = Array.from(new Set(uniqueEvents.map(event => event.pubkey)));
   const profilePromises = uniquePubkeys.map(async (pubkey) => {
-    const profile = await fetchProfile(pubkey);
-    if (profile) {
-      return { pubkey, profile };
+    const profileEvent = await fetchProfile(pubkey);
+    if (profileEvent) {
+      try {
+        const profileContent = JSON.parse(profileEvent.content);
+        const profile: Profile = {
+          name: profileContent.name,
+          picture: profileContent.picture,
+          about: profileContent.about,
+        };
+        return { pubkey, profile };
+      } catch (error) {
+        console.error(`Error parsing profile for pubkey ${pubkey}:`, error);
+        return { pubkey, profile: undefined };
+      }
     }
     return { pubkey, profile: undefined };
   });
