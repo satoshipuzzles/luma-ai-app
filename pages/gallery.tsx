@@ -43,6 +43,7 @@ interface ZapInvoice {
 }
 
 export default function Gallery() {
+
   // State Variables
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
