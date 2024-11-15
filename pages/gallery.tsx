@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode.react';
 import SettingsModal from '../components/SettingsModal'; // Ensure you have this component
+import { fetchProfile } from '../lib/nostr'; // Ensure correct import
 
 interface Profile {
   name?: string;
@@ -50,7 +51,6 @@ export default function Gallery() {
     const loadCurrentUserProfile = async () => {
       if (currentUserPubkey) {
         try {
-          const { fetchProfile } = await import('../lib/nostr');
           const profileEvent = await fetchProfile(currentUserPubkey);
           if (profileEvent) {
             const profileContent = JSON.parse(profileEvent.content);
@@ -106,7 +106,6 @@ export default function Gallery() {
   const handleZap = async (post: VideoPost) => {
     setSendingZap(true);
     try {
-      const { fetchLightningAddress } = await import('../lib/nostr');
       const lnAddress = await fetchLightningAddress(post.event.pubkey);
       if (!lnAddress) {
         throw new Error('No Lightning Address found for this user');
