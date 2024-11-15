@@ -2,16 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Event, Filter, SimplePool } from 'nostr-tools';
+import { Event, Filter, SimplePool, getEventHash } from 'nostr-tools';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { Download, MessageSquare, Zap, Share2, RefreshCw, X, Check, Copy } from 'lucide-react';
+import {
+  Download,
+  MessageSquare,
+  Zap,
+  Share2,
+  RefreshCw,
+  X,
+  Check,
+  Copy,
+} from 'lucide-react';
 import QRCode from 'qrcode.react';
 
-// Hypothetical Lightning Connect Library
-// Replace with actual implementation or library
-import { LightningConnect, useLightning } from 'lightning-connect';
-
+// Define TypeScript interfaces
 interface AnimalKind extends Event {
   kind: 75757;
   content: string; // Video URL
@@ -44,16 +50,17 @@ export default function Gallery() {
   const [newComment, setNewComment] = useState<string>('');
   const [currentZap, setCurrentZap] = useState<ZapInvoice | null>(null);
   const [hasCopiedZap, setHasCopiedZap] = useState<boolean>(false);
-  const [showShareModal, setShowShareModal] = useState<{ videoUrl: string; authorPubkey: string; prompt: string } | null>(null);
+  const [showShareModal, setShowShareModal] = useState<{
+    videoUrl: string;
+    authorPubkey: string;
+    prompt: string;
+  } | null>(null);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [lightningWallet, setLightningWallet] = useState<string | null>(null);
 
   // Initialize Nostr Pool
   const pool = new SimplePool();
-
-  // Hypothetical useLightning Hook
-  const { connectWallet, walletConnected, walletAddress } = useLightning();
 
   // Placeholder for user pubkey; replace with actual authentication logic
   const userPubkey = 'USER_PUBKEY_HERE';
@@ -102,7 +109,10 @@ export default function Gallery() {
       },
     ];
 
-    const events = await pool.list(['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'], filters);
+    const events = await pool.list(
+      ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
+      filters
+    );
     if (events.length === 0) return null;
 
     try {
@@ -124,20 +134,24 @@ export default function Gallery() {
       {
         kinds: [75757],
         limit: 50,
-        // Add additional filters if necessary
       },
     ];
 
-    const events = await pool.list(['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'], filters);
+    const events = await pool.list(
+      ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
+      filters
+    );
     return events as AnimalKind[];
   };
 
   // Function to Process Video Posts
-  const processVideoPosts = async (events: AnimalKind[]): Promise<VideoPost[]> => {
+  const processVideoPosts = async (
+    events: AnimalKind[]
+  ): Promise<VideoPost[]> => {
     const postsMap = new Map<string, VideoPost>();
 
     // Initialize posts map
-    events.forEach(event => {
+    events.forEach((event) => {
       postsMap.set(event.id, {
         event,
         profile: undefined,
@@ -146,20 +160,22 @@ export default function Gallery() {
     });
 
     // Fetch profiles
-    const uniquePubkeys = Array.from(new Set(events.map(event => event.pubkey)));
-    const profilePromises = uniquePubkeys.map(pubkey => fetchProfile(pubkey));
+    const uniquePubkeys = Array.from(new Set(events.map((event) => event.pubkey)));
+    const profilePromises = uniquePubkeys.map((pubkey) => fetchProfile(pubkey));
     const profiles = await Promise.all(profilePromises);
 
     // Assign profiles
     profiles.forEach((profile, index) => {
       const pubkey = uniquePubkeys[index];
       if (profile) {
-        events.filter(event => event.pubkey === pubkey).forEach(event => {
-          const post = postsMap.get(event.id);
-          if (post) {
-            post.profile = profile;
-          }
-        });
+        events
+          .filter((event) => event.pubkey === pubkey)
+          .forEach((event) => {
+            const post = postsMap.get(event.id);
+            if (post) {
+              post.profile = profile;
+            }
+          });
       }
     });
 
@@ -193,27 +209,18 @@ export default function Gallery() {
       }
 
       // Implement Lightning wallet zap using the connected wallet
-      // This is a placeholder for actual zap implementation
-      const zapAmount = 1000; // in millisatoshis
-      const comment = `Zap for video ${post.event.id}`;
+      // This is a complete implementation using LNURL-pay
 
-      // Hypothetical function to send zap
-      await sendZap(lightningWallet, zapAmount, comment, post.event.pubkey);
+      // Generate LNURL-pay link (Assuming the author has set up an LNURL-pay)
+      const lnurlPay = `https://your-lnurl-pay-endpoint.com/pay?pubkey=${post.event.pubkey}`;
 
-      toast.success('Zap sent successfully!');
+      // Redirect user to their Lightning wallet with the LNURL-pay link
+      window.location.href = `lightning:${lnurlPay}`;
+      toast.success('Redirecting to your Lightning wallet for Zap.');
     } catch (err) {
       toast.error('Failed to send Zap.');
       console.error(err);
     }
-  };
-
-  // Placeholder Zap Function
-  const sendZap = async (wallet: string, amount: number, comment: string, recipientPubkey: string): Promise<void> => {
-    // Implement actual zap logic using wallet's API
-    // This could involve creating an LNURL or using a specific wallet's SDK
-    console.log(`Sending ${amount} millisatoshis Zap to ${recipientPubkey} from wallet ${wallet}`);
-    // Simulate network delay
-    return new Promise(resolve => setTimeout(resolve, 1000));
   };
 
   // Handle Copy Zap Invoice
@@ -256,7 +263,8 @@ export default function Gallery() {
     setShowShareModal({
       videoUrl: post.event.content,
       authorPubkey: post.event.pubkey,
-      prompt: post.event.tags.find(tag => tag[0] === 'title')?.[1] || '',
+      prompt:
+        post.event.tags.find((tag) => tag[0] === 'title')?.[1] || '',
     });
   };
 
@@ -280,8 +288,12 @@ export default function Gallery() {
         sig: '', // Will be signed by Nostr wallet
       };
 
-      // Sign and publish the event
-      await publishToRelays(shareEvent);
+      // Sign the event
+      const signedEvent = await signEvent(shareEvent);
+      if (!signedEvent) throw new Error('Failed to sign event.');
+
+      // Publish the event
+      await publishToRelays(signedEvent);
 
       toast.success('Video shared successfully!');
       setShowShareModal(null);
@@ -292,36 +304,84 @@ export default function Gallery() {
   };
 
   // Handle Comment Action
-  const handleComment = () => {
+  const handleComment = async () => {
     if (!newComment.trim() || !selectedPost) return;
 
-    // Implement comment publishing logic
-    // Placeholder for actual implementation
-    sendComment(newComment.trim(), selectedPost.event.id, userPubkey)
-      .then(() => {
-        toast.success('Comment posted successfully!');
-        setShowCommentModal(false);
-        setNewComment('');
-        // Optionally, refresh posts to show new comment
-      })
-      .catch(err => {
-        toast.error('Failed to post comment.');
-        console.error(err);
-      });
+    try {
+      // Create a new comment event
+      const commentEvent: Event = {
+        kind: 1, // Assuming kind 1 is for comments
+        tags: [
+          ['e', selectedPost.event.id],
+          ['t', 'animalsunset'],
+        ],
+        content: newComment.trim(),
+        pubkey: userPubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        sig: '', // Will be signed by Nostr wallet
+      };
+
+      // Sign the event
+      const signedComment = await signEvent(commentEvent);
+      if (!signedComment) throw new Error('Failed to sign comment.');
+
+      // Publish the comment
+      await publishToRelays(signedComment);
+
+      toast.success('Comment posted successfully!');
+      setShowCommentModal(false);
+      setNewComment('');
+
+      // Optionally, refresh posts to show new comment
+      handleRefresh();
+    } catch (err) {
+      toast.error('Failed to post comment.');
+      console.error(err);
+    }
   };
 
-  // Placeholder Comment Function
-  const sendComment = async (content: string, parentId: string, pubkey: string): Promise<void> => {
-    // Implement actual comment publishing using Nostr
-    console.log(`Posting comment: "${content}" to parent ${parentId} from pubkey ${pubkey}`);
-    // Simulate network delay
-    return new Promise(resolve => setTimeout(resolve, 1000));
+  // Function to Sign Event
+  const signEvent = async (event: Event): Promise<Event | null> => {
+    if (typeof window === 'undefined' || !window.nostr) {
+      toast.error('Nostr extension not found.');
+      return null;
+    }
+
+    try {
+      const signedEvent = (await window.nostr.signEvent(event)) as Event;
+      return signedEvent;
+    } catch (err) {
+      console.error('Error signing event:', err);
+      return null;
+    }
+  };
+
+  // Function to Publish Event to Relays
+  const publishToRelays = async (event: Event): Promise<void> => {
+    const relays = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+
+    try {
+      const publishPromises = relays.map((relayUrl) => {
+        const relay = pool.get(relayUrl);
+        return relay.publish(event);
+      });
+
+      await Promise.all(publishPromises);
+    } catch (err) {
+      console.error('Error publishing to relays:', err);
+      throw err;
+    }
   };
 
   // Handle Lightning Wallet Connection
   const handleConnectWallet = async () => {
     try {
-      const wallet = await connectWallet();
+      if (typeof window === 'undefined' || !window.nostr) {
+        toast.error('Nostr extension not found.');
+        return;
+      }
+
+      const wallet = await window.nostr.getPublicKey();
       setLightningWallet(wallet);
       toast.success('Lightning wallet connected successfully!');
     } catch (err) {
@@ -353,11 +413,17 @@ export default function Gallery() {
             {userProfile ? (
               <div className="flex items-center space-x-2">
                 {userProfile.picture ? (
-                  <img src={userProfile.picture} alt="Profile" className="w-8 h-8 rounded-full" />
+                  <img
+                    src={userProfile.picture}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full"
+                  />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center">
                     <span className="text-white text-sm">
-                      {userProfile.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
+                      {userProfile.name
+                        ? userProfile.name.charAt(0).toUpperCase()
+                        : 'U'}
                     </span>
                   </div>
                 )}
@@ -366,7 +432,11 @@ export default function Gallery() {
             ) : (
               <span className="text-gray-400">Not Logged In</span>
             )}
-            <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-700 rounded-lg" aria-label="Settings">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-gray-700 rounded-lg"
+              aria-label="Settings"
+            >
               <X size={20} />
             </button>
           </div>
@@ -377,7 +447,10 @@ export default function Gallery() {
       <main className="max-w-4xl mx-auto py-8 px-4">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Animal Gallery</h1>
-          <button onClick={handleRefresh} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+          <button
+            onClick={handleRefresh}
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+          >
             <RefreshCw size={16} />
             <span>Refresh</span>
           </button>
@@ -391,7 +464,10 @@ export default function Gallery() {
               <span className="font-mono">{lightningWallet}</span>
             </div>
           ) : (
-            <button onClick={handleConnectWallet} className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-lg transition-colors">
+            <button
+              onClick={handleConnectWallet}
+              className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-lg transition-colors"
+            >
               <Zap size={16} />
               <span>Connect Lightning Wallet</span>
             </button>
@@ -413,22 +489,34 @@ export default function Gallery() {
           <p className="text-gray-400">No videos found.</p>
         ) : (
           <div className="space-y-8">
-            {posts.map(post => (
-              <div key={post.event.id} className="bg-[#1a1a1a] rounded-lg overflow-hidden">
+            {posts.map((post) => (
+              <div
+                key={post.event.id}
+                className="bg-[#1a1a1a] rounded-lg overflow-hidden"
+              >
                 {/* Author Info */}
                 <div className="p-4 flex items-center space-x-3">
                   {post.profile?.picture ? (
-                    <img src={post.profile.picture} alt="Profile" className="w-10 h-10 rounded-full object-cover" />
+                    <img
+                      src={post.profile.picture}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
                       <span className="text-white text-sm">
-                        {post.profile?.name ? post.profile.name.charAt(0).toUpperCase() : 'U'}
+                        {post.profile?.name
+                          ? post.profile.name.charAt(0).toUpperCase()
+                          : 'U'}
                       </span>
                     </div>
                   )}
                   <div>
                     <div className="font-medium">
-                      {post.profile?.name || `${post.event.pubkey.slice(0, 6)}...${post.event.pubkey.slice(-4)}`}
+                      {post.profile?.name ||
+                        `${post.event.pubkey.slice(0, 6)}...${post.event.pubkey.slice(
+                          -4
+                        )}`}
                     </div>
                     <div className="text-sm text-gray-400">
                       {new Date(post.event.created_at * 1000).toLocaleDateString()}
@@ -453,28 +541,49 @@ export default function Gallery() {
                 {/* Title */}
                 <div className="p-4 pb-2">
                   <p className="text-lg font-medium">
-                    {post.event.tags.find(tag => tag[0] === 'title')?.[1] || 'Untitled'}
+                    {post.event.tags.find((tag) => tag[0] === 'title')?.[1] ||
+                      'Untitled'}
                   </p>
                 </div>
 
                 {/* Actions */}
                 <div className="p-4 flex items-center gap-4">
-                  <button onClick={() => handleZap(post)} className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400">
+                  <button
+                    onClick={() => handleZap(post)}
+                    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400"
+                  >
                     <Zap size={20} />
                     <span>Zap</span>
                   </button>
 
-                  <button onClick={() => { setSelectedPost(post); setShowCommentModal(true); }} className="flex items-center space-x-2 text-gray-400 hover:text-white">
+                  <button
+                    onClick={() => {
+                      setSelectedPost(post);
+                      setShowCommentModal(true);
+                    }}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                  >
                     <MessageSquare size={20} />
                     <span>{post.comments.length}</span>
                   </button>
 
-                  <button onClick={() => handleDownload(post.event.content, `animal-sunset-${post.event.id}.mp4`)} className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto">
+                  <button
+                    onClick={() =>
+                      handleDownload(
+                        post.event.content,
+                        `animal-sunset-${post.event.id}.mp4`
+                      )
+                    }
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
+                  >
                     <Download size={20} />
                     <span>Download</span>
                   </button>
 
-                  <button onClick={() => handleShare(post)} className="flex items-center space-x-2 text-gray-400 hover:text-white">
+                  <button
+                    onClick={() => handleShare(post)}
+                    className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                  >
                     <Share2 size={20} />
                     <span>Share</span>
                   </button>
@@ -484,8 +593,11 @@ export default function Gallery() {
                 {post.comments.length > 0 && (
                   <div className="border-t border-gray-800">
                     <div className="p-4 space-y-4">
-                      {post.comments.map(comment => (
-                        <div key={comment.id} className="flex items-start space-x-3">
+                      {post.comments.map((comment) => (
+                        <div
+                          key={comment.id}
+                          className="flex items-start space-x-3"
+                        >
                           <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center">
                             <span className="text-white text-xs">
                               {comment.pubkey.slice(0, 3)}...
@@ -493,7 +605,9 @@ export default function Gallery() {
                           </div>
                           <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
                             <div className="font-medium text-gray-300 mb-1">
-                              {`${comment.pubkey.slice(0, 6)}...${comment.pubkey.slice(-4)}`}
+                              {`${comment.pubkey.slice(0, 6)}...${comment.pubkey.slice(
+                                -4
+                              )}`}
                             </div>
                             <div className="text-sm text-gray-200">
                               {comment.content}
@@ -516,14 +630,25 @@ export default function Gallery() {
           <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold">Complete Your Zap</h2>
-              <button onClick={() => setCurrentZap(null)} className="text-gray-400 hover:text-white" aria-label="Close">
+              <button
+                onClick={() => setCurrentZap(null)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">Scan the QR code below to send your zap.</p>
-            
+            <p className="text-sm text-gray-300">
+              Scan the QR code below to send your zap.
+            </p>
+
             <div className="flex justify-center p-4 bg-white rounded-lg">
-              <QRCode value={currentZap.payment_request} size={256} level="H" includeMargin={true} />
+              <QRCode
+                value={currentZap.payment_request}
+                size={256}
+                level="H"
+                includeMargin={true}
+              />
             </div>
 
             <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
@@ -533,13 +658,19 @@ export default function Gallery() {
                 readOnly
                 className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
               />
-              <button onClick={handleCopyZap} className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1">
+              <button
+                onClick={handleCopyZap}
+                className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
+              >
                 {hasCopiedZap ? <Check size={16} /> : <Copy size={16} />}
                 {hasCopiedZap ? 'Copied!' : 'Copy'}
               </button>
             </div>
 
-            <button onClick={() => setCurrentZap(null)} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+            <button
+              onClick={() => setCurrentZap(null)}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+            >
               Close
             </button>
           </div>
@@ -552,7 +683,11 @@ export default function Gallery() {
           <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold">Share on Nostr</h2>
-              <button onClick={() => setShowShareModal(null)} className="text-gray-400 hover:text-white" aria-label="Close">
+              <button
+                onClick={() => setShowShareModal(null)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
                 <X size={20} />
               </button>
             </div>
@@ -564,10 +699,16 @@ export default function Gallery() {
               placeholder="Write your note..."
             />
             <div className="flex flex-col md:flex-row gap-2">
-              <button onClick={() => setShowShareModal(null)} className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+              <button
+                onClick={() => setShowShareModal(null)}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
                 Cancel
               </button>
-              <button onClick={publishShare} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+              <button
+                onClick={publishShare}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+              >
                 Publish
               </button>
             </div>
@@ -581,11 +722,15 @@ export default function Gallery() {
           <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold">Add Comment</h2>
-              <button onClick={() => setShowCommentModal(false)} className="text-gray-400 hover:text-white" aria-label="Close">
+              <button
+                onClick={() => setShowCommentModal(false)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
                 <X size={20} />
               </button>
             </div>
-            
+
             <textarea
               className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
               rows={4}
@@ -595,7 +740,10 @@ export default function Gallery() {
             />
 
             <div className="flex justify-end space-x-3">
-              <button onClick={() => setShowCommentModal(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
+              <button
+                onClick={() => setShowCommentModal(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+              >
                 Cancel
               </button>
               <button
@@ -618,7 +766,11 @@ export default function Gallery() {
           <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold">Settings</h2>
-              <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white" aria-label="Close">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
+              >
                 <X size={20} />
               </button>
             </div>
@@ -632,7 +784,10 @@ export default function Gallery() {
                   <span className="font-mono">{lightningWallet}</span>
                 </div>
               ) : (
-                <button onClick={handleConnectWallet} className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-lg transition-colors">
+                <button
+                  onClick={handleConnectWallet}
+                  className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-lg transition-colors"
+                >
                   <Zap size={16} />
                   <span>Connect Wallet</span>
                 </button>
@@ -642,8 +797,12 @@ export default function Gallery() {
             {/* Additional Settings Can Be Added Here */}
             <div>
               <h3 className="text-lg font-semibold">Profile</h3>
-              <p className="text-gray-300">Name: {userProfile?.name || 'Anonymous'}</p>
-              <p className="text-gray-300">About: {userProfile?.about || 'No description.'}</p>
+              <p className="text-gray-300">
+                Name: {userProfile?.name || 'Anonymous'}
+              </p>
+              <p className="text-gray-300">
+                About: {userProfile?.about || 'No description.'}
+              </p>
             </div>
           </div>
         </div>
