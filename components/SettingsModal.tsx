@@ -1,37 +1,29 @@
-import { useState, useEffect } from 'react';
+// components/SettingsModal.tsx
+
+import { FC, useState } from 'react';
 import { X } from 'lucide-react';
-import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   pubkey: string;
-  onSettingsChange: (settings: UserSettings) => void;
+  onSettingsChange: (settings: any) => void; // Replace 'any' with your actual settings type
 }
 
-export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: SettingsModalProps) => {
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-
-  useEffect(() => {
-    // Load settings from localStorage
-    const savedSettings = localStorage.getItem(`settings-${pubkey}`);
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
-  }, [pubkey]);
-
-  const handleSettingChange = (key: keyof UserSettings, value: any) => {
-    const newSettings = { ...settings, [key]: value };
-    setSettings(newSettings);
-    localStorage.setItem(`settings-${pubkey}`, JSON.stringify(newSettings));
-    onSettingsChange(newSettings);
-  };
-
+const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, pubkey, onSettingsChange }) => {
   if (!isOpen) return null;
+
+  const [publicGenerations, setPublicGenerations] = useState<boolean>(true); // Example setting
+
+  const handleSave = () => {
+    onSettingsChange({ publicGenerations });
+    onClose();
+    // Optionally, persist settings to backend or local storage
+  };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-      <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-bold">Settings</h2>
           <button
@@ -42,56 +34,29 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
             <X size={20} />
           </button>
         </div>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">
-              Public Generations
-              <p className="text-xs text-gray-400">
-                Make your generations visible in the gallery
-              </p>
-            </label>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={settings.publicGenerations}
-                onChange={(e) => handleSettingChange('publicGenerations', e.target.checked)}
-              />
-              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer 
-                           peer-checked:after:translate-x-full peer-checked:after:border-white 
-                           after:content-[''] after:absolute after:top-[2px] after:left-[2px] 
-                           after:bg-white after:border-gray-300 after:border after:rounded-full 
-                           after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600">
-              </div>
-            </label>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">
-              Default Relay
-              <p className="text-xs text-gray-400">
-                Your preferred Nostr relay
-              </p>
-            </label>
-            <select
-              value={settings.defaultRelay}
-              onChange={(e) => handleSettingChange('defaultRelay', e.target.value)}
-              className="bg-gray-700 rounded-lg px-3 py-1 text-sm"
-            >
-              <option value="wss://relay.nostrfreaks.com">Nostr Freaks</option>
-              <option value="wss://relay.damus.io">Damus</option>
-            </select>
-          </div>
+        {/* Example Setting: Public Generations */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300">Public Generations</label>
+          <input
+            type="checkbox"
+            checked={publicGenerations}
+            onChange={(e) => setPublicGenerations(e.target.checked)}
+            className="mt-2"
+          />
         </div>
-        <div className="mt-6">
+
+        <div className="flex justify-end">
           <button
-            onClick={onClose}
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg"
+            onClick={handleSave}
+            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
           >
-            Save Settings
+            Save
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default SettingsModal;
