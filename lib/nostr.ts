@@ -191,10 +191,5 @@ export function formatPubkey(pubkey: string): string {
 }
 
 export {
-  fetchLightningAddress, // Renamed from getLightningAddress
-  publishComment,
-  shareToNostr,
-  fetchProfile,
-  fetchEvents,
-  formatPubkey,
+ 
 };
