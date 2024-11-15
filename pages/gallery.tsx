@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Event, Filter, SimplePool, getEventHash } from 'nostr-tools';
+import { Event, Filter, getEventHash, getEvents } from 'nostr-tools';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -43,7 +43,6 @@ interface ZapInvoice {
 }
 
 export default function Gallery() {
-
   // State Variables
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -61,9 +60,6 @@ export default function Gallery() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [lightningWallet, setLightningWallet] = useState<string | null>(null);
-
-  // Initialize Nostr Pool
-  const pool = new SimplePool();
 
   // Placeholder for user pubkey; replace with actual authentication logic
   const userPubkey = 'USER_PUBKEY_HERE';
@@ -112,7 +108,7 @@ export default function Gallery() {
       },
     ];
 
-    const events = await pool.list(
+    const events = await getEvents(
       ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
       filters
     );
@@ -142,7 +138,7 @@ export default function Gallery() {
       },
     ];
 
-    const events = await pool.list(
+    const events = await getEvents(
       ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
       filters
     );
@@ -208,7 +204,7 @@ export default function Gallery() {
       },
     ];
 
-    const events = await pool.list(
+    const events = await getEvents(
       ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
       filters
     );
