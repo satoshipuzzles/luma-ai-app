@@ -68,10 +68,7 @@ export default function Gallery() {
   useEffect(() => {
     const initializeNDK = async () => {
       try {
-        await ndk.init({
-          // You can specify relays here or use defaults
-          relayUrls: ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
-        });
+        await ndk.connect(); // Establish connection to relays
         // You can subscribe to events or perform other initializations here
       } catch (err) {
         console.error('Error initializing NDK:', err);
