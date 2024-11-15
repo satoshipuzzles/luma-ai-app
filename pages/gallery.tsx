@@ -16,6 +16,7 @@ import {
   Copy,
 } from 'lucide-react';
 import QRCode from 'qrcode.react';
+import { NDK } from '@nostr-dev-kit/ndk';
 
 // TypeScript Interfaces
 interface AnimalKind extends Event {
@@ -60,6 +61,23 @@ export default function Gallery() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [lightningWallet, setLightningWallet] = useState<string | null>(null);
+
+  // Initialize NDK
+  const ndk = new NDK();
+
+  useEffect(() => {
+    const initializeNDK = async () => {
+      try {
+        await ndk.init();
+        // Add any additional NDK initialization if required
+      } catch (err) {
+        console.error('Error initializing NDK:', err);
+        toast.error('Failed to initialize NDK.');
+      }
+    };
+
+    initializeNDK();
+  }, []);
 
   // Placeholder for user pubkey; replace with actual authentication logic
   const userPubkey = 'USER_PUBKEY_HERE';
@@ -398,17 +416,10 @@ export default function Gallery() {
     }
   };
 
-  // Function to Publish Event to Relays
+  // Function to Publish Event to Relays using NDK
   const publishToRelays = async (event: Event): Promise<void> => {
-    const relays = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
-
     try {
-      const publishPromises = relays.map((relayUrl) => {
-        const relay = pool.get(relayUrl);
-        return relay.publish(event);
-      });
-
-      await Promise.all(publishPromises);
+      await ndk.publish(event);
     } catch (err) {
       console.error('Error publishing to relays:', err);
       throw err;
