@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Event, Filter, getEventHash } from 'nostr-tools';
+import { Event, Filter } from 'nostr-tools';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -129,9 +129,11 @@ export default function Gallery() {
 
     try {
       const events = await ndk.fetchEvents(filters); // Corrected method
-      if (events.length === 0) return null;
+      if (events.size === 0) return null;
 
-      const profileData = JSON.parse(events[0].content);
+      // Get the first event from the Set
+      const firstEvent = events.values().next().value;
+      const profileData = JSON.parse(firstEvent.content);
       return {
         name: profileData.name,
         picture: profileData.picture,
@@ -156,7 +158,7 @@ export default function Gallery() {
 
     try {
       const events = await ndk.fetchEvents(filters); // Corrected method
-      return events as AnimalKind[];
+      return Array.from(events) as AnimalKind[]; // Convert Set to Array
     } catch (error) {
       console.error('Error fetching animal videos:', error);
       return [];
@@ -224,7 +226,7 @@ export default function Gallery() {
 
     try {
       const events = await ndk.fetchEvents(filters); // Corrected method
-      return events;
+      return Array.from(events); // Convert Set to Array
     } catch (error) {
       console.error('Error fetching comments:', error);
       return [];
