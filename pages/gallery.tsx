@@ -128,7 +128,7 @@ export default function Gallery() {
     ];
 
     try {
-      const events = await ndk.events.fetch(filters); // Corrected method
+      const events = await ndk.fetchEvents(filters); // Corrected method
       if (events.length === 0) return null;
 
       const profileData = JSON.parse(events[0].content);
@@ -155,7 +155,7 @@ export default function Gallery() {
     ];
 
     try {
-      const events = await ndk.events.fetch(filters); // Corrected method
+      const events = await ndk.fetchEvents(filters); // Corrected method
       return events as AnimalKind[];
     } catch (error) {
       console.error('Error fetching animal videos:', error);
@@ -223,7 +223,7 @@ export default function Gallery() {
     ];
 
     try {
-      const events = await ndk.events.fetch(filters); // Corrected method
+      const events = await ndk.fetchEvents(filters); // Corrected method
       return events;
     } catch (error) {
       console.error('Error fetching comments:', error);
