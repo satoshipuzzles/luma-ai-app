@@ -20,3 +20,8 @@ export interface VideoPost {
   profile?: Profile;
   comments: AnimalKind[];
 }
+
+export interface ZapInvoice {
+  payment_request: string;
+  payment_hash: string;
+}
