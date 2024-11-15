@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind } from '../types/nostr';
 import { fetchAnimalVideos, processVideoPosts, VideoPost } from '../lib/gallery';
 import { 
   Download, 
@@ -107,8 +106,8 @@ export default function Gallery() {
   const handleZap = async (post: VideoPost) => {
     setSendingZap(true);
     try {
-      const { getLightningAddress } = await import('../lib/nostr');
-      const lnAddress = await getLightningAddress(post.event.pubkey);
+      const { fetchLightningAddress } = await import('../lib/nostr');
+      const lnAddress = await fetchLightningAddress(post.event.pubkey);
       if (!lnAddress) {
         throw new Error('No Lightning Address found for this user');
       }
@@ -705,184 +704,6 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Zap Invoice Modal */}
-      {currentZap && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-sm w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Complete Your Zap</h2>
-              <button
-                onClick={() => setCurrentZap(null)}
-                className="text-gray-400 hover:text-white"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-300">Scan the QR code below to send your zap.</p>
-            
-            <div className="flex justify-center p-4 bg-white rounded-lg">
-              <QRCode 
-                value={currentZap.payment_request} 
-                size={256}
-                level="H"
-                includeMargin={true}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
-              <input
-                type="text"
-                value={currentZap.payment_request}
-                readOnly
-                className="flex-1 bg-transparent text-sm text-gray-400 overflow-hidden overflow-ellipsis"
-              />
-              <button
-                onClick={handleCopyZap}
-                className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm flex items-center gap-1"
-              >
-                {hasCopiedZap ? <Check size={16} /> : <Copy size={16} />}
-                {hasCopiedZap ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-
-            <button
-              onClick={() => setCurrentZap(null)}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Nostr Share Modal */}
-      {showNostrModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Share on Nostr</h2>
-              <button
-                onClick={() => setShowNostrModal(null)}
-                className="text-gray-400 hover:text-white"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-              rows={4}
-              value={`${showNostrModal.prompt}\n#animalsunset\n${showNostrModal.videoUrl}`}
-              onChange={() => {}}
-              placeholder="Write your note..."
-              readOnly
-            />
-            {publishError && (
-              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                {publishError}
-              </div>
-            )}
-            <div className="flex flex-col md:flex-row gap-2">
-              <button
-                onClick={() => setShowNostrModal(null)}
-                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await publishToNostr(
-                      showNostrModal.videoUrl,
-                      showNostrModal.prompt,
-                      true, // Assuming public share
-                      currentUserPubkey,
-                      showNostrModal.author
-                    );
-                    setShowNostrModal(null);
-                    toast({
-                      title: "Published to Nostr",
-                      description: "Your share has been published successfully",
-                      duration: 2000,
-                    });
-                  } catch (error) {
-                    setPublishError(error instanceof Error ? error.message : "Failed to publish");
-                  }
-                }}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                Publish
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Comment Modal */}
-      {showCommentModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Add Comment</h2>
-              <button
-                onClick={() => setShowCommentModal(false)}
-                className="text-gray-400 hover:text-white"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Write your comment..."
-            />
-
-            {publishError && (
-              <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                {publishError}
-              </div>
-            )}
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowCommentModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (!newComment.trim()) return;
-                  try {
-                    await publishComment(selectedPost.event.id, newComment.trim(), currentUserPubkey);
-                    await fetchPosts(); // Refresh posts to include the new comment
-                    setShowCommentModal(false);
-                    setNewComment('');
-                    toast({
-                      title: "Comment posted",
-                      description: "Your comment has been published",
-                      duration: 2000,
-                    });
-                  } catch (error) {
-                    console.error('Error posting comment:', error);
-                    setPublishError(error instanceof Error ? error.message : "Failed to post comment");
-                  }
-                }}
-                disabled={!newComment.trim()}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-              >
-                Post Comment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Settings Modal */}
       <SettingsModal
         isOpen={showSettings}
@@ -891,7 +712,7 @@ export default function Gallery() {
         onSettingsChange={() => { /* Implement settings change handler */ }}
       />
     }
-
+  
     // Helper component for Default Avatar
     const DefaultAvatar = () => (
       <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center">
@@ -900,3 +721,4 @@ export default function Gallery() {
         </span>
       </div>
     );
+}
