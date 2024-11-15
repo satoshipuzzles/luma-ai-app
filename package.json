@@ -1,43 +1,41 @@
-// pages/gallery.tsx
-
-import { useState, useEffect } from 'react';
-import Head from 'next/head';
-import { Event, Filter, SimplePool, getEventHash } from 'nostr-tools';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import {
-  Download,
-  MessageSquare,
-  Zap,
-  Share2,
-  RefreshCw,
-  X,
-  Check,
-  Copy,
-} from 'lucide-react';
-import QRCode from 'qrcode.react';
-
-// TypeScript Interfaces
-interface AnimalKind extends Event {
-  kind: 75757;
-  content: string; // Video URL
-}
-
-interface Profile {
-  name?: string;
-  picture?: string;
-  about?: string;
-  lud06?: string;
-  lud16?: string;
-}
-
-interface VideoPost {
-  event: AnimalKind;
-  profile?: Profile;
-  comments: Event[];
-}
-
-interface ZapInvoice {
-  payment_request: string;
-  payment_hash: string;
+{
+  "name": "animal-sunset",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@radix-ui/react-switch": "^1.0.3",
+    "@radix-ui/react-toast": "^1.1.5",
+    "@shadcn/ui": "*",
+    "autoprefixer": "^10.0.1",
+    "bad-words": "^3.0.4",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.294.0",
+    "next": "14.0.3",
+    "node-fetch": "^2.6.7",
+    "nostr-tools": "^2.10.1",
+    "postcss": "^8",
+    "qrcode.react": "^3.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-toastify": "^9.1.1",
+    "tailwind-merge": "^2.0.0",
+    "tailwindcss": "^3.3.0",
+    "ws": "^8.15.1",
+    "@nostr-dev-kit/ndk": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/bad-words": "^3.0.1",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.2.0"
+  }
 }
