@@ -1,21 +1,7 @@
 // lib/gallery.ts
 
-import { fetchProfile, getLightningAddress, formatPubkey } from './nostr';
-import { AnimalKind } from '../types/nostr';
-import { Event, relayInit, getEventHash } from 'nostr-tools';
-
-// Define the Profile interface if not already defined
-export interface Profile {
-  name?: string;
-  picture?: string;
-  about?: string;
-}
-
-export interface VideoPost {
-  event: AnimalKind;
-  profile?: Profile;
-  comments: AnimalKind[];
-}
+import { fetchProfile, fetchLightningAddress, formatPubkey } from './nostr';
+import { AnimalKind, VideoPost, Profile } from '../types/nostr';
 
 /**
  * Fetches kind 75757 events (animal videos) from Nostr relays.
