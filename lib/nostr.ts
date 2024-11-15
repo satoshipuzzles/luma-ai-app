@@ -191,7 +191,6 @@ export function formatPubkey(pubkey: string): string {
 }
 
 export {
-  createZapInvoice,
   fetchLightningAddress, // Renamed from getLightningAddress
   publishComment,
   shareToNostr,
