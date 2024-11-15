@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Event, Filter, getEventHash, getEvents } from 'nostr-tools';
+import { Event, Filter, getEventHash } from 'nostr-tools';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -69,7 +69,7 @@ export default function Gallery() {
     const initializeNDK = async () => {
       try {
         await ndk.init();
-        // Add any additional NDK initialization if required
+        // Optionally, configure relays or other settings here
       } catch (err) {
         console.error('Error initializing NDK:', err);
         toast.error('Failed to initialize NDK.');
@@ -126,10 +126,7 @@ export default function Gallery() {
       },
     ];
 
-    const events = await getEvents(
-      ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
-      filters
-    );
+    const events = await ndk.fetchEvents(filters);
     if (events.length === 0) return null;
 
     try {
@@ -156,10 +153,7 @@ export default function Gallery() {
       },
     ];
 
-    const events = await getEvents(
-      ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
-      filters
-    );
+    const events = await ndk.fetchEvents(filters);
     return events as AnimalKind[];
   };
 
@@ -222,10 +216,7 @@ export default function Gallery() {
       },
     ];
 
-    const events = await getEvents(
-      ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'],
-      filters
-    );
+    const events = await ndk.fetchEvents(filters);
     return events;
   };
 
