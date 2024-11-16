@@ -1,16 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
+import { CommentSection } from '../components/CommentSection';
 import { AnimalKind, NostrEvent } from '../types/nostr';
 import { fetchProfile, formatPubkey, getLightningAddress } from '../lib/nostr';
+import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { 
   Download, 
   MessageSquare, 
   Zap, 
   X, 
   Share2, 
-  RefreshCw 
+  RefreshCw,
+  Send,
+  Copy
 } from 'lucide-react';
 
 interface Profile {
@@ -25,7 +29,10 @@ interface VideoPost {
   comments: AnimalKind[];
 }
 
-// Utility function for downloading videos
+interface GroupedPosts {
+  [videoUrl: string]: VideoPost[];
+}
+
 const downloadVideo = async (url: string, filename: string) => {
   try {
     const response = await fetch(url);
@@ -41,78 +48,122 @@ const downloadVideo = async (url: string, filename: string) => {
     
     toast({
       title: "Download started",
-      description: "Your video is being downloaded",
-      duration: 2000
+      description: "Your video is being downloaded"
     });
   } catch (err) {
     console.error('Download failed:', err);
     toast({
+      variant: "destructive",
       title: "Download failed",
-      description: "Please try again",
-      variant: "destructive"
+      description: "Please try again"
     });
   }
 };
 
+const defaultRelays = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+
 export default function Gallery() {
-  // Keep existing state variables
+  // State
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newComment, setNewComment] = useState('');
   const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
   const [showCommentModal, setShowCommentModal] = useState(false);
-  const [sendingZap, setSendingZap] = useState(false);
+  const [publishingComment, setPublishingComment] = useState(false);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<string | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [pubkey, setPubkey] = useState<string | null>(null);
+  const [relays, setRelays] = useState<string[]>(defaultRelays);
+  const postsRef = useRef<VideoPost[]>([]);
+  
+  // Effects
+  useEffect(() => {
+    const loadPubkey = async () => {
+      if (window.nostr) {
+        try {
+          const key = await window.nostr.getPublicKey();
+          setPubkey(key);
+          
+          // Load user settings
+          const savedSettings = localStorage.getItem(`settings-${key}`);
+          if (savedSettings) {
+            const settings = JSON.parse(savedSettings);
+            setUserSettings(settings);
+            setRelays([settings.defaultRelay, ...settings.customRelays]);
+          }
+        } catch (error) {
+          console.error('Error loading pubkey:', error);
+        }
+      }
+    };
+    
+    loadPubkey();
+  }, []);
 
   useEffect(() => {
     fetchPosts();
-  }, []);
+  }, [relays]);
 
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
+
+  // Functions
   const fetchPosts = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      const response = await fetch('/api/nostr/fetch-events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          relay: 'wss://relay.nostrfreaks.com',
-          filter: {
-            kinds: [75757],
-            limit: 50
-          }
-        })
+      const responses = await Promise.allSettled(
+        relays.map(relay =>
+          fetch('/api/nostr/fetch-events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              relay,
+              filter: {
+                kinds: [75757],
+                limit: 100
+              }
+            })
+          }).then(res => res.json())
+        )
+      );
+
+      // Combine all successful responses
+      const allEvents = responses
+        .filter((result): result is PromiseFulfilledResult<AnimalKind[]> => 
+          result.status === 'fulfilled'
+        )
+        .flatMap(result => result.value);
+
+      // Group posts by video URL to handle duplicates
+      const groupedPosts: GroupedPosts = {};
+      
+      for (const event of allEvents) {
+        if (!groupedPosts[event.content]) {
+          groupedPosts[event.content] = [];
+        }
+        groupedPosts[event.content].push({
+          event,
+          comments: [],
+          profile: undefined
+        });
+      }
+
+      // For each group, keep only the earliest post
+      const uniquePosts = Object.values(groupedPosts).map(group => {
+        return group.reduce((earliest, current) => {
+          return current.event.created_at < earliest.event.created_at ? current : earliest;
+        });
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch posts');
-      }
-
-      const events = await response.json() as AnimalKind[];
-      
-      // Group comments with their parent posts
-      const postsMap = new Map<string, VideoPost>();
-      
-      for (const event of events) {
-        const replyTo = event.tags.find(tag => tag[0] === 'e')?.[1];
-        
-        if (!replyTo) {
-          // This is a main post
-          postsMap.set(event.id, {
-            event,
-            comments: [],
-            profile: undefined
-          });
-        } else {
-          // This is a comment
-          const parentPost = postsMap.get(replyTo);
-          if (parentPost) {
-            parentPost.comments.push(event);
-          }
-        }
-      }
+      // Sort by creation date (newest first)
+      uniquePosts.sort((a, b) => b.event.created_at - a.event.created_at);
 
       // Fetch profiles for all authors
-      const posts = Array.from(postsMap.values());
-      await Promise.all(posts.map(async post => {
+      await Promise.all(uniquePosts.map(async post => {
         try {
           const profileEvent = await fetchProfile(post.event.pubkey);
           if (profileEvent) {
@@ -128,10 +179,36 @@ export default function Gallery() {
         }
       }));
 
-      setPosts(posts);
+      // Fetch comments
+      const commentEvents = await Promise.all(
+        relays.map(relay =>
+          fetch('/api/nostr/fetch-events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              relay,
+              filter: {
+                kinds: [75757],
+                '#e': uniquePosts.map(post => post.event.id)
+              }
+            })
+          }).then(res => res.json())
+        )
+      );
+
+      // Add comments to their respective posts
+      const allComments = commentEvents.flat();
+      uniquePosts.forEach(post => {
+        post.comments = allComments.filter(comment => 
+          comment.tags.some(tag => tag[0] === 'e' && tag[1] === post.event.id)
+        );
+      });
+
+      setPosts(uniquePosts);
+      
       toast({
         title: "Gallery updated",
-        description: `Loaded ${posts.length} videos`,
+        description: `Loaded ${uniquePosts.length} videos`
       });
     } catch (error) {
       console.error('Error fetching posts:', error);
@@ -139,27 +216,95 @@ export default function Gallery() {
       toast({
         variant: "destructive",
         title: "Failed to load gallery",
-        description: "Please try refreshing the page",
+        description: "Please try refreshing the page"
       });
     } finally {
       setLoading(false);
     }
   };
 
+  const handleComment = async () => {
+    if (!selectedPost || !newComment.trim() || !pubkey) return;
+    
+    setPublishingComment(true);
+    
+    try {
+      const commentEvent: Partial<NostrEvent> = {
+        kind: 75757,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        content: newComment.trim(),
+        tags: [
+          ['e', selectedPost.event.id],
+          ['p', selectedPost.event.pubkey]
+        ]
+      };
+
+      const signedEvent = await window.nostr!.signEvent(commentEvent as NostrEvent);
+      
+      // Publish to all relays
+      await Promise.all(relays.map(relay =>
+        fetch('/api/nostr/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ relay, event: signedEvent })
+        })
+      ));
+
+      // Update local state
+      const updatedPosts = postsRef.current.map(post =>
+        post.event.id === selectedPost.event.id
+          ? {
+              ...post,
+              comments: [...post.comments, signedEvent as AnimalKind]
+            }
+          : post
+      );
+
+      setPosts(updatedPosts);
+      setNewComment('');
+      setShowCommentModal(false);
+      setHighlightedCommentId(signedEvent.id);
+
+      toast({
+        title: "Comment posted",
+        description: "Your comment has been published"
+      });
+    } catch (error) {
+      console.error('Error publishing comment:', error);
+      toast({
+        variant: "destructive",
+        title: "Failed to post comment",
+        description: error instanceof Error ? error.message : "Please try again"
+      });
+    } finally {
+      setPublishingComment(false);
+    }
+  };
+
   const handleZap = async (post: VideoPost) => {
-    setSendingZap(true);
+    if (!window.bitcoinConnect || !userSettings.bitcoinConnectEnabled) {
+      toast({
+        variant: "destructive",
+        title: "Bitcoin Connect not available",
+        description: "Please enable Bitcoin Connect in settings"
+      });
+      return;
+    }
+
     try {
       const lnAddress = await getLightningAddress(post.event.pubkey);
       if (!lnAddress) {
         throw new Error('No lightning address found for this user');
       }
 
-      const response = await fetch('/api/create-lnbits-invoice', {
+      const response = await fetch('/api/lightning/create-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: 1000,
-          lnAddress
+          lnAddress,
+          amount: userSettings.defaultZapAmount,
+          comment: `Zap for Animal Sunset video: ${post.event.id}`
         })
       });
 
@@ -167,23 +312,40 @@ export default function Gallery() {
         throw new Error('Failed to create invoice');
       }
 
-      const { payment_request, payment_hash } = await response.json();
+      const { payment_request } = await response.json();
       
-      // Show success toast
+      await window.bitcoinConnect.makePayment(
+        payment_request,
+        userSettings.defaultZapAmount
+      );
+
       toast({
         title: "Zap sent!",
-        description: "Thank you for supporting the creator",
-        duration: 2000
+        description: "Thank you for supporting the creator"
       });
     } catch (error) {
       console.error('Error sending zap:', error);
       toast({
         variant: "destructive",
         title: "Zap failed",
-        description: error instanceof Error ? error.message : "Failed to send zap",
+        description: error instanceof Error ? error.message : "Failed to send zap"
       });
-    } finally {
-      setSendingZap(false);
+    }
+  };
+
+  const copyVideoUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: "Copied",
+        description: "Video URL copied to clipboard"
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Copy failed",
+        description: "Please try again"
+      });
     }
   };
 
@@ -221,7 +383,7 @@ export default function Gallery() {
               fetchPosts();
               toast({
                 title: "Refreshing gallery",
-                description: "Fetching latest videos...",
+                description: "Fetching latest videos..."
               });
             }}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
@@ -269,16 +431,17 @@ export default function Gallery() {
                 </p>
               </div>
 
-              {/* Actions */}
+            {/* Actions */}
               <div className="p-4 flex flex-wrap items-center gap-4">
-                <button
-                  onClick={() => handleZap(post)}
-                  disabled={sendingZap}
-                  className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Zap size={20} />
-                  <span>Zap</span>
-                </button>
+                {userSettings.bitcoinConnectEnabled && (
+                  <button
+                    onClick={() => handleZap(post)}
+                    className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400"
+                  >
+                    <Zap size={20} />
+                    <span>Zap</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
@@ -292,6 +455,14 @@ export default function Gallery() {
                 </button>
 
                 <button
+                  onClick={() => copyVideoUrl(post.event.content)}
+                  className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                >
+                  <Copy size={20} />
+                  <span>Copy Link</span>
+                </button>
+
+                <button
                   onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
                   className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
                 >
@@ -300,30 +471,14 @@ export default function Gallery() {
                 </button>
               </div>
 
-              {/* Comments */}
-              {post.comments.length > 0 && (
-                <div className="border-t border-gray-800">
-                  <div className="p-4 space-y-4">
-                    {post.comments.map(comment => (
-                      <div key={comment.id} className="flex items-start space-x-3">
-                        <img
-                          src="/default-avatar.png"
-                          alt="Commenter"
-                          className="w-8 h-8 rounded-full"
-                        />
-                        <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
-                          <div className="font-medium text-gray-300 mb-1">
-                            {formatPubkey(comment.pubkey)}
-                          </div>
-                          <div className="text-sm text-gray-200">
-                            {comment.content}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Comments Section */}
+              <CommentSection
+                comments={post.comments}
+                highlightedCommentId={highlightedCommentId}
+                onCommentClick={(comment) => {
+                  setHighlightedCommentId(comment.id);
+                }}
+              />
             </div>
           ))}
         </div>
@@ -343,13 +498,20 @@ export default function Gallery() {
               </button>
             </div>
             
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Write your comment..."
-            />
+            <div className="flex gap-3">
+              <img
+                src="/default-avatar.png"
+                alt="Your avatar"
+                className="w-8 h-8 rounded-full"
+              />
+              <textarea
+                className="flex-1 bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
+                rows={4}
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Write your comment..."
+              />
+            </div>
 
             <div className="flex justify-end space-x-3">
               <button
@@ -359,23 +521,31 @@ export default function Gallery() {
                 Cancel
               </button>
               <button
-                onClick={async () => {
-                  // TODO: Implement comment publishing via Nostr
-                  setShowCommentModal(false);
-                  setNewComment('');
-                  toast({
-                    title: "Comment posted",
-                    description: "Your comment has been published",
-                    duration: 2000
-                  });
-                }}
-                disabled={!newComment.trim()}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+                onClick={handleComment}
+                disabled={publishingComment || !newComment.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
               >
-                Post Comment
+                {publishingComment ? (
+                  <>
+                    <RefreshCw className="animate-spin h-4 w-4" />
+                    <span>Publishing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    <span>Post Comment</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="fixed bottom-4 right-4 bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+          <p className="font-medium">Error</p>
+          <p className="text-sm">{error}</p>
         </div>
       )}
     </div>
