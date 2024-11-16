@@ -4,6 +4,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
 import { CommentSection } from '../components/CommentSection';
 import { AnimalKind, NostrEvent } from '../types/nostr';
+import { BitcoinConnectProvider } from '../types/bitcoin-connect';
 import { fetchProfile, formatPubkey, getLightningAddress } from '../lib/nostr';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { 
