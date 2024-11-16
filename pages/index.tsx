@@ -27,6 +27,7 @@ import {
 } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
+import ShareModal from '../components/ShareModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { createNostrPost, createAnimalKind, publishToRelays } from '../lib/nostr';
 
