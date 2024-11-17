@@ -1126,7 +1126,7 @@ export default function Home() {
               >
                 Cancel
               </button>
-              <button
+              <button>
                 onClick={async () => {
                   if (selectedGeneration?.videoUrl) {
                     try {
