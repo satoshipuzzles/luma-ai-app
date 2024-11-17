@@ -40,23 +40,12 @@ interface Profile {
   about?: string;
 }
 
-/*interface NostrWindow extends Window {
-  nostr?: {
-    getPublicKey(): Promise<string>;
-    signEvent(event: any): Promise<any>;
-  };
-}
-
-declare global {
-  interface Window extends NostrWindow {}
-}
-*/
-
 // Constants
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
@@ -214,6 +203,7 @@ const publishToNostr = async (
     throw err;
   }
 };
+
 export default function Home() {
   // State Management
   const [pubkey, setPubkey] = useState<string | null>(null);
@@ -238,6 +228,7 @@ export default function Home() {
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+  const [shareType, setShareType] = useState('kind75757');
 
   // Effects
   useEffect(() => {
@@ -277,6 +268,7 @@ export default function Home() {
 
     loadProfile();
   }, [pubkey]);
+
   // Core Functions
   const connectNostr = async () => {
     try {
@@ -447,31 +439,10 @@ export default function Home() {
             return prevSelected;
           });
 
-          // Publish to Nostr when video is ready
-          if (userSettings.publicGenerations) {
-            try {
-              await publishToNostr(
-                data.assets.video,
-                prompt,
-                userSettings.publicGenerations,
-                generationId,
-                pubkey!
-              );
-            } catch (error) {
-              console.error('Failed to publish to Nostr:', error);
-              toast({
-                variant: "destructive",
-                title: "Publishing failed",
-                description: "Failed to share to Nostr",
-              });
-            }
-          }
-
           setLoading(false);
           return true;
         }
-
-        // Update generation state
+// Update generation state
         setGenerations((prevGenerations) => {
           const updatedGenerations = prevGenerations.map((g) =>
             g.id === generationId ? { ...g, state: data.state, createdAt: data.created_at } : g
@@ -606,6 +577,27 @@ export default function Home() {
         title: "Generation started",
         description: "Your video is being generated",
       });
+
+      // Publish to Nostr when video is ready
+      if (userSettings.publicGenerations) {
+        try {
+          await publishToNostr(
+            data.assets.video,
+            prompt,
+            userSettings.publicGenerations,
+            data.id,
+            pubkey!,
+            'kind75757' // Add the shareType argument here
+          );
+        } catch (error) {
+          console.error('Failed to publish to Nostr:', error);
+          toast({
+            variant: "destructive",
+            title: "Publishing failed",
+            description: "Failed to share to Nostr",
+          });
+        }
+      }
     } catch (err) {
       console.error('Generation error:', err);
       setError(
@@ -621,6 +613,7 @@ export default function Home() {
       setLoading(false);
     }
   };
+
   // Render
   if (!pubkey) {
     return (
@@ -648,6 +641,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#111111] text-white">
+      {/* Head */}
       <Head>
         <title>Animal Sunset 🌞🦒</title>
         <link rel="icon" href="https://animalsunset.com/favicon.png" />
@@ -806,7 +800,7 @@ export default function Home() {
                           />
                         </div>
 
-                        {/* Action Buttons */}
+                      {/* Action Buttons */}
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
@@ -1091,6 +1085,28 @@ export default function Home() {
                 <X size={20} />
               </button>
             </div>
+            <div className="space-y-4">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="shareType"
+                  value="kind1"
+                  checked={shareType === 'kind1'}
+                  onChange={(e) => setShareType(e.target.value)}
+                />
+                <span>Share on Nostr (kind 1)</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="shareType"
+                  value="kind75757"
+                  checked={shareType === 'kind75757'}
+                  onChange={(e) => setShareType(e.target.value)}
+                />
+                <span>Publish to Gallery (kind 75757)</span>
+              </label>
+            </div>
             <textarea
               className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
               rows={4}
@@ -1111,20 +1127,22 @@ export default function Home() {
                 Cancel
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (selectedGeneration?.videoUrl) {
-                    publishToNostr(
-                      selectedGeneration.videoUrl,
-                      selectedGeneration.prompt,
-                      userSettings.publicGenerations,
-                      selectedGeneration.id,
-                      pubkey!
-                    ).then(() => {
+                    try {
+                      await publishToNostr(
+                        selectedGeneration.videoUrl,
+                        selectedGeneration.prompt,
+                        userSettings.publicGenerations,
+                        selectedGeneration.id,
+                        pubkey!,
+                        shareType
+                      );
                       setShowNostrModal(false);
                       setNoteContent('');
-                    }).catch((error) => {
+                    } catch (error) {
                       setPublishError(error.message);
-                    });
+                    }
                   }
                 }}
                 disabled={publishing || !selectedGeneration?.videoUrl}
@@ -1136,95 +1154,12 @@ export default function Home() {
           </div>
         </div>
       )}
-{showNostrModal && (
-  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-    <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Share on Nostr</h2>
-        <button
-          onClick={() => setShowNostrModal(false)}
-          className="text-gray-400 hover:text-white"
-          aria-label="Close"
-        >
-          <X size={20} />
-        </button>
-      </div>
-      <div className="space-y-4">
-        <label className="flex items-center space-x-2">
-          <input
-            type="radio"
-            name="shareType"
-            value="kind1"
-            checked={shareType === 'kind1'}
-            onChange={(e) => setShareType(e.target.value)}
-          />
-          <span>Share on Nostr (kind 1)</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="radio"
-            name="shareType"
-            value="kind75757"
-            checked={shareType === 'kind75757'}
-            onChange={(e) => setShareType(e.target.value)}
-          />
-          <span>Publish to Gallery (kind 75757)</span>
-        </label>
-      </div>
-      <textarea
-        className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-        rows={4}
-        value={noteContent}
-        onChange={(e) => setNoteContent(e.target.value)}
-        placeholder="Write your note..."
-      />
-      {publishError && (
-        <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-          {publishError}
-        </div>
-      )}
-      <div className="flex flex-col md:flex-row gap-2">
-        <button
-          onClick={() => setShowNostrModal(false)}
-          className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={async () => {
-            if (selectedGeneration?.videoUrl) {
-              try {
-                await publishToNostr(
-                  selectedGeneration.videoUrl,
-                  selectedGeneration.prompt,
-                  userSettings.publicGenerations,
-                  selectedGeneration.id,
-                  pubkey!,
-                  shareType
-                );
-                setShowNostrModal(false);
-                setNoteContent('');
-              } catch (error) {
-                setPublishError(error.message);
-              }
-            }
-          }}
-          disabled={publishing || !selectedGeneration?.videoUrl}
-          className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-        >
-          {publishing ? 'Publishing...' : 'Publish'}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
       {/* Settings Modal */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        pubkey={pubkey}
-        onSettingsChange={setUserSettings}
-      />
-    </div>
-  );
-}
+  <SettingsModal
+    isOpen={showSettings}
+    onClose={() => setShowSettings(false)}
+    pubkey={pubkey}
+    onSettingsChange={setUserSettings}
+  />
+</div>
+    
