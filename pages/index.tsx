@@ -1168,4 +1168,5 @@ export default function Home() {
     onSettingsChange={setUserSettings}
   />
 </div>
-    
+ );
+}
