@@ -1126,30 +1126,36 @@ export default function Home() {
               >
                 Cancel
               </button>
-              <button>
-                onClick={async () => {
-                  if (selectedGeneration?.videoUrl) {
-                    try {
-                      await publishToNostr(
-                        selectedGeneration.videoUrl,
-                        selectedGeneration.prompt,
-                        userSettings.publicGenerations,
-                        selectedGeneration.id,
-                        pubkey!,
-                        shareType
-                      );
-                      setShowNostrModal(false);
-                      setNoteContent('');
-                    } catch (error) {
-                      setPublishError(error.message);
-                    }
-                  }
-                }}
-                disabled={publishing || !selectedGeneration?.videoUrl}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-              >
-                {publishing ? 'Publishing...' : 'Publish'}
-              </button>
+<button
+  onClick={() => {
+    if (selectedGeneration?.videoUrl) {
+      publishToNostr(
+        selectedGeneration.videoUrl,
+        selectedGeneration.prompt,
+        userSettings.publicGenerations,
+        selectedGeneration.id,
+        pubkey!,
+        shareType
+      )
+        .then(() => {
+          setShowNostrModal(false);
+          setNoteContent('');
+        })
+        .catch((error) => {
+          if (error instanceof Error) {
+            setPublishError(error.message);
+          } else {
+            setPublishError('An unknown error occurred');
+          }
+        });
+    }
+  }}
+  disabled={publishing || !selectedGeneration?.videoUrl}
+  className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+>
+  {publishing ? 'Publishing...' : 'Publish'}
+</button>
+
             </div>
           </div>
         </div>
