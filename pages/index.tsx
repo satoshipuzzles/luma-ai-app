@@ -151,77 +151,58 @@ const publishToNostr = async (
   prompt: string, 
   isPublic: boolean,
   eventId: string,
-  pubkey: string
+  pubkey: string,
+  shareType: string
 ): Promise<void> => {
   if (!window.nostr) {
     throw new Error('Nostr extension not found');
   }
 
   try {
-    // Animal Kind Event (75757)
-    const animalEvent: Partial<Event> = {
-      kind: 75757,
-      pubkey,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['title', prompt],
-        ['r', videoUrl],
-        ['type', 'animal-sunset']
-      ],
-      content: videoUrl,
-    };
+    const relayUrl = 'wss://relay.nostrfreaks.com';
+    
+    if (shareType === 'kind1') {
+      // Share on Nostr (kind 1)
+      const noteEvent: Partial<Event> = {
+        kind: 1,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['t', 'animalsunset']
+        ],
+        content: `${prompt}\n\n${videoUrl}`,
+      };
 
-    animalEvent.id = getEventHash(animalEvent as Event);
-    const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
+      noteEvent.id = getEventHash(noteEvent as Event);
+      const signedNoteEvent = await window.nostr.signEvent(noteEvent as Event);
 
-    // History Event (8008135)
-    const historyEvent: Partial<Event> = {
-      kind: 8008135,
-      pubkey,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['text-to-speech', prompt],
-        ['r', videoUrl],
-        ['e', signedAnimalEvent.id],
-        ['public', isPublic.toString()]
-      ],
-      content: JSON.stringify({
-        prompt,
-        videoUrl,
-        createdAt: new Date().toISOString(),
-        state: 'completed',
-        public: isPublic
-      }),
-    };
+      const relay = relayInit(relayUrl);
+      await relay.connect();
+      await relay.publish(signedNoteEvent);
+      await relay.close();
 
-    historyEvent.id = getEventHash(historyEvent as Event);
-    const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
+    } else if (shareType === 'kind75757') {
+      // Publish to Gallery (kind 75757)
+      const animalEvent: Partial<Event> = {
+        kind: 75757,
+        pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['title', prompt],
+          ['r', videoUrl],
+          ['type', 'animal-sunset']
+        ],
+        content: videoUrl,
+      };
 
-    const relayConnections = DEFAULT_RELAY_URLS.map((url) => relayInit(url));
-
-    await Promise.all(
-      relayConnections.map((relay) => {
-        return new Promise<void>((resolve, reject) => {
-          relay.on('connect', async () => {
-            try {
-              await relay.publish(signedAnimalEvent);
-              await relay.publish(signedHistoryEvent);
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          });
-
-          relay.on('error', () => {
-            reject(new Error(`Failed to connect to relay ${relay.url}`));
-          });
-
-          relay.connect();
-        });
-      })
-    );
-
-    relayConnections.forEach(relay => relay.close());
+      animalEvent.id = getEventHash(animalEvent as Event);
+      const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
+      
+      const relay = relayInit(relayUrl);
+      await relay.connect();
+      await relay.publish(signedAnimalEvent);
+      await relay.close();
+    }
 
     toast({
       title: "Published to Nostr",
@@ -1155,7 +1136,88 @@ export default function Home() {
           </div>
         </div>
       )}
-
+{showNostrModal && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+    <div className="bg-[#1a1a1a] p-4 md:p-6 rounded-lg space-y-4 max-w-md w-full">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Share on Nostr</h2>
+        <button
+          onClick={() => setShowNostrModal(false)}
+          className="text-gray-400 hover:text-white"
+          aria-label="Close"
+        >
+          <X size={20} />
+        </button>
+      </div>
+      <div className="space-y-4">
+        <label className="flex items-center space-x-2">
+          <input
+            type="radio"
+            name="shareType"
+            value="kind1"
+            checked={shareType === 'kind1'}
+            onChange={(e) => setShareType(e.target.value)}
+          />
+          <span>Share on Nostr (kind 1)</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="radio"
+            name="shareType"
+            value="kind75757"
+            checked={shareType === 'kind75757'}
+            onChange={(e) => setShareType(e.target.value)}
+          />
+          <span>Publish to Gallery (kind 75757)</span>
+        </label>
+      </div>
+      <textarea
+        className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
+        rows={4}
+        value={noteContent}
+        onChange={(e) => setNoteContent(e.target.value)}
+        placeholder="Write your note..."
+      />
+      {publishError && (
+        <div className="p-2 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+          {publishError}
+        </div>
+      )}
+      <div className="flex flex-col md:flex-row gap-2">
+        <button
+          onClick={() => setShowNostrModal(false)}
+          className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={async () => {
+            if (selectedGeneration?.videoUrl) {
+              try {
+                await publishToNostr(
+                  selectedGeneration.videoUrl,
+                  selectedGeneration.prompt,
+                  userSettings.publicGenerations,
+                  selectedGeneration.id,
+                  pubkey!,
+                  shareType
+                );
+                setShowNostrModal(false);
+                setNoteContent('');
+              } catch (error) {
+                setPublishError(error.message);
+              }
+            }
+          }}
+          disabled={publishing || !selectedGeneration?.videoUrl}
+          className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+        >
+          {publishing ? 'Publishing...' : 'Publish'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       {/* Settings Modal */}
       <SettingsModal
         isOpen={showSettings}
