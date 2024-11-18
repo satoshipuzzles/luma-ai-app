@@ -1144,7 +1144,7 @@ export default function Home() {
         .catch((error) => {
           if (error instanceof Error) {
             setPublishError(error.message);
-          } else {
+          }  {
             setPublishError('An unknown error occurred');
           }
         });
