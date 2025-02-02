@@ -324,7 +324,7 @@ const handleImageUpload = async (file: File) => {
     }
 
     // Create and sign the event
-    const event = {
+    const event: Partial<Event> = {
       kind: 27235, // Nostr.build specific kind
       created_at: Math.floor(Date.now() / 1000),
       content: '',
@@ -332,8 +332,11 @@ const handleImageUpload = async (file: File) => {
       pubkey
     };
 
-    event.id = getEventHash(event);
-    const signedEvent = await window.nostr.signEvent(event);
+    const hashedEvent = getEventHash(event as Event);
+    const signedEvent = await window.nostr.signEvent({
+      ...event,
+      id: hashedEvent
+    } as Event);
 
     // Create form data with both file and signed event
     const formData = new FormData();
