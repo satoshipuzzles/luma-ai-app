@@ -323,15 +323,45 @@ const handleImageUpload = async (file: File) => {
       throw new Error('Not connected to Nostr');
     }
 
-    const imageUrl = await uploadImageToNostrBuild(file, pubkey);
-    setStartImageUrl(imageUrl);
-    
-    toast({
-      title: "Image uploaded",
-      description: "Start image has been set"
+    // Create and sign the event
+    const event = {
+      kind: 27235, // Nostr.build specific kind
+      created_at: Math.floor(Date.now() / 1000),
+      content: '',
+      tags: [['u', URL.createObjectURL(file)]],
+      pubkey
+    };
+
+    event.id = getEventHash(event);
+    const signedEvent = await window.nostr.signEvent(event);
+
+    // Create form data with both file and signed event
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('event', JSON.stringify(signedEvent));
+
+    // Upload to nostr.build
+    const response = await fetch('https://nostr.build/api/v2/upload/files', {
+      method: 'POST',
+      body: formData,
     });
+
+    if (!response.ok) {
+      throw new Error('Upload failed: ' + await response.text());
+    }
+
+    const result = await response.json();
     
-    return imageUrl;
+    if (result.status === 'success') {
+      setStartImageUrl(result.data[0].url);
+      toast({
+        title: "Image uploaded",
+        description: "Start image has been set"
+      });
+      return result.data[0].url;
+    } else {
+      throw new Error(result.message || 'Upload failed');
+    }
   } catch (err) {
     console.error('Failed to upload image:', err);
     setError('Failed to upload image. Please try again.');
