@@ -314,45 +314,37 @@ export default function Home() {
       });
     }
   };
-
-  const handleImageUpload = async (file: File) => {
-    try {
-      setUploadingImage(true);
-      setError('');
-      
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('https://nostr.build/api/v2/upload/files', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        setStartImageUrl(result.data[0].url);
-        toast({
-          title: "Image uploaded",
-          description: "Start image has been set",
-        });
-        return result.data[0].url;
-      } else {
-        throw new Error('Upload failed');
-      }
-    } catch (err) {
-      setError('Failed to upload image. Please try again.');
-      toast({
-        variant: "destructive",
-        title: "Upload failed",
-        description: "Please try again",
-      });
-      return null;
-    } finally {
-      setUploadingImage(false);
+const handleImageUpload = async (file: File) => {
+  try {
+    setUploadingImage(true);
+    setError('');
+    
+    if (!pubkey) {
+      throw new Error('Not connected to Nostr');
     }
-  };
 
+    const imageUrl = await uploadImageToNostrBuild(file, pubkey);
+    setStartImageUrl(imageUrl);
+    
+    toast({
+      title: "Image uploaded",
+      description: "Start image has been set"
+    });
+    
+    return imageUrl;
+  } catch (err) {
+    console.error('Failed to upload image:', err);
+    setError('Failed to upload image. Please try again.');
+    toast({
+      variant: "destructive",
+      title: "Upload failed",
+      description: "Please try again"
+    });
+    return null;
+  } finally {
+    setUploadingImage(false);
+  }
+};
   const handleCopyInvoice = async () => {
     if (paymentRequest) {
       try {
