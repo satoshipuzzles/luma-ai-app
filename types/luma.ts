@@ -1,4 +1,6 @@
-export type LumaModel = 'ray-2' | 'ray-1-6' | 'photon-1' | 'photon-flash-1';
+export type LumaVideoModel = 'ray-2' | 'ray-1-6';
+export type LumaImageModel = 'photon-1' | 'photon-flash-1';
+export type LumaModel = LumaVideoModel | LumaImageModel;
 export type CameraMotion = 'static' | 'orbit' | 'dolly' | 'pan' | 'tilt';
 export type CameraDirection = 'left' | 'right' | 'up' | 'down';
 
