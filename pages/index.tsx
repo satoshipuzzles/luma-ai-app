@@ -319,6 +319,10 @@ const handleImageUpload = async (file: File) => {
     setUploadingImage(true);
     setError('');
     
+    if (!window.nostr) {
+      throw new Error('Nostr extension not found');
+    }
+    
     if (!pubkey) {
       throw new Error('Not connected to Nostr');
     }
@@ -333,10 +337,14 @@ const handleImageUpload = async (file: File) => {
     };
 
     const hashedEvent = getEventHash(event as Event);
-    const signedEvent = await window.nostr.signEvent({
+    const signedEvent = await window.nostr?.signEvent({
       ...event,
       id: hashedEvent
     } as Event);
+
+    if (!signedEvent) {
+      throw new Error('Failed to sign event');
+    }
 
     // Create form data with both file and signed event
     const formData = new FormData();
