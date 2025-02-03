@@ -1,22 +1,27 @@
+// pages/gallery.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { toast } from "@/components/ui/use-toast";
 import { Navigation } from '../components/Navigation';
-import { AnimalKind, NostrEvent } from '../types/nostr';
+import { AnimalKind } from '../types/nostr';
 import { fetchProfile, formatPubkey, getLightningAddress } from '../lib/nostr';
+import ZapModal from '@/components/ZapModal';
 import { 
   Download, 
-  MessageSquare, 
+  MessageCircle, 
   Zap, 
   X, 
   Share2, 
   RefreshCw 
 } from 'lucide-react';
+import { UserSettings, DEFAULT_SETTINGS } from '@/types/settings';
 
 interface Profile {
   name?: string;
   picture?: string;
   about?: string;
+  lud16?: string;
+  lud06?: string;
 }
 
 interface VideoPost {
@@ -25,56 +30,49 @@ interface VideoPost {
   comments: AnimalKind[];
 }
 
-// Utility function for downloading videos
-const downloadVideo = async (url: string, filename: string) => {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename || 'animal-sunset-video.mp4';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-    
-    toast({
-      title: "Download started",
-      description: "Your video is being downloaded",
-      duration: 2000
-    });
-  } catch (err) {
-    console.error('Download failed:', err);
-    toast({
-      title: "Download failed",
-      description: "Please try again",
-      variant: "destructive"
-    });
-  }
-};
+interface ZapInfo {
+  invoice: string;
+  amount: number;
+  recipientPubkey: string;
+  recipientName?: string;
+}
 
-export default function Gallery() {
-  // Keep existing state variables
+const Gallery = () => {
   const [posts, setPosts] = useState<VideoPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newComment, setNewComment] = useState('');
-  const [selectedPost, setSelectedPost] = useState<VideoPost | null>(null);
-  const [showCommentModal, setShowCommentModal] = useState(false);
-  const [sendingZap, setSendingZap] = useState(false);
+  const [showZapModal, setShowZapModal] = useState(false);
+  const [currentZap, setCurrentZap] = useState<ZapInfo | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [pubkey, setPubkey] = useState<string | null>(null);
 
   useEffect(() => {
+    const loadNostrKey = async () => {
+      if (window.nostr) {
+        try {
+          const key = await window.nostr.getPublicKey();
+          setPubkey(key);
+          const savedSettings = localStorage.getItem(`settings-${key}`);
+          if (savedSettings) {
+            setUserSettings(JSON.parse(savedSettings));
+          }
+        } catch (error) {
+          console.error('Error loading Nostr key:', error);
+        }
+      }
+    };
+    loadNostrKey();
     fetchPosts();
   }, []);
 
   const fetchPosts = async () => {
+    setLoading(true);
     try {
       const response = await fetch('/api/nostr/fetch-events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          relay: 'wss://relay.nostrfreaks.com',
+          relay: userSettings.defaultRelay,
           filter: {
             kinds: [75757],
             limit: 50
@@ -88,50 +86,36 @@ export default function Gallery() {
 
       const events = await response.json() as AnimalKind[];
       
-      // Group comments with their parent posts
-      const postsMap = new Map<string, VideoPost>();
-      
-      for (const event of events) {
-        const replyTo = event.tags.find(tag => tag[0] === 'e')?.[1];
-        
-        if (!replyTo) {
-          // This is a main post
-          postsMap.set(event.id, {
-            event,
-            comments: [],
-            profile: undefined
-          });
-        } else {
-          // This is a comment
-          const parentPost = postsMap.get(replyTo);
-          if (parentPost) {
-            parentPost.comments.push(event);
-          }
+      // Filter out duplicates based on video URL
+      const uniqueEvents = events.reduce((unique, event) => {
+        const exists = unique.find(e => e.content === event.content);
+        if (!exists || event.created_at < exists.created_at) {
+          return [...unique.filter(e => e.content !== event.content), event];
         }
-      }
+        return unique;
+      }, [] as AnimalKind[]);
 
-      // Fetch profiles for all authors
-      const posts = Array.from(postsMap.values());
-      await Promise.all(posts.map(async post => {
+      // Sort by creation date (newest first)
+      uniqueEvents.sort((a, b) => b.created_at - a.created_at);
+
+      // Create posts with profiles and comments
+      const postsWithProfiles = await Promise.all(uniqueEvents.map(async event => {
+        const post: VideoPost = { event, comments: [], profile: undefined };
         try {
-          const profileEvent = await fetchProfile(post.event.pubkey);
+          const profileEvent = await fetchProfile(event.pubkey);
           if (profileEvent) {
-            const profileContent = JSON.parse(profileEvent.content);
-            post.profile = {
-              name: profileContent.name,
-              picture: profileContent.picture,
-              about: profileContent.about
-            };
+            post.profile = JSON.parse(profileEvent.content);
           }
         } catch (error) {
           console.error('Error fetching profile:', error);
         }
+        return post;
       }));
 
-      setPosts(posts);
+      setPosts(postsWithProfiles);
       toast({
         title: "Gallery updated",
-        description: `Loaded ${posts.length} videos`,
+        description: `Loaded ${postsWithProfiles.length} videos`
       });
     } catch (error) {
       console.error('Error fetching posts:', error);
@@ -139,7 +123,7 @@ export default function Gallery() {
       toast({
         variant: "destructive",
         title: "Failed to load gallery",
-        description: "Please try refreshing the page",
+        description: "Please try refreshing the page"
       });
     } finally {
       setLoading(false);
@@ -147,43 +131,59 @@ export default function Gallery() {
   };
 
   const handleZap = async (post: VideoPost) => {
-    setSendingZap(true);
     try {
-      const lnAddress = await getLightningAddress(post.event.pubkey);
-      if (!lnAddress) {
-        throw new Error('No lightning address found for this user');
+      if (!post.profile) {
+        throw new Error('Creator profile not found');
       }
 
-      const response = await fetch('/api/create-lnbits-invoice', {
+      const lnAddress = post.profile.lud16 || post.profile.lud06;
+      if (!lnAddress) {
+        throw new Error('No lightning address found for this creator');
+      }
+
+      // Create lightning invoice
+      const response = await fetch('/api/lightning/create-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: 1000,
-          lnAddress
+          lnAddress,
+          amount: userSettings.defaultZapAmount,
+          memo: `Zap for content: ${post.event.id}`
         })
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create invoice');
+        throw new Error('Failed to create zap invoice');
       }
 
-      const { payment_request, payment_hash } = await response.json();
-      
-      // Show success toast
-      toast({
-        title: "Zap sent!",
-        description: "Thank you for supporting the creator",
-        duration: 2000
+      const { payment_request } = await response.json();
+
+      setCurrentZap({
+        invoice: payment_request,
+        amount: userSettings.defaultZapAmount,
+        recipientPubkey: post.event.pubkey,
+        recipientName: post.profile.name
       });
+      setShowZapModal(true);
+
     } catch (error) {
-      console.error('Error sending zap:', error);
+      console.error('Error creating zap:', error);
       toast({
         variant: "destructive",
         title: "Zap failed",
-        description: error instanceof Error ? error.message : "Failed to send zap",
+        description: error instanceof Error ? error.message : "Failed to create zap"
       });
-    } finally {
-      setSendingZap(false);
+    }
+  };
+
+  const handleZapComplete = async () => {
+    if (currentZap) {
+      // You could add additional logic here, like updating a zap count
+      toast({
+        title: "Zap sent!",
+        description: `Successfully sent ${currentZap.amount} sats`
+      });
+      setCurrentZap(null);
     }
   };
 
@@ -201,27 +201,25 @@ export default function Gallery() {
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
-        <title>Gallery | Animal Sunset 🌞🦒</title>
-        <meta name="description" content="Discover AI-generated animal videos" />
+        <title>Gallery | Luma AI 🌞🦒</title>
+        <meta name="description" content="Discover AI-generated content" />
       </Head>
 
-      {/* Navigation Header */}
       <div className="bg-[#1a1a1a] p-4 border-b border-gray-800">
         <div className="max-w-4xl mx-auto">
           <Navigation />
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="max-w-4xl mx-auto py-8 px-4">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Animal Gallery</h1>
+          <h1 className="text-3xl font-bold">Gallery</h1>
           <button
             onClick={() => {
               fetchPosts();
               toast({
                 title: "Refreshing gallery",
-                description: "Fetching latest videos...",
+                description: "Fetching latest content..."
               });
             }}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
@@ -269,12 +267,11 @@ export default function Gallery() {
                 </p>
               </div>
 
-              {/* Actions */}
+              {/* Action Buttons */}
               <div className="p-4 flex flex-wrap items-center gap-4">
                 <button
                   onClick={() => handleZap(post)}
-                  disabled={sendingZap}
-                  className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center space-x-2 text-yellow-500 hover:text-yellow-400"
                 >
                   <Zap size={20} />
                   <span>Zap</span>
@@ -282,102 +279,57 @@ export default function Gallery() {
 
                 <button
                   onClick={() => {
-                    setSelectedPost(post);
-                    setShowCommentModal(true);
+                    const url = post.event.content;
+                    const filename = `luma-${post.event.id}.mp4`;
+                    fetch(url)
+                      .then(res => res.blob())
+                      .then(blob => {
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      });
                   }}
                   className="flex items-center space-x-2 text-gray-400 hover:text-white"
-                >
-                  <MessageSquare size={20} />
-                  <span>{post.comments.length}</span>
-                </button>
-
-                <button
-                  onClick={() => downloadVideo(post.event.content, `animal-sunset-${post.event.id}.mp4`)}
-                  className="flex items-center space-x-2 text-gray-400 hover:text-white ml-auto"
                 >
                   <Download size={20} />
                   <span>Download</span>
                 </button>
-              </div>
 
-              {/* Comments */}
-              {post.comments.length > 0 && (
-                <div className="border-t border-gray-800">
-                  <div className="p-4 space-y-4">
-                    {post.comments.map(comment => (
-                      <div key={comment.id} className="flex items-start space-x-3">
-                        <img
-                          src="/default-avatar.png"
-                          alt="Commenter"
-                          className="w-8 h-8 rounded-full"
-                        />
-                        <div className="flex-1 bg-[#2a2a2a] rounded-lg p-3">
-                          <div className="font-medium text-gray-300 mb-1">
-                            {formatPubkey(comment.pubkey)}
-                          </div>
-                          <div className="text-sm text-gray-200">
-                            {comment.content}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(post.event.content);
+                    toast({
+                      title: "Copied!",
+                      description: "URL copied to clipboard"
+                    });
+                  }}
+                  className="flex items-center space-x-2 text-gray-400 hover:text-white"
+                >
+                  <Share2 size={20} />
+                  <span>Share</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Comment Modal */}
-      {showCommentModal && selectedPost && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg space-y-4 max-w-md w-full">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">Add Comment</h2>
-              <button
-                onClick={() => setShowCommentModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <textarea
-              className="w-full bg-[#2a2a2a] rounded-lg p-3 text-white resize-none border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-              rows={4}
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Write your comment..."
-            />
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowCommentModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  // TODO: Implement comment publishing via Nostr
-                  setShowCommentModal(false);
-                  setNewComment('');
-                  toast({
-                    title: "Comment posted",
-                    description: "Your comment has been published",
-                    duration: 2000
-                  });
-                }}
-                disabled={!newComment.trim()}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-              >
-                Post Comment
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Zap Modal */}
+      {showZapModal && currentZap && (
+        <ZapModal
+          isOpen={showZapModal}
+          onClose={() => setShowZapModal(false)}
+          invoice={currentZap.invoice}
+          amount={currentZap.amount}
+          recipientName={currentZap.recipientName}
+          onPaymentConfirmed={handleZapComplete}
+        />
       )}
     </div>
   );
-}
+};
+
+export default Gallery;
