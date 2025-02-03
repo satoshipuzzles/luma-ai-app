@@ -21,7 +21,6 @@ export const GenerationForm = ({ onGenerate, loading }: GenerationFormProps) => 
       width: 1920,
       height: 1080
     },
-    duration: 4,
     cameraMotion: {
       type: 'static',
       speed: 1,
@@ -48,6 +47,13 @@ export const GenerationForm = ({ onGenerate, loading }: GenerationFormProps) => 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Model Selection */}
+      <ModelSelector
+        selectedModel={options.model}
+        onModelSelect={(model) => updateOptions({ model })}
+        disabled={loading}
+      />
+
       {/* Prompt Input */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-300">
@@ -62,13 +68,6 @@ export const GenerationForm = ({ onGenerate, loading }: GenerationFormProps) => 
           placeholder="Enter your prompt..."
         />
       </div>
-
-      {/* Model Selection */}
-      <ModelSelector
-        selectedModel={options.model}
-        onModelSelect={(model) => updateOptions({ model })}
-        disabled={loading}
-      />
 
       {/* Advanced Controls */}
       <div className="border-t border-gray-800 pt-6">
