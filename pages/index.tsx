@@ -327,17 +327,26 @@ const handleImageUpload = async (file: File) => {
       throw new Error('Not connected to Nostr');
     }
 
-    // Create and sign the event
+    // Create proper NIP-98 event
     const event: Partial<Event> = {
-      kind: 27235, // Nostr.build specific kind
+      kind: 27235,
       created_at: Math.floor(Date.now() / 1000),
       content: '',
-      tags: [['u', URL.createObjectURL(file)]],
+      tags: [
+        ['u', 'https://nostr.build/api/v2/upload/files'],
+        ['method', 'POST'],
+        ['payload', JSON.stringify({
+          file: URL.createObjectURL(file),
+          name: file.name,
+          type: file.type,
+          size: file.size
+        })]
+      ],
       pubkey
     };
 
     const hashedEvent = getEventHash(event as Event);
-    const signedEvent = await window.nostr?.signEvent({
+    const signedEvent = await window.nostr.signEvent({
       ...event,
       id: hashedEvent
     } as Event);
@@ -346,10 +355,10 @@ const handleImageUpload = async (file: File) => {
       throw new Error('Failed to sign event');
     }
 
-    // Create form data with both file and signed event
+    // Create form data with file and authorization
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('event', JSON.stringify(signedEvent));
+    formData.append('authorization', JSON.stringify(signedEvent));
 
     // Upload to nostr.build
     const response = await fetch('https://nostr.build/api/v2/upload/files', {
@@ -358,7 +367,8 @@ const handleImageUpload = async (file: File) => {
     });
 
     if (!response.ok) {
-      throw new Error('Upload failed: ' + await response.text());
+      const errorText = await response.text();
+      throw new Error('Upload failed: ' + errorText);
     }
 
     const result = await response.json();
@@ -379,7 +389,7 @@ const handleImageUpload = async (file: File) => {
     toast({
       variant: "destructive",
       title: "Upload failed",
-      description: "Please try again"
+      description: err instanceof Error ? err.message : "Please try again"
     });
     return null;
   } finally {
