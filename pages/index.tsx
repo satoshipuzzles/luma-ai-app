@@ -23,6 +23,9 @@ import {
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { useFees } from '@/context/FeeContext';
+import { GenerationOptions } from '@/types/luma';
+import GenerationForm from '@/components/GenerationForm';
 
 // Types
 interface StoredGeneration {
@@ -39,7 +42,9 @@ interface Profile {
   picture?: string;
   about?: string;
 }
-
+interface GenerationState extends StoredGeneration {
+  options: GenerationOptions;
+}
 /*interface NostrWindow extends Window {
   nostr?: {
     getPublicKey(): Promise<string>;
@@ -57,6 +62,24 @@ const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+ const { getFee } = useFees();
+  const [generationOptions, setGenerationOptions] = useState<GenerationOptions>({
+    model: 'ray-2',
+    prompt: '',
+    aspectRatio: '16:9',
+    loop: true,
+    resolution: {
+      width: 1920,
+      height: 1080
+    },
+    duration: 4,
+    cameraMotion: {
+      type: 'static',
+      speed: 1,
+      direction: 'right'
+    }
+  });
+
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
