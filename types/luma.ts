@@ -1,7 +1,11 @@
-// types/luma.ts
 export type LumaModel = 'ray-2' | 'ray-1-6' | 'photon-1' | 'photon-flash-1';
 export type CameraMotion = 'static' | 'orbit' | 'dolly' | 'pan' | 'tilt';
 export type CameraDirection = 'left' | 'right' | 'up' | 'down';
+
+export interface Resolution {
+  width: number;
+  height: number;
+}
 
 export interface CameraMotionConfig {
   type: CameraMotion;
@@ -10,10 +14,12 @@ export interface CameraMotionConfig {
 }
 
 export interface GenerationOptions {
-  model: LumaModel;  // Added this field
+  model: LumaModel;
   prompt: string;
   aspectRatio: string;
   loop: boolean;
+  resolution: Resolution;
+  duration?: number;
   cameraMotion: CameraMotionConfig;
 }
 
