@@ -4,42 +4,43 @@ import { GenerationFees } from '@/types/luma';
 
 interface FeeContextType {
   fees: GenerationFees;
-  getFee: (model: string) => number;
-  refreshFees: () => Promise<void>;
+  loading: boolean;
+  error: string | null;
 }
 
-const FeeContext = createContext<FeeContextType | undefined>(undefined);
+const FeeContext = createContext<FeeContextType>({
+  fees: {},
+  loading: false,
+  error: null
+});
 
 export const FeeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [fees, setFees] = useState<GenerationFees>({
-    'ray-2': 2000,
-    'ray-1-6': 1000,
-    'photon-1': 500,
-    'photon-flash-1': 300
-  });
-
-  const refreshFees = async () => {
-    try {
-      const response = await fetch('/api/admin/fees');
-      if (response.ok) {
-        const currentFees = await response.json();
-        setFees(currentFees);
-      }
-    } catch (error) {
-      console.error('Failed to fetch fees:', error);
-    }
-  };
-
-  const getFee = (model: string): number => {
-    return fees[model as keyof GenerationFees] || 1000;
-  };
+  const [fees, setFees] = useState<GenerationFees>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    refreshFees();
+    const fetchFees = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch('/api/fees');
+        if (!response.ok) {
+          throw new Error('Failed to fetch fees');
+        }
+        const data = await response.json();
+        setFees(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load fees');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFees();
   }, []);
 
   return (
-    <FeeContext.Provider value={{ fees, getFee, refreshFees }}>
+    <FeeContext.Provider value={{ fees, loading, error }}>
       {children}
     </FeeContext.Provider>
   );
@@ -47,8 +48,10 @@ export const FeeProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useFees = () => {
   const context = useContext(FeeContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useFees must be used within a FeeProvider');
   }
   return context;
 };
+
+export default FeeContext;
