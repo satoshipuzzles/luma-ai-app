@@ -2,24 +2,21 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
 import { relayInit, getEventHash, Event } from 'nostr-tools';
-import { 
-  Menu, 
-  X, 
-  Copy, 
-  Check, 
-  Settings, 
-  Upload, 
-  RefreshCw, 
+import {
+  Menu,
+  X,
+  Copy,
+  Check,
+  Settings,
+  Upload,
+  RefreshCw,
   Download,
-  Share2, 
-  AlertCircle 
+  Share2,
+  AlertCircle,
 } from 'lucide-react';
-import { Switch } from "@/components/ui/switch";
-import { toast } from "@/components/ui/use-toast";
-import { 
-  isPromptSafe, 
-  getPromptFeedback 
-} from '../lib/profanity';
+import { Switch } from '@/components/ui/switch';
+import { toast } from '@/components/ui/use-toast';
+import { isPromptSafe, getPromptFeedback } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
@@ -42,9 +39,11 @@ interface Profile {
   picture?: string;
   about?: string;
 }
+
 interface GenerationState extends StoredGeneration {
   options: GenerationOptions;
 }
+
 /*interface NostrWindow extends Window {
   nostr?: {
     getPublicKey(): Promise<string>;
@@ -62,30 +61,13 @@ const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
- const { getFee } = useFees();
-  const [generationOptions, setGenerationOptions] = useState<GenerationOptions>({
-    model: 'ray-2',
-    prompt: '',
-    aspectRatio: '16:9',
-    loop: true,
-    resolution: {
-      width: 1920,
-      height: 1080
-    },
-    duration: 4,
-    cameraMotion: {
-      type: 'static',
-      speed: 1,
-      direction: 'right'
-    }
-  });
 
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return 'Just now';
-    
+
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
@@ -107,7 +89,9 @@ const formatDate = (dateString: string) => {
 
 const getNostrPublicKey = async () => {
   if (!window.nostr) {
-    throw new Error('Nostr extension not found. Please install a NIP-07 browser extension.');
+    throw new Error(
+      'Nostr extension not found. Please install a NIP-07 browser extension.'
+    );
   }
   return await window.nostr.getPublicKey();
 };
@@ -153,25 +137,25 @@ const downloadVideo = async (url: string, filename: string) => {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(downloadUrl);
-    
+
     toast({
-      title: "Download started",
-      description: "Your video is being downloaded",
-      duration: 2000
+      title: 'Download started',
+      description: 'Your video is being downloaded',
+      duration: 2000,
     });
   } catch (err) {
     console.error('Download failed:', err);
     toast({
-      title: "Download failed",
-      description: "Please try again",
-      variant: "destructive"
+      title: 'Download failed',
+      description: 'Please try again',
+      variant: 'destructive',
     });
   }
 };
 
 const publishToNostr = async (
-  videoUrl: string, 
-  prompt: string, 
+  videoUrl: string,
+  prompt: string,
   isPublic: boolean,
   eventId: string,
   pubkey: string
@@ -189,13 +173,15 @@ const publishToNostr = async (
       tags: [
         ['title', prompt],
         ['r', videoUrl],
-        ['type', 'animal-sunset']
+        ['type', 'animal-sunset'],
       ],
       content: videoUrl,
     };
 
     animalEvent.id = getEventHash(animalEvent as Event);
-    const signedAnimalEvent = await window.nostr.signEvent(animalEvent as Event);
+    const signedAnimalEvent = await window.nostr.signEvent(
+      animalEvent as Event
+    );
 
     // History Event (8008135)
     const historyEvent: Partial<Event> = {
@@ -206,19 +192,21 @@ const publishToNostr = async (
         ['text-to-speech', prompt],
         ['r', videoUrl],
         ['e', signedAnimalEvent.id],
-        ['public', isPublic.toString()]
+        ['public', isPublic.toString()],
       ],
       content: JSON.stringify({
         prompt,
         videoUrl,
         createdAt: new Date().toISOString(),
         state: 'completed',
-        public: isPublic
+        public: isPublic,
       }),
     };
 
     historyEvent.id = getEventHash(historyEvent as Event);
-    const signedHistoryEvent = await window.nostr.signEvent(historyEvent as Event);
+    const signedHistoryEvent = await window.nostr.signEvent(
+      historyEvent as Event
+    );
 
     const relayConnections = DEFAULT_RELAY_URLS.map((url) => relayInit(url));
 
@@ -244,18 +232,19 @@ const publishToNostr = async (
       })
     );
 
-    relayConnections.forEach(relay => relay.close());
+    relayConnections.forEach((relay) => relay.close());
 
     toast({
-      title: "Published to Nostr",
-      description: "Your video has been shared successfully",
-      duration: 2000
+      title: 'Published to Nostr',
+      description: 'Your video has been shared successfully',
+      duration: 2000,
     });
   } catch (err) {
     console.error('Error publishing to Nostr:', err);
     throw err;
   }
 };
+
 export default function Home() {
   // State Management
   const [pubkey, setPubkey] = useState<string | null>(null);
@@ -264,7 +253,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
   const [error, setError] = useState('');
-  const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
+  const [selectedGeneration, setSelectedGeneration] =
+    useState<StoredGeneration | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -280,6 +270,25 @@ export default function Home() {
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+
+  // New states for generation options
+  const { getFee } = useFees();
+  const [generationOptions, setGenerationOptions] = useState<GenerationOptions>({
+    model: 'ray-2',
+    prompt: '',
+    aspectRatio: '16:9',
+    loop: true,
+    resolution: {
+      width: 1920,
+      height: 1080,
+    },
+    duration: 4,
+    cameraMotion: {
+      type: 'static',
+      speed: 1,
+      direction: 'right',
+    },
+  });
 
   // Effects
   useEffect(() => {
@@ -319,120 +328,123 @@ export default function Home() {
 
     loadProfile();
   }, [pubkey]);
+
   // Core Functions
   const connectNostr = async () => {
     try {
       const key = await getNostrPublicKey();
       setPubkey(key);
       toast({
-        title: "Connected",
-        description: "Successfully connected to Nostr",
+        title: 'Connected',
+        description: 'Successfully connected to Nostr',
       });
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
       toast({
-        variant: "destructive",
-        title: "Connection failed",
-        description: "Please install a Nostr extension",
+        variant: 'destructive',
+        title: 'Connection failed',
+        description: 'Please install a Nostr extension',
       });
     }
   };
-const handleImageUpload = async (file: File) => {
-  try {
-    setUploadingImage(true);
-    setError('');
-    
-    if (!window.nostr) {
-      throw new Error('Nostr extension not found');
-    }
-    
-    if (!pubkey) {
-      throw new Error('Not connected to Nostr');
-    }
 
-    const formData = new FormData();
-    formData.append('file', file);
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploadingImage(true);
+      setError('');
 
-    // Create proper NIP-98 event
-    const event: Partial<Event> = {
-      kind: 27235,
-      created_at: Math.floor(Date.now() / 1000),
-      content: "",
-      tags: [
-        ["u", "https://nostr.build/api/v2/upload/files"],
-        ["method", "POST"],
-      ],
-      pubkey
-    };
+      if (!window.nostr) {
+        throw new Error('Nostr extension not found');
+      }
 
-    const hashedEvent = getEventHash(event as Event);
-    const signedEvent = await window.nostr.signEvent({
-      ...event,
-      id: hashedEvent
-    } as Event);
+      if (!pubkey) {
+        throw new Error('Not connected to Nostr');
+      }
 
-    if (!signedEvent) {
-      throw new Error('Failed to sign event');
-    }
+      const formData = new FormData();
+      formData.append('file', file);
 
-    // Base64 encode the signed event
-    const authToken = btoa(JSON.stringify(signedEvent));
+      // Create proper NIP-98 event
+      const event: Partial<Event> = {
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        content: '',
+        tags: [
+          ['u', 'https://nostr.build/api/v2/upload/files'],
+          ['method', 'POST'],
+        ],
+        pubkey,
+      };
 
-    // Upload to nostr.build with Authorization header
-    const response = await fetch('https://nostr.build/api/v2/upload/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Nostr ${authToken}`
-      },
-      body: formData,
-    });
+      const hashedEvent = getEventHash(event as Event);
+      const signedEvent = await window.nostr.signEvent({
+        ...event,
+        id: hashedEvent,
+      } as Event);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error('Upload failed: ' + errorText);
-    }
+      if (!signedEvent) {
+        throw new Error('Failed to sign event');
+      }
 
-    const result = await response.json();
-    
-    if (result.status === 'success') {
-      setStartImageUrl(result.data[0].url);
-      toast({
-        title: "Image uploaded",
-        description: "Start image has been set"
+      // Base64 encode the signed event
+      const authToken = btoa(JSON.stringify(signedEvent));
+
+      // Upload to nostr.build with Authorization header
+      const response = await fetch('https://nostr.build/api/v2/upload/files', {
+        method: 'POST',
+        headers: {
+          Authorization: `Nostr ${authToken}`,
+        },
+        body: formData,
       });
-      return result.data[0].url;
-    } else {
-      throw new Error(result.message || 'Upload failed');
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error('Upload failed: ' + errorText);
+      }
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        setStartImageUrl(result.data[0].url);
+        toast({
+          title: 'Image uploaded',
+          description: 'Start image has been set',
+        });
+        return result.data[0].url;
+      } else {
+        throw new Error(result.message || 'Upload failed');
+      }
+    } catch (err) {
+      console.error('Failed to upload image:', err);
+      setError('Failed to upload image. Please try again.');
+      toast({
+        variant: 'destructive',
+        title: 'Upload failed',
+        description: err instanceof Error ? err.message : 'Please try again',
+      });
+      return null;
+    } finally {
+      setUploadingImage(false);
     }
-  } catch (err) {
-    console.error('Failed to upload image:', err);
-    setError('Failed to upload image. Please try again.');
-    toast({
-      variant: "destructive",
-      title: "Upload failed",
-      description: err instanceof Error ? err.message : "Please try again"
-    });
-    return null;
-  } finally {
-    setUploadingImage(false);
-  }
-};
+  };
+
   const handleCopyInvoice = async () => {
     if (paymentRequest) {
       try {
         await navigator.clipboard.writeText(paymentRequest);
         setHasCopied(true);
         toast({
-          title: "Copied",
-          description: "Invoice copied to clipboard",
+          title: 'Copied',
+          description: 'Invoice copied to clipboard',
         });
         setTimeout(() => setHasCopied(false), 2000);
       } catch (err) {
         console.error('Failed to copy invoice:', err);
         toast({
-          variant: "destructive",
-          title: "Copy failed",
-          description: "Please try again",
+          variant: 'destructive',
+          title: 'Copy failed',
+          description: 'Please try again',
         });
       }
     }
@@ -442,58 +454,18 @@ const handleImageUpload = async (file: File) => {
     try {
       await navigator.clipboard.writeText(url);
       toast({
-        title: "Copied",
-        description: "Video URL copied to clipboard",
-        duration: 2000
+        title: 'Copied',
+        description: 'Video URL copied to clipboard',
+        duration: 2000,
       });
     } catch (err) {
       console.error('Failed to copy:', err);
       toast({
-        variant: "destructive",
-        title: "Copy failed",
-        description: "Please try again",
+        variant: 'destructive',
+        title: 'Copy failed',
+        description: 'Please try again',
       });
     }
-  };
-
-  const waitForPayment = async (paymentHash: string): Promise<boolean> => {
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < INVOICE_EXPIRY) {
-      try {
-        const response = await fetch('/api/check-lnbits-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentHash }),
-        });
-
-        if (!response.ok) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        const data = await response.json();
-        if (data.paid) {
-          toast({
-            title: "Payment received",
-            description: "Starting video generation",
-          });
-          return true;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      } catch (err) {
-        console.error('Error checking payment status:', err);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-    }
-
-    toast({
-      variant: "destructive",
-      title: "Payment expired",
-      description: "Please try again",
-    });
-    return false;
   };
 
   const pollForCompletion = async (generationId: string) => {
@@ -509,11 +481,10 @@ const handleImageUpload = async (file: File) => {
         if (data.state === 'completed' && data.assets?.video) {
           setGenerations((prevGenerations) => {
             const updatedGenerations = prevGenerations.map((g) =>
-              g.id === generationId 
+              g.id === generationId
                 ? { ...g, state: 'completed', videoUrl: data.assets.video, createdAt: data.created_at }
                 : g
-                );
-
+            );
             localStorage.setItem('generations', JSON.stringify(updatedGenerations));
             return updatedGenerations;
           });
@@ -535,7 +506,7 @@ const handleImageUpload = async (file: File) => {
             try {
               await publishToNostr(
                 data.assets.video,
-                prompt,
+                prompt, // Consider using options.prompt if needed
                 userSettings.publicGenerations,
                 generationId,
                 pubkey!
@@ -543,9 +514,9 @@ const handleImageUpload = async (file: File) => {
             } catch (error) {
               console.error('Failed to publish to Nostr:', error);
               toast({
-                variant: "destructive",
-                title: "Publishing failed",
-                description: "Failed to share to Nostr",
+                variant: 'destructive',
+                title: 'Publishing failed',
+                description: 'Failed to share to Nostr',
               });
             }
           }
@@ -590,93 +561,64 @@ const handleImageUpload = async (file: File) => {
     poll();
   };
 
-  const generateVideo = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!prompt || !pubkey) return;
-
-    if (!isPromptSafe(prompt)) {
-      setError(getPromptFeedback(prompt));
-      toast({
-        variant: "destructive",
-        title: "Invalid prompt",
-        description: getPromptFeedback(prompt),
-      });
-      return;
-    }
+  // Updated generateVideo function that accepts GenerationOptions
+  const generateVideo = async (options: GenerationOptions) => {
+    if (!pubkey) return;
 
     setLoading(true);
     setError('');
 
     try {
-      // Create Lightning invoice
-      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
-      });
+      // Get fee for selected model
+      const fee = getFee(options.model);
 
-      if (!invoiceResponse.ok) {
-        const errorData = await invoiceResponse.json();
-        throw new Error(errorData.error || 'Failed to create invoice');
-      }
+      // Handle payment first
+      if (!paymentRequest) {
+        const paymentResponse = await fetch('/api/lightning/create-invoice', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: fee,
+            description: `Animal Sunset generation: ${options.prompt}`,
+          }),
+        });
 
-      const invoiceData = await invoiceResponse.json();
-      const { payment_request, payment_hash } = invoiceData;
+        if (!paymentResponse.ok) {
+          throw new Error('Failed to create payment request');
+        }
 
-      setPaymentRequest(payment_request);
-      setPaymentHash(payment_hash);
+        const { payment_request, payment_hash } = await paymentResponse.json();
 
-      const paymentConfirmed = await waitForPayment(payment_hash);
-      if (!paymentConfirmed) {
-        setLoading(false);
+        setPaymentRequest(payment_request);
+        setPaymentHash(payment_hash);
         return;
       }
 
-      setPaymentRequest(null);
-      setPaymentHash(null);
-
-      // Prepare generation request
-      const generationBody: any = { 
-        prompt,
-        loop: isLooping
-      };
-
-      if (isExtending && selectedVideoId) {
-        generationBody.extend = true;
-        generationBody.videoId = selectedVideoId;
-      } else if (startImageUrl) {
-        generationBody.startImageUrl = startImageUrl;
-      }
-
-      // Generate video
+      // Generate video/image
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(generationBody),
+        body: JSON.stringify(options),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to generate video');
+        throw new Error('Failed to generate');
       }
 
       const data = await response.json();
 
-      if (!data.id) {
-        throw new Error('Invalid response from server');
-      }
-
-      const newGeneration: StoredGeneration = {
+      const newGeneration: GenerationState = {
         id: data.id,
-        prompt,
-        state: data.state || 'queued',
-        createdAt: data.created_at || new Date().toISOString(),
+        prompt: options.prompt,
+        state: 'queued',
+        createdAt: new Date().toISOString(),
         pubkey,
-        videoUrl: data.assets?.video,
+        videoUrl: undefined,
+        options,
       };
 
       saveGeneration(newGeneration);
@@ -686,24 +628,22 @@ const handleImageUpload = async (file: File) => {
       pollForCompletion(data.id);
 
       toast({
-        title: "Generation started",
-        description: "Your video is being generated",
+        title: 'Generation started',
+        description: 'Your content is being generated',
       });
     } catch (err) {
       console.error('Generation error:', err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to generate video. Please try again.'
-      );
-      toast({
-        variant: "destructive",
-        title: "Generation failed",
-        description: err instanceof Error ? err.message : "Please try again",
-      });
+      setError(err instanceof Error ? err.message : 'Failed to generate');
       setLoading(false);
+
+      toast({
+        variant: 'destructive',
+        title: 'Generation failed',
+        description: err instanceof Error ? err.message : 'Please try again',
+      });
     }
   };
+
   // Render
   if (!pubkey) {
     return (
@@ -711,7 +651,9 @@ const handleImageUpload = async (file: File) => {
         <div className="max-w-md w-full p-6 space-y-6">
           <h1 className="text-3xl font-bold text-center">Animal Sunset 🌞🦒</h1>
           <div className="bg-[#1a1a1a] p-8 rounded-lg shadow-xl space-y-4">
-            <p className="text-gray-300 text-center">Connect with Nostr to get started</p>
+            <p className="text-gray-300 text-center">
+              Connect with Nostr to get started
+            </p>
             <button
               onClick={connectNostr}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
@@ -735,7 +677,10 @@ const handleImageUpload = async (file: File) => {
         <title>Animal Sunset 🌞🦒</title>
         <link rel="icon" href="https://animalsunset.com/favicon.png" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="description" content="Animal Sunset 🌞🦒 - AI-powered video generator." />
+        <meta
+          name="description"
+          content="Animal Sunset 🌞🦒 - AI-powered video generator."
+        />
         <meta property="og:title" content="Animal Sunset 🌞🦒" />
         <meta property="og:description" content="AI-powered video generator." />
         <meta property="og:image" content="https://animalsunset.com/og-image.png" />
@@ -776,7 +721,7 @@ const handleImageUpload = async (file: File) => {
       {/* Main Layout */}
       <div className="flex h-[calc(100vh-64px)] md:h-screen relative">
         {/* Sidebar */}
-        <div 
+        <div
           className={`
             fixed md:relative z-30 w-64 h-full bg-[#1a1a1a] border-r border-gray-800
             transition-transform duration-300 ease-in-out
@@ -859,6 +804,10 @@ const handleImageUpload = async (file: File) => {
                       <div className="text-sm text-gray-400">
                         {formatDate(selectedGeneration.createdAt)}
                       </div>
+                      <div className="text-sm text-gray-400 mt-2">
+                        Model: {selectedGeneration.options?.model || 'Ray 2'}
+                        {/* Add other option details as needed */}
+                      </div>
                     </div>
                     <button
                       onClick={() => setSelectedGeneration(null)}
@@ -892,14 +841,21 @@ const handleImageUpload = async (file: File) => {
                         {/* Action Buttons */}
                         <div className="flex flex-wrap gap-2">
                           <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
+                            onClick={() =>
+                              copyVideoUrl(selectedGeneration.videoUrl!)
+                            }
                             className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
                             <Copy size={16} />
                             <span>Copy URL</span>
                           </button>
                           <button
-                            onClick={() => downloadVideo(selectedGeneration.videoUrl!, `animal-sunset-${selectedGeneration.id}.mp4`)}
+                            onClick={() =>
+                              downloadVideo(
+                                selectedGeneration.videoUrl!,
+                                `animal-sunset-${selectedGeneration.id}.mp4`
+                              )
+                            }
                             className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
                           >
                             <Download size={16} />
@@ -921,7 +877,7 @@ const handleImageUpload = async (file: File) => {
                       </div>
                     ) : selectedGeneration.state === 'failed' ? (
                       <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                      Generation failed. Please try again.
+                        Generation failed. Please try again.
                       </div>
                     ) : (
                       <div className="space-y-6">
@@ -946,149 +902,9 @@ const handleImageUpload = async (file: File) => {
                 </div>
               </div>
             ) : (
+              // Replace the old generation form with the GenerationForm component
               <div className="max-w-3xl mx-auto">
-                <form
-                  onSubmit={generateVideo}
-                  className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4"
-                >
-                  <textarea
-                    id="prompt-input"
-                    name="prompt"
-                    className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 transition duration-200"
-                    rows={4}
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="Describe your video idea..."
-                    disabled={loading}
-                  />
-
-                  {/* Video Options */}
-                  <div className="space-y-4">
-                    {/* Loop Toggle */}
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-gray-300">Loop Video</label>
-                      <Switch
-                        checked={isLooping}
-                        onCheckedChange={setIsLooping}
-                        disabled={loading}
-                      />
-                    </div>
-
-                    {/* Extend Toggle */}
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                       <Switch
-  checked={isExtending}
-  onCheckedChange={(checked) => { 
-    setIsExtending(checked); 
-    if (checked) setStartImageUrl(null);
-  }}
-  disabled={loading}
-/>
-
-                    </div>
-
-                    {/* Conditional Content */}
-                    {isExtending ? (
-                      <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-300">
-                          Select Video to Extend
-                        </label>
-                        <select
-                          className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
-                          value={selectedVideoId || ''}
-                          onChange={(e) => setSelectedVideoId(e.target.value)}
-                          disabled={loading}
-                        >
-                          <option value="">Select a video...</option>
-                          {generations
-                            .filter(g => g.state === 'completed')
-                            .map((gen) => (
-                              <option key={gen.id} value={gen.id}>
-                                {gen.prompt}
-                              </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Start Image (Optional)
-                        </label>
-                        <div className="flex items-center gap-4">
-                          <label className="flex-1">
-                            <div className={`
-                              flex items-center justify-center w-full h-32 
-                              border-2 border-dashed border-gray-700 rounded-lg 
-                              cursor-pointer hover:border-purple-500
-                              ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                            `}>
-                              {startImageUrl ? (
-                                <div className="relative w-full h-full">
-                                  <img
-                                    src={startImageUrl}
-                                    alt="Start frame"
-                                    className="w-full h-full object-cover rounded-lg"
-                                  />
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      setStartImageUrl(null);
-                                    }}
-                                    className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-                                  >
-                                    <X size={16} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col items-center">
-                                  <Upload size={24} className="text-gray-500" />
-                                  <span className="mt-2 text-sm text-gray-500">
-                                    {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleImageUpload(file);
-                              }}
-                              className="hidden"
-                              disabled={loading}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
-                      className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
-                    >
-                      {loading ? (
-                        <span className="flex items-center space-x-2">
-                          <RefreshCw className="animate-spin h-5 w-5" />
-                          <span>Generating...</span>
-                        </span>
-                      ) : (
-                        'Generate Video'
-                      )}
-                    </button>
-                  </div>
-
-                  {error && (
-                    <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-                      <p className="font-medium">Error</p>
-                      <p className="text-sm">{error}</p>
-                    </div>
-                  )}
-                </form>
+                <GenerationForm onGenerate={generateVideo} loading={loading} />
               </div>
             )}
           </div>
@@ -1113,11 +929,13 @@ const handleImageUpload = async (file: File) => {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
-            
+            <p className="text-sm text-gray-300">
+              Please pay 1000 sats to proceed.
+            </p>
+
             <div className="flex justify-center p-4 bg-white rounded-lg">
-              <QRCode 
-                value={paymentRequest} 
+              <QRCode
+                value={paymentRequest}
                 size={Math.min(window.innerWidth - 80, 256)}
                 level="H"
                 includeMargin={true}
@@ -1202,12 +1020,14 @@ const handleImageUpload = async (file: File) => {
                       userSettings.publicGenerations,
                       selectedGeneration.id,
                       pubkey!
-                    ).then(() => {
-                      setShowNostrModal(false);
-                      setNoteContent('');
-                    }).catch((error) => {
-                      setPublishError(error.message);
-                    });
+                    )
+                      .then(() => {
+                        setShowNostrModal(false);
+                        setNoteContent('');
+                      })
+                      .catch((error) => {
+                        setPublishError(error.message);
+                      });
                   }
                 }}
                 disabled={publishing || !selectedGeneration?.videoUrl}
