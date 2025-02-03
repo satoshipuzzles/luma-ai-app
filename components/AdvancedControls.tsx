@@ -1,9 +1,10 @@
+// components/AdvancedControls.tsx
 import { Switch } from "@/components/ui/switch";
 import { 
-  AspectRatio, 
   CameraMotion, 
   CameraDirection,
-  GenerationOptions 
+  GenerationOptions,
+  CameraMotionConfig 
 } from '@/types/luma';
 
 interface AdvancedControlsProps {
@@ -17,17 +18,33 @@ export const AdvancedControls = ({
   onChange,
   disabled
 }: AdvancedControlsProps) => {
-  const aspectRatios: AspectRatio[] = ['16:9', '1:1', '9:16', '4:3', '3:4'];
+  const aspectRatios = ['16:9', '1:1', '9:16', '4:3', '3:4'];
   const cameraMotions: CameraMotion[] = ['static', 'orbit', 'dolly', 'pan', 'tilt'];
   const directions: CameraDirection[] = ['left', 'right', 'up', 'down'];
 
-  const handleCameraMotionChange = (type: CameraMotion) => {
-    const newCameraMotion = {
+  const handleCameraMotionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const type = e.target.value as CameraMotion;
+    const newCameraMotion: CameraMotionConfig = {
       type,
-      speed: options.cameraMotion?.speed || 1,
-      direction: options.cameraMotion?.direction || 'right'
+      speed: options.cameraMotion.speed,
+      direction: options.cameraMotion.direction
     };
-    
+    onChange({ cameraMotion: newCameraMotion });
+  };
+
+  const handleDirectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newCameraMotion: CameraMotionConfig = {
+      ...options.cameraMotion,
+      direction: e.target.value as CameraDirection
+    };
+    onChange({ cameraMotion: newCameraMotion });
+  };
+
+  const handleSpeedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newCameraMotion: CameraMotionConfig = {
+      ...options.cameraMotion,
+      speed: parseFloat(e.target.value)
+    };
     onChange({ cameraMotion: newCameraMotion });
   };
 
@@ -75,8 +92,8 @@ export const AdvancedControls = ({
           Camera Motion
         </label>
         <select
-          value={options.cameraMotion?.type || 'static'}
-          onChange={(e) => handleCameraMotionChange(e.target.value as CameraMotion)}
+          value={options.cameraMotion.type}
+          onChange={handleCameraMotionChange}
           disabled={disabled}
           className="w-full bg-[#2a2a2a] rounded-lg px-3 py-2 text-sm border border-gray-700"
         >
@@ -88,21 +105,15 @@ export const AdvancedControls = ({
         </select>
       </div>
 
-      {/* Additional camera controls when not static */}
-      {options.cameraMotion?.type !== 'static' && (
+      {options.cameraMotion.type !== 'static' && (
         <>
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-300">
               Direction
             </label>
             <select
-              value={options.cameraMotion?.direction || 'right'}
-              onChange={(e) => onChange({
-                cameraMotion: {
-                  ...options.cameraMotion,
-                  direction: e.target.value as CameraDirection
-                }
-              })}
+              value={options.cameraMotion.direction}
+              onChange={handleDirectionChange}
               disabled={disabled}
               className="w-full bg-[#2a2a2a] rounded-lg px-3 py-2 text-sm border border-gray-700"
             >
@@ -123,13 +134,8 @@ export const AdvancedControls = ({
               min="0.1"
               max="2"
               step="0.1"
-              value={options.cameraMotion?.speed || 1}
-              onChange={(e) => onChange({
-                cameraMotion: {
-                  ...options.cameraMotion,
-                  speed: parseFloat(e.target.value)
-                }
-              })}
+              value={options.cameraMotion.speed}
+              onChange={handleSpeedChange}
               disabled={disabled}
               className="w-full"
             />
