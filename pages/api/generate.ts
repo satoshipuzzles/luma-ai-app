@@ -1,5 +1,6 @@
 // pages/api/generate.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { GenerationOptions } from '@/types/luma';
 
 export default async function handler(
   req: NextApiRequest,
@@ -15,31 +16,17 @@ export default async function handler(
   }
 
   try {
-    const { prompt, loop = true, startImageUrl, extend, videoId } = req.body;
-    console.log('Starting generation with prompt:', prompt);
+    const options: GenerationOptions = req.body;
 
-    const requestBody: any = {
-      prompt,
-      aspect_ratio: "16:9",
-      loop: Boolean(loop)
+    const requestBody = {
+      model: options.model,
+      prompt: options.prompt,
+      aspect_ratio: options.aspectRatio,
+      loop: options.loop,
+      ...(options.cameraMotion && { camera_motion: options.cameraMotion }),
+      ...(options.duration && { duration: options.duration }),
+      ...(options.resolution && { resolution: options.resolution })
     };
-
-    // Add keyframes if we have a start image or extending video
-    if (extend && videoId) {
-      requestBody.keyframes = {
-        frame0: {
-          type: "generation",
-          id: videoId
-        }
-      };
-    } else if (startImageUrl) {
-      requestBody.keyframes = {
-        frame0: {
-          type: "image",
-          url: startImageUrl
-        }
-      };
-    }
 
     const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
       method: 'POST',
@@ -53,16 +40,15 @@ export default async function handler(
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Error response:', errorText);
-      throw new Error('Failed to generate video');
+      throw new Error('Failed to generate');
     }
 
     const generation = await response.json();
-    console.log('Generation started:', generation);
     return res.status(200).json(generation);
   } catch (error) {
     console.error('Error in generate:', error);
     return res.status(500).json({ 
-      message: 'Failed to generate video',
+      message: 'Failed to generate',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
