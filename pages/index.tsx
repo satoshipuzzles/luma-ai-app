@@ -1,3 +1,4 @@
+// pages/index.tsx
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import QRCode from 'qrcode.react';
@@ -12,8 +13,7 @@ import {
   RefreshCw, 
   Download,
   Share2, 
-  AlertCircle,
-  ChevronDown 
+  AlertCircle 
 } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
@@ -23,10 +23,14 @@ import {
 } from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
+import { GenerationForm } from '@/components/GenerationForm';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { LumaModel, MODEL_CONFIGS, getModelDescription, getModelFee } from '../types/models';
+import { 
+  LumaModel, 
+  GenerationOptions, 
+  MODEL_CONFIGS 
+} from '../types/luma';
 
-// Types
 interface StoredGeneration {
   id: string;
   prompt: string;
@@ -49,35 +53,25 @@ const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 
-const MODEL_OPTIONS: LumaModel[] = ['ray-2', 'ray-1-6', 'photon-1', 'photon-flash-1'];
-const ASPECT_RATIOS = ['16:9', '1:1', '9:16', '4:3', '3:4'];
-
 export default function Home() {
   // State Management
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [generations, setGenerations] = useState<StoredGeneration[]>([]);
   const [error, setError] = useState('');
   const [selectedGeneration, setSelectedGeneration] = useState<StoredGeneration | null>(null);
-  const [selectedModel, setSelectedModel] = useState<LumaModel>('ray-2');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hasCopied, setHasCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [paymentHash, setPaymentHash] = useState<string | null>(null);
-  const [isLooping, setIsLooping] = useState(true);
-  const [startImageUrl, setStartImageUrl] = useState<string | null>(null);
-  const [isExtending, setIsExtending] = useState(false);
-  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showNostrModal, setShowNostrModal] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
-  const [aspectRatio, setAspectRatio] = useState('16:9');
 
   // Effects
   useEffect(() => {
@@ -169,6 +163,10 @@ export default function Home() {
         id: hashedEvent
       } as Event);
 
+      if (!signedEvent) {
+        throw new Error('Failed to sign event');
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('authorization', JSON.stringify(signedEvent));
@@ -188,7 +186,6 @@ export default function Home() {
       const result = await response.json();
       
       if (result.status === 'success') {
-        setStartImageUrl(result.data[0].url);
         toast({
           title: "Image uploaded",
           description: "Start image has been set"
@@ -211,26 +208,15 @@ export default function Home() {
     }
   };
 
-  const generateContent = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!prompt || !pubkey) return;
-
-    if (!isPromptSafe(prompt)) {
-      setError(getPromptFeedback(prompt));
-      toast({
-        variant: "destructive",
-        title: "Invalid prompt",
-        description: getPromptFeedback(prompt)
-      });
-      return;
-    }
+  const handleGenerate = async (options: GenerationOptions) => {
+    if (!pubkey) return;
 
     setLoading(true);
     setError('');
 
     try {
       // Get fee for selected model
-      const fee = getModelFee(selectedModel);
+      const fee = MODEL_CONFIGS[options.model].defaultFee;
 
       // Create Lightning invoice
       const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
@@ -240,7 +226,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           amount: fee,
-          description: `${MODEL_CONFIGS[selectedModel].name} generation: ${prompt}`
+          description: `${MODEL_CONFIGS[options.model].name} generation: ${options.prompt}`
         }),
       });
 
@@ -261,23 +247,11 @@ export default function Home() {
       setPaymentRequest(null);
       setPaymentHash(null);
 
-      // Prepare generation request
-      const generationBody = {
-        model: selectedModel,
-        prompt,
-        loop: isLooping,
-        aspectRatio,
-        ...(isExtending && selectedVideoId ? {
-          extend: true,
-          videoId: selectedVideoId
-        } : {}),
-        ...(startImageUrl ? { startImageUrl } : {})
-      };
-
+      // Generate content
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(generationBody),
+        body: JSON.stringify(options),
       });
 
       if (!response.ok) {
@@ -285,15 +259,15 @@ export default function Home() {
       }
 
       const data = await response.json();
-      const contentType = MODEL_CONFIGS[selectedModel].type;
+      const contentType = MODEL_CONFIGS[options.model].type;
 
       const newGeneration: StoredGeneration = {
         id: data.id,
-        prompt,
+        prompt: options.prompt,
         state: 'queued',
         createdAt: new Date().toISOString(),
         pubkey,
-        model: selectedModel,
+        model: options.model,
         contentType,
         videoUrl: undefined,
       };
@@ -301,7 +275,6 @@ export default function Home() {
       saveGeneration(newGeneration);
       setGenerations((prev) => [newGeneration, ...prev]);
       setSelectedGeneration(newGeneration);
-      setPrompt('');
       pollForCompletion(data.id);
 
       toast({
@@ -399,7 +372,6 @@ export default function Home() {
           return true;
         }
 
-        // Update generation state
         setGenerations((prevGenerations) => {
           const updatedGenerations = prevGenerations.map((g) =>
             g.id === generationId ? { ...g, state: data.state } : g
@@ -434,204 +406,8 @@ export default function Home() {
     poll();
   };
 
-  // Render Generation Form
-  const renderGenerationForm = () => (
-    <div className="max-w-3xl mx-auto">
-      <form onSubmit={generateContent} className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-6">
-        {/* Model Selection */}
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-300">
-            Select Model
-          </label>
-          <select
-            className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-3 text-white"
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value as LumaModel)}
-            disabled={loading}
-          >
-            {MODEL_OPTIONS.map((model) => (
-              <option key={model} value={model}>
-                {MODEL_CONFIGS[model].name} - {MODEL_CONFIGS[model].description}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-400">
-            Fee: {getModelFee(selectedModel)} sats
-          </p>
-        </div>
-
-        {/* Prompt Input */}
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-300">
-            {MODEL_CONFIGS[selectedModel].type === 'video' ? 'Video' : 'Image'} Description
-          </label>
-          <textarea
-       className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-4 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
-            rows={4}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={`Describe your ${MODEL_CONFIGS[selectedModel].type}...`}
-            disabled={loading}
-          />
-        </div>
-
-        {/* Aspect Ratio Selection */}
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-300">
-            Aspect Ratio
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {ASPECT_RATIOS.map((ratio) => (
-              <button
-                key={ratio}
-                type="button"
-                onClick={() => setAspectRatio(ratio)}
-                className={`px-3 py-1 rounded-lg text-sm ${
-                  aspectRatio === ratio
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                {ratio}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Video-specific Options */}
-        {MODEL_CONFIGS[selectedModel].type === 'video' && (
-          <div className="space-y-4">
-            {/* Loop Toggle */}
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">Loop Video</label>
-              <Switch
-                checked={isLooping}
-                onCheckedChange={setIsLooping}
-                disabled={loading}
-              />
-            </div>
-
-            {/* Extend Previous Video */}
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Extend Previous Video
-              </label>
-              <Switch
-                checked={isExtending}
-                onCheckedChange={(checked) => {
-                  setIsExtending(checked);
-                  if (checked) setStartImageUrl(null);
-                }}
-                disabled={loading}
-              />
-            </div>
-
-            {isExtending ? (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
-                  Select Video to Extend
-                </label>
-                <select
-                  className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
-                  value={selectedVideoId || ''}
-                  onChange={(e) => setSelectedVideoId(e.target.value)}
-                  disabled={loading}
-                >
-                  <option value="">Select a video...</option>
-                  {generations
-                    .filter(g => g.state === 'completed' && g.contentType === 'video')
-                    .map((gen) => (
-                      <option key={gen.id} value={gen.id}>
-                        {gen.prompt}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            ) : (
-              <div className="relative">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Start Image (Optional)
-                </label>
-                <div className="flex items-center gap-4">
-                  <label className="flex-1">
-                    <div className={`
-                      flex items-center justify-center w-full h-32 
-                      border-2 border-dashed border-gray-700 rounded-lg 
-                      cursor-pointer hover:border-purple-500
-                      ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                    `}>
-                      {startImageUrl ? (
-                        <div className="relative w-full h-full">
-                          <img
-                            src={startImageUrl}
-                            alt="Start frame"
-                            className="w-full h-full object-cover rounded-lg"
-                          />
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setStartImageUrl(null);
-                            }}
-                            className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center">
-                          <Upload size={24} className="text-gray-500" />
-                          <span className="mt-2 text-sm text-gray-500">
-                            {uploadingImage ? 'Uploading...' : 'Click to upload start image'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImageUpload(file);
-                      }}
-                      className="hidden"
-                      disabled={loading}
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Generate Button */}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={loading || !prompt || !!paymentRequest || (isExtending && !selectedVideoId)}
-            className="w-full md:w-auto bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <RefreshCw className="animate-spin h-5 w-5" />
-                <span>Generating...</span>
-              </>
-            ) : (
-              `Generate ${MODEL_CONFIGS[selectedModel].type === 'video' ? 'Video' : 'Image'}`
-            )}
-          </button>
-        </div>
-
-        {error && (
-          <div className="p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-200">
-            <p className="font-medium">Error</p>
-            <p className="text-sm">{error}</p>
-          </div>
-        )}
-      </form>
-    </div>
-  );
-
-  // Main Render
+  // ... [Continue with UI render code in the next part]
+// Render
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -671,7 +447,7 @@ export default function Home() {
       </Head>
 
       {/* Mobile Header */}
-      <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800">
+      <div className="md:hidden bg-[#1a1a1a] p-4 flex items-center justify-between border-b border-gray-800 fixed top-0 left-0 right-0 z-30">
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className="text-white p-2 hover:bg-gray-700 rounded-lg"
@@ -775,7 +551,7 @@ export default function Home() {
           </div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-auto p-4">
+          <div className="flex-1 overflow-auto p-4 mt-16 md:mt-0">
             {selectedGeneration ? (
               <div className="max-w-4xl mx-auto">
                 <div className="bg-[#1a1a1a] rounded-lg p-4 md:p-6 space-y-4">
@@ -800,10 +576,10 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Display Area */}
+                  {/* Content Display */}
                   <div className="border-t border-gray-800 pt-4">
                     <div className="text-sm text-gray-300 mb-4">
-                      {getStatusMessage(selectedGeneration.state)}
+                      {selectedGeneration.state}
                     </div>
 
                     {selectedGeneration.videoUrl ? (
@@ -831,44 +607,51 @@ export default function Home() {
                         {/* Action Buttons */}
                         <div className="flex flex-wrap gap-2">
                           <button
-                            onClick={() => copyVideoUrl(selectedGeneration.videoUrl!)}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <Copy size={16} />
-                            <span>Copy URL</span>
-                          </button>
-                          <button
-                            onClick={() => downloadVideo(
-                              selectedGeneration.videoUrl!,
-                              `luma-${selectedGeneration.id}-${selectedGeneration.contentType}.
-                              Continuing with the rest of index.tsx:
-
-```typescript
-                              selectedGeneration.videoUrl!,
-                              `luma-${selectedGeneration.id}-${selectedGeneration.contentType}.${selectedGeneration.contentType === 'video' ? 'mp4' : 'png'}`
-                            )}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
-                          >
-                            <Download size={16} />
-                            <span>Download</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setNoteContent(
-                                `${selectedGeneration.prompt}\n\n${selectedGeneration.videoUrl}`
-                              );
-                              setShowNostrModal(true);
-                            }}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 min-w-[120px]"
+                            onClick={() => setShowNostrModal(true)}
+                            className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
                           >
                             <Share2 size={16} />
                             <span>Share</span>
                           </button>
+
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedGeneration.videoUrl!);
+                              toast({
+                                title: "Copied",
+                                description: "URL copied to clipboard"
+                              });
+                            }}
+                            className="flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                          >
+                            <Copy size={16} />
+                            <span>Copy Link</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              const filename = `luma-${selectedGeneration.id}-${selectedGeneration.contentType}.${
+                                selectedGeneration.contentType === 'video' ? 'mp4' : 'png'
+                              }`;
+                              fetch(selectedGeneration.videoUrl!)
+                                .then(res => res.blob())
+                                .then(blob => {
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = filename;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  URL.revokeObjectURL(url);
+                                });
+                            }}
+                            className="flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                          >
+                            <Download size={16} />
+                            <span>Download</span>
+                          </button>
                         </div>
-                      </div>
-                    ) : selectedGeneration.state === 'failed' ? (
-                      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
-                        Generation failed. Please try again.
                       </div>
                     ) : (
                       <div className="space-y-6">
@@ -893,7 +676,12 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              renderGenerationForm()
+              <div className="max-w-3xl mx-auto">
+                <GenerationForm
+                  onGenerate={handleGenerate}
+                  loading={loading}
+                />
+              </div>
             )}
           </div>
         </div>
@@ -917,9 +705,6 @@ export default function Home() {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">
-              Please pay {getModelFee(selectedModel)} sats to proceed
-            </p>
             
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
@@ -987,6 +772,9 @@ export default function Home() {
               <h2 className="text-xl font-bold">Share on Nostr</h2>
               <button
                 onClick={() => setShowNostrModal(false)}
+                className="
+                <button
+                onClick={() => setShowNostrModal(false)}
                 className="text-gray-400 hover:text-white"
                 aria-label="Close"
               >
@@ -1013,20 +801,31 @@ export default function Home() {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  if (selectedGeneration?.videoUrl) {
-                    publishToNostr(
-                      selectedGeneration.videoUrl,
-                      selectedGeneration.prompt,
-                      userSettings.publicGenerations,
-                      selectedGeneration.id,
-                      pubkey!
-                    ).then(() => {
+                onClick={async () => {
+                  if (selectedGeneration?.videoUrl && pubkey) {
+                    try {
+                      setPublishing(true);
+                      await handleGenerate({
+                        model: selectedGeneration.model,
+                        prompt: selectedGeneration.prompt,
+                        aspectRatio: '16:9',
+                        loop: true,
+                        cameraMotion: {
+                          type: 'static',
+                          speed: 1,
+                          direction: 'right'
+                        }
+                      });
                       setShowNostrModal(false);
-                      setNoteContent('');
-                    }).catch((error) => {
-                      setPublishError(error.message);
-                    });
+                      toast({
+                        title: "Shared successfully",
+                        description: "Your content has been shared on Nostr"
+                      });
+                    } catch (error) {
+                      setPublishError(error instanceof Error ? error.message : 'Failed to share');
+                    } finally {
+                      setPublishing(false);
+                    }
                   }
                 }}
                 disabled={publishing || !selectedGeneration?.videoUrl}
@@ -1051,5 +850,3 @@ export default function Home() {
 }
 
 export default Home;
-```
-                              
