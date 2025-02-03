@@ -33,6 +33,10 @@ export interface ModelConfig {
   features: string[];
 }
 
+export interface GenerationFees {
+  [key: string]: number;
+}
+
 export const MODEL_CONFIGS: Record<LumaModel, ModelConfig> = {
   'ray-2': {
     name: 'Ray 2',
