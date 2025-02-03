@@ -327,20 +327,17 @@ const handleImageUpload = async (file: File) => {
       throw new Error('Not connected to Nostr');
     }
 
+    const formData = new FormData();
+    formData.append('file', file);
+
     // Create proper NIP-98 event
     const event: Partial<Event> = {
       kind: 27235,
       created_at: Math.floor(Date.now() / 1000),
-      content: '',
+      content: "",
       tags: [
-        ['u', 'https://nostr.build/api/v2/upload/files'],
-        ['method', 'POST'],
-        ['payload', JSON.stringify({
-          file: URL.createObjectURL(file),
-          name: file.name,
-          type: file.type,
-          size: file.size
-        })]
+        ["u", "https://nostr.build/api/v2/upload/files"],
+        ["method", "POST"],
       ],
       pubkey
     };
@@ -355,14 +352,15 @@ const handleImageUpload = async (file: File) => {
       throw new Error('Failed to sign event');
     }
 
-    // Create form data with file and authorization
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('authorization', JSON.stringify(signedEvent));
+    // Base64 encode the signed event
+    const authToken = btoa(JSON.stringify(signedEvent));
 
-    // Upload to nostr.build
+    // Upload to nostr.build with Authorization header
     const response = await fetch('https://nostr.build/api/v2/upload/files', {
       method: 'POST',
+      headers: {
+        'Authorization': `Nostr ${authToken}`
+      },
       body: formData,
     });
 
