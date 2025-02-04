@@ -17,10 +17,6 @@ import {
 } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
-import { 
-  isPromptSafe, 
-  getPromptFeedback 
-} from '../lib/profanity';
 import { Navigation } from '../components/Navigation';
 import { SettingsModal } from '../components/SettingsModal';
 import { GenerationForm } from '@/components/GenerationForm';
@@ -47,6 +43,19 @@ interface Profile {
   picture?: string;
   about?: string;
 }
+
+// Utility Functions
+const getGenerations = (): StoredGeneration[] => {
+  if (typeof window === 'undefined') return [];
+  const stored = localStorage.getItem('generations');
+  return stored ? JSON.parse(stored) : [];
+};
+
+const saveGeneration = (generation: StoredGeneration) => {
+  const generations = getGenerations();
+  const updated = [generation, ...generations];
+  localStorage.setItem('generations', JSON.stringify(updated));
+};
 
 // Constants
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
@@ -406,8 +415,7 @@ export default function Home() {
     poll();
   };
 
-  // ... [Continue with UI render code in the next part]
-// Render
+  // Render login page if not connected
   if (!pubkey) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex items-center justify-center p-4">
@@ -432,6 +440,7 @@ export default function Home() {
     );
   }
 
+  // Main app layout
   return (
     <div className="min-h-screen bg-[#111111] text-white">
       <Head>
@@ -772,9 +781,6 @@ export default function Home() {
               <h2 className="text-xl font-bold">Share on Nostr</h2>
               <button
                 onClick={() => setShowNostrModal(false)}
-                className="
-                <button
-                onClick={() => setShowNostrModal(false)}
                 className="text-gray-400 hover:text-white"
                 aria-label="Close"
               >
@@ -805,17 +811,33 @@ export default function Home() {
                   if (selectedGeneration?.videoUrl && pubkey) {
                     try {
                       setPublishing(true);
-                      await handleGenerate({
-                        model: selectedGeneration.model,
-                        prompt: selectedGeneration.prompt,
-                        aspectRatio: '16:9',
-                        loop: true,
-                        cameraMotion: {
-                          type: 'static',
-                          speed: 1,
-                          direction: 'right'
-                        }
-                      });
+                      const event: Partial<Event> = {
+                        kind: 1,
+                        created_at: Math.floor(Date.now() / 1000),
+                        content: noteContent,
+                        tags: [
+                          ["r", selectedGeneration.videoUrl],
+                          ["t", "luma"],
+                          ["prompt", selectedGeneration.prompt]
+                        ],
+                        pubkey
+                      };
+
+                      const signedEvent = await window.nostr.signEvent({
+                        ...event,
+                        id: getEventHash(event as Event)
+                      } as Event);
+
+                      if (!signedEvent) {
+                        throw new Error('Failed to sign event');
+                      }
+
+                      const relay = relayInit(DEFAULT_RELAY_URLS[0]);
+                      await relay.connect();
+
+                      await relay.publish(signedEvent);
+                      await relay.close();
+
                       setShowNostrModal(false);
                       toast({
                         title: "Shared successfully",
@@ -848,4 +870,3 @@ export default function Home() {
     </div>
   );
 }
-
