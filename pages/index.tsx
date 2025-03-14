@@ -40,23 +40,12 @@ interface Profile {
   about?: string;
 }
 
-/*interface NostrWindow extends Window {
-  nostr?: {
-    getPublicKey(): Promise<string>;
-    signEvent(event: any): Promise<any>;
-  };
-}
-
-declare global {
-  interface Window extends NostrWindow {}
-}
-*/
-
 // Constants
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
@@ -233,6 +222,7 @@ const publishToNostr = async (
     throw err;
   }
 };
+
 export default function Home() {
   // State Management
   const [pubkey, setPubkey] = useState<string | null>(null);
@@ -257,6 +247,11 @@ export default function Home() {
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+  
+  // New Ray 2 state variables
+  const [useRay2, setUseRay2] = useState<boolean>(true);
+  const [resolution, setResolution] = useState<string>("720p");
+  const [duration, setDuration] = useState<string>("5s");
 
   // Effects
   useEffect(() => {
@@ -296,6 +291,7 @@ export default function Home() {
 
     loadProfile();
   }, [pubkey]);
+  
   // Core Functions
   const connectNostr = async () => {
     try {
@@ -314,86 +310,88 @@ export default function Home() {
       });
     }
   };
-const handleImageUpload = async (file: File) => {
-  try {
-    setUploadingImage(true);
-    setError('');
-    
-    if (!window.nostr) {
-      throw new Error('Nostr extension not found');
-    }
-    
-    if (!pubkey) {
-      throw new Error('Not connected to Nostr');
-    }
 
-    const formData = new FormData();
-    formData.append('file', file);
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploadingImage(true);
+      setError('');
+      
+      if (!window.nostr) {
+        throw new Error('Nostr extension not found');
+      }
+      
+      if (!pubkey) {
+        throw new Error('Not connected to Nostr');
+      }
 
-    // Create proper NIP-98 event
-    const event: Partial<Event> = {
-      kind: 27235,
-      created_at: Math.floor(Date.now() / 1000),
-      content: "",
-      tags: [
-        ["u", "https://nostr.build/api/v2/upload/files"],
-        ["method", "POST"],
-      ],
-      pubkey
-    };
+      const formData = new FormData();
+      formData.append('file', file);
 
-    const hashedEvent = getEventHash(event as Event);
-    const signedEvent = await window.nostr.signEvent({
-      ...event,
-      id: hashedEvent
-    } as Event);
+      // Create proper NIP-98 event
+      const event: Partial<Event> = {
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        content: "",
+        tags: [
+          ["u", "https://nostr.build/api/v2/upload/files"],
+          ["method", "POST"],
+        ],
+        pubkey
+      };
 
-    if (!signedEvent) {
-      throw new Error('Failed to sign event');
-    }
+      const hashedEvent = getEventHash(event as Event);
+      const signedEvent = await window.nostr.signEvent({
+        ...event,
+        id: hashedEvent
+      } as Event);
 
-    // Base64 encode the signed event
-    const authToken = btoa(JSON.stringify(signedEvent));
+      if (!signedEvent) {
+        throw new Error('Failed to sign event');
+      }
 
-    // Upload to nostr.build with Authorization header
-    const response = await fetch('https://nostr.build/api/v2/upload/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Nostr ${authToken}`
-      },
-      body: formData,
-    });
+      // Base64 encode the signed event
+      const authToken = btoa(JSON.stringify(signedEvent));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error('Upload failed: ' + errorText);
-    }
-
-    const result = await response.json();
-    
-    if (result.status === 'success') {
-      setStartImageUrl(result.data[0].url);
-      toast({
-        title: "Image uploaded",
-        description: "Start image has been set"
+      // Upload to nostr.build with Authorization header
+      const response = await fetch('https://nostr.build/api/v2/upload/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Nostr ${authToken}`
+        },
+        body: formData,
       });
-      return result.data[0].url;
-    } else {
-      throw new Error(result.message || 'Upload failed');
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error('Upload failed: ' + errorText);
+      }
+
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setStartImageUrl(result.data[0].url);
+        toast({
+          title: "Image uploaded",
+          description: "Start image has been set"
+        });
+        return result.data[0].url;
+      } else {
+        throw new Error(result.message || 'Upload failed');
+      }
+    } catch (err) {
+      console.error('Failed to upload image:', err);
+      setError('Failed to upload image. Please try again.');
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Please try again"
+      });
+      return null;
+    } finally {
+      setUploadingImage(false);
     }
-  } catch (err) {
-    console.error('Failed to upload image:', err);
-    setError('Failed to upload image. Please try again.');
-    toast({
-      variant: "destructive",
-      title: "Upload failed",
-      description: err instanceof Error ? err.message : "Please try again"
-    });
-    return null;
-  } finally {
-    setUploadingImage(false);
-  }
-};
+  };
+
   const handleCopyInvoice = async () => {
     if (paymentRequest) {
       try {
@@ -614,10 +612,14 @@ const handleImageUpload = async (file: File) => {
       setPaymentRequest(null);
       setPaymentHash(null);
 
-      // Prepare generation request
+      // Prepare generation request with Ray 2 parameters
       const generationBody: any = { 
         prompt,
-        loop: isLooping
+        loop: isLooping,
+        // Add Ray 2 parameters
+        useRay2: useRay2,
+        resolution: useRay2 ? resolution : undefined,
+        duration: useRay2 ? duration : undefined
       };
 
       if (isExtending && selectedVideoId) {
@@ -681,6 +683,7 @@ const handleImageUpload = async (file: File) => {
       setLoading(false);
     }
   };
+  
   // Render
   if (!pubkey) {
     return (
@@ -941,6 +944,57 @@ const handleImageUpload = async (file: File) => {
 
                   {/* Video Options */}
                   <div className="space-y-4">
+                    {/* Ray 2 Model Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Use Ray 2 Model</label>
+                      <Switch
+                        checked={useRay2}
+                        onCheckedChange={setUseRay2}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Ray 2 Options (only show when Ray 2 is enabled) */}
+                    {useRay2 && (
+                      <>
+                        {/* Resolution Selector */}
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-300">
+                            Resolution
+                          </label>
+                          <select
+                            className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                            value={resolution}
+                            onChange={(e) => setResolution(e.target.value)}
+                            disabled={loading}
+                          >
+                            <option value="540p">540p</option>
+                            <option value="720p">720p (Recommended)</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4k">4K</option>
+                          </select>
+                        </div>
+
+                        {/* Duration Selector */}
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-300">
+                            Duration
+                          </label>
+                          <select
+                            className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                            value={duration}
+                            onChange={(e) => setDuration(e.target.value)}
+                            disabled={loading}
+                          >
+                            <option value="3s">3 seconds</option>
+                            <option value="5s">5 seconds (Recommended)</option>
+                            <option value="8s">8 seconds</option>
+                            <option value="10s">10 seconds</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
+
                     {/* Loop Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Loop Video</label>
@@ -954,15 +1008,14 @@ const handleImageUpload = async (file: File) => {
                     {/* Extend Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                       <Switch
-  checked={isExtending}
-  onCheckedChange={(checked) => { 
-    setIsExtending(checked); 
-    if (checked) setStartImageUrl(null);
-  }}
-  disabled={loading}
-/>
-
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => { 
+                          setIsExtending(checked); 
+                          if (checked) setStartImageUrl(null);
+                        }}
+                        disabled={loading}
+                      />
                     </div>
 
                     {/* Conditional Content */}
