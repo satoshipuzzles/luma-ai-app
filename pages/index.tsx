@@ -40,6 +40,10 @@ interface Profile {
   about?: string;
 }
 
+// Type definitions for resolution and duration
+type Resolution = '540p' | '720p' | '1080p' | '4k';
+type Duration = '3s' | '5s' | '8s' | '10s';
+
 // Constants
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
@@ -74,7 +78,7 @@ const PRICING = {
       '8s': 4000,
       '10s': 5000
     }
-  }
+  } as Record<Resolution, Record<Duration, number>>
 };
 
 // Utility Functions
@@ -279,10 +283,10 @@ export default function Home() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
   
-  // New Ray 2 state variables
+  // New Ray 2 state variables with proper types
   const [useRay2, setUseRay2] = useState<boolean>(true);
-  const [resolution, setResolution] = useState<string>("720p");
-  const [duration, setDuration] = useState<string>("5s");
+  const [resolution, setResolution] = useState<Resolution>("720p");
+  const [duration, setDuration] = useState<Duration>("5s");
 
   // Price calculation function
   const calculatePrice = (): number => {
@@ -1060,7 +1064,7 @@ export default function Home() {
                           <select
                             className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
                             value={resolution}
-                            onChange={(e) => setResolution(e.target.value)}
+                            onChange={(e) => setResolution(e.target.value as Resolution)}
                             disabled={loading}
                           >
                             <option value="540p">540p</option>
@@ -1078,7 +1082,7 @@ export default function Home() {
                           <select
                             className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
                             value={duration}
-                            onChange={(e) => setDuration(e.target.value)}
+                            onChange={(e) => setDuration(e.target.value as Duration)}
                             disabled={loading}
                           >
                             <option value="3s">3 seconds</option>
