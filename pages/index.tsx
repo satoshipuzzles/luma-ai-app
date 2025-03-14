@@ -46,6 +46,37 @@ const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
 
+// Dynamic pricing constants
+const PRICING = {
+  base: 1000, // 1000 sats for basic generation
+  ray2: {
+    '540p': {
+      '3s': 1000,
+      '5s': 1500,
+      '8s': 2000,
+      '10s': 2500
+    },
+    '720p': {
+      '3s': 1500,
+      '5s': 2000,
+      '8s': 2500,
+      '10s': 3000
+    },
+    '1080p': {
+      '3s': 2000,
+      '5s': 2500,
+      '8s': 3000,
+      '10s': 3500
+    },
+    '4k': {
+      '3s': 3000,
+      '5s': 3500,
+      '8s': 4000,
+      '10s': 5000
+    }
+  }
+};
+
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
@@ -253,6 +284,15 @@ export default function Home() {
   const [resolution, setResolution] = useState<string>("720p");
   const [duration, setDuration] = useState<string>("5s");
 
+  // Price calculation function
+  const calculatePrice = (): number => {
+    if (!useRay2) {
+      return PRICING.base;
+    }
+    
+    return PRICING.ray2[resolution][duration];
+  };
+
   // Effects
   useEffect(() => {
     if (pubkey) {
@@ -431,24 +471,43 @@ export default function Home() {
     }
   };
 
+  // Improved waitForPayment function
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     const startTime = Date.now();
+    let attempts = 0;
+    
+    // Add more console logs
+    console.log(`Beginning payment check for hash: ${paymentHash}`);
     
     while (Date.now() - startTime < INVOICE_EXPIRY) {
       try {
+        attempts++;
+        console.log(`Payment check attempt ${attempts}, hash: ${paymentHash}`);
+        
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ paymentHash }),
         });
 
-        if (!response.ok) {
+        console.log(`Payment check response status: ${response.status}`);
+        
+        const responseText = await response.text();
+        console.log(`Raw payment check response: ${responseText}`);
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('Error parsing payment check response:', parseError);
           await new Promise(resolve => setTimeout(resolve, 5000));
           continue;
         }
+        
+        console.log('Parsed payment data:', data);
 
-        const data = await response.json();
         if (data.paid) {
+          console.log('Payment confirmed as paid!');
           toast({
             title: "Payment received",
             description: "Starting video generation",
@@ -456,6 +515,7 @@ export default function Home() {
           return true;
         }
 
+        console.log('Payment not confirmed yet, waiting 5 seconds...');
         await new Promise(resolve => setTimeout(resolve, 5000));
       } catch (err) {
         console.error('Error checking payment status:', err);
@@ -463,6 +523,7 @@ export default function Home() {
       }
     }
 
+    console.log('Payment check timed out');
     toast({
       variant: "destructive",
       title: "Payment expired",
@@ -565,53 +626,9 @@ export default function Home() {
     poll();
   };
 
-  const generateVideo = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!prompt || !pubkey) return;
-
-    if (!isPromptSafe(prompt)) {
-      setError(getPromptFeedback(prompt));
-      toast({
-        variant: "destructive",
-        title: "Invalid prompt",
-        description: getPromptFeedback(prompt),
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
+  // Separated generation logic
+  const handleGeneration = async () => {
     try {
-      // Create Lightning invoice
-      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
-      });
-
-      if (!invoiceResponse.ok) {
-        const errorData = await invoiceResponse.json();
-        throw new Error(errorData.error || 'Failed to create invoice');
-      }
-
-      const invoiceData = await invoiceResponse.json();
-      const { payment_request, payment_hash } = invoiceData;
-
-      setPaymentRequest(payment_request);
-      setPaymentHash(payment_hash);
-
-      const paymentConfirmed = await waitForPayment(payment_hash);
-      if (!paymentConfirmed) {
-        setLoading(false);
-        return;
-      }
-
-      setPaymentRequest(null);
-      setPaymentHash(null);
-
       // Prepare generation request with Ray 2 parameters
       const generationBody: any = { 
         prompt,
@@ -629,6 +646,8 @@ export default function Home() {
         generationBody.startImageUrl = startImageUrl;
       }
 
+      console.log('Sending generation request with body:', JSON.stringify(generationBody));
+
       // Generate video
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -638,15 +657,18 @@ export default function Home() {
         body: JSON.stringify(generationBody),
       });
 
+      console.log('Generation response status:', response.status);
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to generate video');
       }
 
       const data = await response.json();
+      console.log('Generation response data:', data);
 
       if (!data.id) {
-        throw new Error('Invalid response from server');
+        throw new Error('Invalid response from server: no generation ID');
       }
 
       const newGeneration: StoredGeneration = {
@@ -678,6 +700,79 @@ export default function Home() {
       toast({
         variant: "destructive",
         title: "Generation failed",
+        description: err instanceof Error ? err.message : "Please try again",
+      });
+      setLoading(false);
+    }
+  };
+
+  // Updated generateVideo function
+  const generateVideo = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!prompt || !pubkey) return;
+
+    if (!isPromptSafe(prompt)) {
+      setError(getPromptFeedback(prompt));
+      toast({
+        variant: "destructive",
+        title: "Invalid prompt",
+        description: getPromptFeedback(prompt),
+      });
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const calculatedAmount = calculatePrice();
+      console.log(`Creating invoice for ${calculatedAmount} sats`);
+      
+      // Create Lightning invoice
+      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: calculatedAmount }),
+      });
+
+      console.log('Invoice response status:', invoiceResponse.status);
+
+      if (!invoiceResponse.ok) {
+        const errorData = await invoiceResponse.json();
+        throw new Error(errorData.error || 'Failed to create invoice');
+      }
+
+      const invoiceData = await invoiceResponse.json();
+      console.log('Invoice data:', invoiceData);
+      
+      const { payment_request, payment_hash } = invoiceData;
+
+      setPaymentRequest(payment_request);
+      setPaymentHash(payment_hash);
+
+      const paymentConfirmed = await waitForPayment(payment_hash);
+      if (!paymentConfirmed) {
+        setLoading(false);
+        return;
+      }
+
+      setPaymentRequest(null);
+      setPaymentHash(null);
+
+      // Call the separate generation handler
+      await handleGeneration();
+    } catch (err) {
+      console.error('Payment error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to process payment. Please try again.'
+      );
+      toast({
+        variant: "destructive",
+        title: "Payment failed",
         description: err instanceof Error ? err.message : "Please try again",
       });
       setLoading(false);
@@ -1143,7 +1238,16 @@ export default function Home() {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            
+            {/* Dynamic pricing message */}
+            <p className="text-sm text-gray-300">
+              Please pay {calculatePrice()} sats to proceed.
+              {useRay2 && (
+                <span className="block mt-1 text-purple-400">
+                  Using Ray 2 model with {resolution} resolution, {duration} duration.
+                </span>
+              )}
+            </p>
             
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
@@ -1174,6 +1278,28 @@ export default function Home() {
                 <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
                 Waiting for payment confirmation...
               </div>
+              
+              {/* Debug button for development */}
+              {process.env.NODE_ENV === 'development' && (
+                <button
+                  onClick={() => {
+                    // Simulate successful payment in development
+                    setPaymentRequest(null);
+                    setPaymentHash(null);
+                    setTimeout(() => {
+                      toast({
+                        title: "Payment simulated",
+                        description: "Development mode: Proceeding with generation",
+                      });
+                      // Continue with generation
+                      handleGeneration();
+                    }, 500);
+                  }}
+                  className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
+                >
+                  Simulate Payment (Dev Only)
+                </button>
+              )}
             </div>
 
             <button
