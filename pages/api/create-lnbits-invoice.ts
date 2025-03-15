@@ -3,8 +3,11 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Your LNbits configuration
 const LNBITS_API_KEY = process.env.LNBITS_API_KEY;
-const LNBITS_URL = process.env.LNBITS_URL;
-const LNBITS_WALLET_ID = process.env.LNBITS_WALLET_ID;
+const RAW_LNBITS_URL = process.env.LNBITS_URL;
+// Ensure URL has proper protocol prefix
+const LNBITS_URL = RAW_LNBITS_URL && !RAW_LNBITS_URL.startsWith('http') 
+  ? `https://${RAW_LNBITS_URL}` 
+  : RAW_LNBITS_URL;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -20,9 +23,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     console.log(`Creating invoice for ${amount} sats`);
     console.log(`Host: ${req.headers.host}`);
-    console.log(`Using LNbits URL: ${LNBITS_URL}`);
+    console.log(`Using raw LNbits URL: ${RAW_LNBITS_URL}`);
+    console.log(`Using formatted LNbits URL: ${LNBITS_URL}`);
     console.log(`Using API Key: ${LNBITS_API_KEY ? 'Present' : 'Missing'}`);
-    console.log(`Using Wallet ID: ${LNBITS_WALLET_ID ? LNBITS_WALLET_ID : 'Missing'}`);
     
     // Check if we have the necessary credentials
     if (!LNBITS_API_KEY) {
@@ -35,12 +38,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Server configuration error (missing LNbits URL)' });
     }
 
-    // Proper LNbits API endpoint format with wallet ID as a URL parameter
-    const apiEndpoint = `${LNBITS_URL}/api/v1/payments`;
+    // Ensure URL is properly formatted
+    let apiUrl;
+    try {
+      apiUrl = new URL('/api/v1/payments', LNBITS_URL);
+      console.log(`Constructed API URL: ${apiUrl.toString()}`);
+    } catch (error) {
+      console.error('Failed to construct API URL:', error);
+      return res.status(500).json({ 
+        error: `Invalid LNbits URL format: ${LNBITS_URL}. Make sure it includes the protocol (https://).` 
+      });
+    }
 
-    console.log(`Using API endpoint: ${apiEndpoint}`);
-
-    const requestBody: any = {
+    const requestBody = {
       out: false,
       amount: amount,
       memo: 'Payment for Animal Sunset video generation',
@@ -51,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       requestBody.lnurl_callback = lnAddress;
     }
 
-    const response = await fetch(apiEndpoint, {
+    const response = await fetch(apiUrl.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
