@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
-import { 
+import {  
   isPromptSafe, 
   getPromptFeedback 
 } from '../lib/profanity';
