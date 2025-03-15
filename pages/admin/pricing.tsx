@@ -24,10 +24,8 @@ interface PricingConfig {
   ray2: Ray2Pricing;
   photon: number; // Base price for Photon (still images)
 }
-
-// Admin authentication (simple password protection for demo)
-// In a real app, use a proper authentication system
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'animalsunset';
+//Admin Password
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 export default function AdminPricing() {
   const [authenticated, setAuthenticated] = useState(false);
