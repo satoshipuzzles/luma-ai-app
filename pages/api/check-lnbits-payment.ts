@@ -3,7 +3,11 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Your LNbits configuration
 const LNBITS_API_KEY = process.env.LNBITS_API_KEY;
-const LNBITS_URL = process.env.LNBITS_URL;
+const RAW_LNBITS_URL = process.env.LNBITS_URL;
+// Ensure URL has proper protocol prefix
+const LNBITS_URL = RAW_LNBITS_URL && !RAW_LNBITS_URL.startsWith('http') 
+  ? `https://${RAW_LNBITS_URL}` 
+  : RAW_LNBITS_URL;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -19,7 +23,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     console.log(`Checking payment status for hash: ${paymentHash}`);
     console.log(`Host: ${req.headers.host}`);
-    console.log(`Using LNbits URL: ${LNBITS_URL}`);
+    console.log(`Using raw LNbits URL: ${RAW_LNBITS_URL}`);
+    console.log(`Using formatted LNbits URL: ${LNBITS_URL}`);
     console.log(`Using API Key: ${LNBITS_API_KEY ? 'Present' : 'Missing'}`);
     
     // Check if we have the necessary credentials
@@ -33,12 +38,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Server configuration error (missing LNbits URL)' });
     }
 
-    // API endpoint to check payment status
-    const apiEndpoint = `${LNBITS_URL}/api/v1/payments/${paymentHash}`;
+    // Ensure URL is properly formatted
+    let apiUrl;
+    try {
+      apiUrl = new URL(`/api/v1/payments/${paymentHash}`, LNBITS_URL);
+      console.log(`Constructed API URL: ${apiUrl.toString()}`);
+    } catch (error) {
+      console.error('Failed to construct API URL:', error);
+      return res.status(500).json({ 
+        error: `Invalid LNbits URL format: ${LNBITS_URL}. Make sure it includes the protocol (https://).` 
+      });
+    }
 
-    console.log(`Using API endpoint: ${apiEndpoint}`);
-
-    const response = await fetch(apiEndpoint, {
+    const response = await fetch(apiUrl.toString(), {
       method: 'GET',
       headers: {
         'X-Api-Key': LNBITS_API_KEY,
