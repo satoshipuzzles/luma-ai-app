@@ -1,33 +1,45 @@
 // pages/api/check-lnbits-payment.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const LNbitsAPIKey = process.env.LNBITS_API_KEY; // Your Invoice Key
-const LNbitsURL = 'https://1a96a66a73.d.voltageapp.io'; // Your LNbits instance URL
+// Your LNbits configuration
+const LNBITS_API_KEY = process.env.LNBITS_API_KEY; // Your Invoice/Admin key
+const LNBITS_URL = process.env.LNBITS_URL || 'https://legend.lnbits.com'; // Default to legend.lnbits.com
+const LNBITS_WALLET_ID = process.env.LNBITS_WALLET_ID; // The ID of your wallet
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { paymentHash } = req.body;
 
   if (!paymentHash || typeof paymentHash !== 'string') {
-    res.status(400).json({ error: 'Missing or invalid paymentHash' });
-    return;
+    return res.status(400).json({ error: 'Missing or invalid paymentHash' });
   }
 
   try {
-    console.log(`Fetching payment status from LNbits for hash: ${paymentHash}`);
+    console.log(`Checking payment status for hash: ${paymentHash}`);
+    
+    // Check if we have the necessary credentials
+    if (!LNBITS_API_KEY) {
+      console.error('Missing LNbits API key');
+      return res.status(500).json({ error: 'Server configuration error (missing API key)' });
+    }
 
-    // Added additional logging to track the request
-    console.log(`Making request to: ${LNbitsURL}/api/v1/payments/${paymentHash}`);
-    console.log(`Using API key: ${LNbitsAPIKey ? 'Key provided' : 'No API key found'}`);
+    if (!LNBITS_WALLET_ID) {
+      console.error('Missing LNbits wallet ID');
+      return res.status(500).json({ error: 'Server configuration error (missing wallet ID)' });
+    }
 
-    const response = await fetch(`${LNbitsURL}/api/v1/payments/${paymentHash}`, {
+    // API endpoint to check payment status
+    const apiEndpoint = `${LNBITS_URL}/api/v1/payments/${paymentHash}`;
+
+    console.log(`Using API endpoint: ${apiEndpoint}`);
+
+    const response = await fetch(apiEndpoint, {
       method: 'GET',
       headers: {
-        'X-Api-Key': LNbitsAPIKey!,
+        'X-Api-Key': LNBITS_API_KEY,
         'Content-Type': 'application/json',
       },
     });
@@ -54,27 +66,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!response.ok) {
       console.error('Error from LNbits API:', data);
-      res
-        .status(response.status)
-        .json({ error: data.detail || data.message || 'Unknown error' });
-      return;
+      return res.status(response.status).json({ 
+        error: data.detail || data.message || 'Unknown error from LNbits API'
+      });
     }
 
-    // For debugging: Always return success in development
-    // IMPORTANT: Remove this in production!
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Development mode: Simulating payment success');
-      return res.status(200).json({ paid: true });
-    }
+    // Check if payment is "settled" or "paid" property is true
+    const isPaid = 
+      (data.paid === true || data.paid === 'true') || 
+      (data.details?.settled === true || data.details?.settled === 'true');
 
-    // According to LNbits documentation, the response should be { "paid": <bool> }
-    const isPaid = data.paid === true || data.paid === 'true';
-
-    res.status(200).json({ paid: isPaid });
+    return res.status(200).json({ paid: isPaid });
   } catch (error) {
     console.error('Error checking payment status:', error);
-    res
-      .status(500)
-      .json({ error: error instanceof Error ? error.message : 'Error checking payment status' });
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Error checking payment status' 
+    });
   }
 }
