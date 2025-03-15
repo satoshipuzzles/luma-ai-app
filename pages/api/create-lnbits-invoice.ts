@@ -50,7 +50,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const requestBody = {
+    // Use a properly typed object for the request body
+    interface RequestBody {
+      out: boolean;
+      amount: number;
+      memo: string;
+      lnurl_callback?: string;
+    }
+
+    const requestBody: RequestBody = {
       out: false,
       amount: amount,
       memo: 'Payment for Animal Sunset video generation',
