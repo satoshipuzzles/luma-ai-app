@@ -475,15 +475,16 @@ export default function Home() {
     }
   };
 
-  // Improved waitForPayment function
+  // Updated waitForPayment function
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     const startTime = Date.now();
     let attempts = 0;
+    const MAX_ATTEMPTS = 60; // Limit number of attempts
+    const POLL_INTERVAL = 3000; // 3 seconds between checks
     
-    // Add more console logs
     console.log(`Beginning payment check for hash: ${paymentHash}`);
     
-    while (Date.now() - startTime < INVOICE_EXPIRY) {
+    while (Date.now() - startTime < INVOICE_EXPIRY && attempts < MAX_ATTEMPTS) {
       try {
         attempts++;
         console.log(`Payment check attempt ${attempts}, hash: ${paymentHash}`);
@@ -494,21 +495,27 @@ export default function Home() {
           body: JSON.stringify({ paymentHash }),
         });
 
-        console.log(`Payment check response status: ${response.status}`);
-        
-        const responseText = await response.text();
-        console.log(`Raw payment check response: ${responseText}`);
-        
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('Error parsing payment check response:', parseError);
-          await new Promise(resolve => setTimeout(resolve, 5000));
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error(`Payment check error (${response.status}):`, errorData);
+          
+          // If we get a 404 or wallet not found, we might need to handle differently
+          if (response.status === 404 || (errorData.error && errorData.error.includes('wallet'))) {
+            toast({
+              variant: "destructive",
+              title: "Payment verification error",
+              description: "Could not verify payment status. Please contact support."
+            });
+            return false;
+          }
+          
+          // For other errors, wait and retry
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
           continue;
         }
         
-        console.log('Parsed payment data:', data);
+        const data = await response.json();
+        console.log('Payment check response:', data);
 
         if (data.paid) {
           console.log('Payment confirmed as paid!');
@@ -519,19 +526,19 @@ export default function Home() {
           return true;
         }
 
-        console.log('Payment not confirmed yet, waiting 5 seconds...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('Payment not confirmed yet, waiting...');
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       } catch (err) {
         console.error('Error checking payment status:', err);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       }
     }
 
-    console.log('Payment check timed out');
+    console.log('Payment check timed out or too many attempts');
     toast({
       variant: "destructive",
-      title: "Payment expired",
-      description: "Please try again",
+      title: "Payment verification timeout",
+      description: "Please try again or contact support if payment was sent"
     });
     return false;
   };
@@ -745,6 +752,15 @@ export default function Home() {
 
       if (!invoiceResponse.ok) {
         const errorData = await invoiceResponse.json();
+        console.error('Invoice creation error:', errorData);
+        
+        // Check specifically for wallet errors
+        if (errorData.error && 
+            (errorData.error.includes('wallet') || 
+             errorData.error.includes('configuration'))) {
+          throw new Error('Payment system is currently unavailable. Please try again later.');
+        }
+        
         throw new Error(errorData.error || 'Failed to create invoice');
       }
 
@@ -753,12 +769,19 @@ export default function Home() {
       
       const { payment_request, payment_hash } = invoiceData;
 
+      // Make sure we got valid data back
+      if (!payment_request || !payment_hash) {
+        throw new Error('Invalid invoice data received');
+      }
+
       setPaymentRequest(payment_request);
       setPaymentHash(payment_hash);
 
       const paymentConfirmed = await waitForPayment(payment_hash);
       if (!paymentConfirmed) {
         setLoading(false);
+        setPaymentRequest(null);
+        setPaymentHash(null);
         return;
       }
 
@@ -776,10 +799,12 @@ export default function Home() {
       );
       toast({
         variant: "destructive",
-        title: "Payment failed",
+        title: "Payment system error",
         description: err instanceof Error ? err.message : "Please try again",
       });
       setLoading(false);
+      setPaymentRequest(null);
+      setPaymentHash(null);
     }
   };
   
@@ -1282,28 +1307,6 @@ export default function Home() {
                 <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
                 Waiting for payment confirmation...
               </div>
-              
-              {/* Debug button for development */}
-              {process.env.NODE_ENV === 'development' && (
-                <button
-                  onClick={() => {
-                    // Simulate successful payment in development
-                    setPaymentRequest(null);
-                    setPaymentHash(null);
-                    setTimeout(() => {
-                      toast({
-                        title: "Payment simulated",
-                        description: "Development mode: Proceeding with generation",
-                      });
-                      // Continue with generation
-                      handleGeneration();
-                    }, 500);
-                  }}
-                  className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                >
-                  Simulate Payment (Dev Only)
-                </button>
-              )}
             </div>
 
             <button
@@ -1389,4 +1392,3 @@ export default function Home() {
       />
     </div>
   );
-}
