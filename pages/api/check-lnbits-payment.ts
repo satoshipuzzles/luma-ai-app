@@ -2,9 +2,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Your LNbits configuration
-const LNBITS_API_KEY = process.env.LNBITS_API_KEY; // Your Invoice/Admin key
-const LNBITS_URL = process.env.LNBITS_URL || 'https://legend.lnbits.com'; // Default to legend.lnbits.com
-const LNBITS_WALLET_ID = process.env.LNBITS_WALLET_ID; // The ID of your wallet
+const LNBITS_API_KEY = process.env.LNBITS_API_KEY;
+const LNBITS_URL = process.env.LNBITS_URL;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -19,13 +18,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     console.log(`Checking payment status for hash: ${paymentHash}`);
+    console.log(`Host: ${req.headers.host}`);
     console.log(`Using LNbits URL: ${LNBITS_URL}`);
-    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Key provided' : 'No API key found'}`);
+    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Present' : 'Missing'}`);
     
     // Check if we have the necessary credentials
     if (!LNBITS_API_KEY) {
       console.error('Missing LNbits API key');
       return res.status(500).json({ error: 'Server configuration error (missing API key)' });
+    }
+
+    if (!LNBITS_URL) {
+      console.error('Missing LNbits URL');
+      return res.status(500).json({ error: 'Server configuration error (missing LNbits URL)' });
     }
 
     // API endpoint to check payment status
@@ -68,10 +73,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // Check if payment is "settled" or "paid" property is true
-    const isPaid = 
-      (data.paid === true || data.paid === 'true') || 
-      (data.details?.settled === true || data.details?.settled === 'true');
+    // Check payment status comprehensively
+    let isPaid = false;
+    
+    if (data.paid === true || data.paid === 'true') {
+      console.log('Payment confirmed via paid flag');
+      isPaid = true;
+    } else if (data.details?.status === 'complete' || data.details?.status === 'settled') {
+      console.log('Payment confirmed via status field');
+      isPaid = true;
+    } else if (data.details?.settled === true || data.details?.settled === 'true') {
+      console.log('Payment confirmed via settled field');
+      isPaid = true;
+    } else if (data.details?.pending === false) {
+      console.log('Payment confirmed via pending=false');
+      isPaid = true;
+    }
 
     return res.status(200).json({ paid: isPaid });
   } catch (error) {
