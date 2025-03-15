@@ -1,4 +1,4 @@
-// pages/api/check-lnbits-payment.ts
+// pages/api/check-lnbits-payment.ts - Updated with more robust error handling
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Your LNbits configuration
@@ -9,23 +9,29 @@ const LNBITS_URL = RAW_LNBITS_URL && !RAW_LNBITS_URL.startsWith('http')
   ? `https://${RAW_LNBITS_URL}` 
   : RAW_LNBITS_URL;
 
+// Keep track of verified payments server-side (in-memory database)
+// In production, use a real database
+const verifiedPayments = new Set<string>();
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { paymentHash } = req.body;
+  const { paymentHash, verifiedPayments: clientVerifiedPayments = [] } = req.body;
 
   if (!paymentHash || typeof paymentHash !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid paymentHash' });
   }
 
+  // If this payment has been previously verified
+  if (verifiedPayments.has(paymentHash) || clientVerifiedPayments.includes(paymentHash)) {
+    console.log(`Payment ${paymentHash} found in verified payments cache`);
+    return res.status(200).json({ paid: true, manualVerification: true });
+  }
+
   try {
     console.log(`Checking payment status for hash: ${paymentHash}`);
-    console.log(`Host: ${req.headers.host}`);
-    console.log(`Using raw LNbits URL: ${RAW_LNBITS_URL}`);
-    console.log(`Using formatted LNbits URL: ${LNBITS_URL}`);
-    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Present' : 'Missing'}`);
     
     // Check if we have the necessary credentials
     if (!LNBITS_API_KEY) {
@@ -56,6 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         'X-Api-Key': LNBITS_API_KEY,
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // 10 second timeout
     });
 
     console.log(`Response status: ${response.status}`);
@@ -102,11 +109,121 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       isPaid = true;
     }
 
+    // If payment is verified, add to our verified payments set
+    if (isPaid) {
+      verifiedPayments.add(paymentHash);
+    }
+
     return res.status(200).json({ paid: isPaid });
   } catch (error) {
     console.error('Error checking payment status:', error);
+    
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Error checking payment status' 
     });
   }
+}
+
+// pages/api/verify-pending-payments.ts - Making more robust with retry logic
+import type { NextApiRequest, NextApiResponse } from 'next';
+
+// Maximum number of retries for payment verification
+const MAX_VERIFICATION_ATTEMPTS = 10;
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  const { pendingPayments } = req.body;
+  
+  if (!Array.isArray(pendingPayments) || pendingPayments.length === 0) {
+    return res.status(400).json({ message: 'No pending payments to verify' });
+  }
+
+  // Security: Validate all payment records
+  for (const payment of pendingPayments) {
+    if (!payment.paymentHash || !payment.pubkey || !payment.amount || !payment.createdAt) {
+      return res.status(400).json({ 
+        message: 'Invalid payment records detected',
+        payment
+      });
+    }
+  }
+
+  const results: Record<string, boolean> = {};
+  const verifiedPayments: string[] = [];
+
+  console.log(`Attempting to verify ${pendingPayments.length} pending payments`);
+
+  // Verify each payment
+  await Promise.all(pendingPayments.map(async (payment) => {
+    const { paymentHash } = payment;
+    let verified = false;
+    
+    // Try verifying multiple times with delay
+    for (let attempt = 0; attempt < MAX_VERIFICATION_ATTEMPTS; attempt++) {
+      try {
+        console.log(`Verification attempt ${attempt+1}/${MAX_VERIFICATION_ATTEMPTS} for payment ${paymentHash}`);
+        
+        const response = await fetch(`${req.headers.origin}/api/check-lnbits-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentHash, verifiedPayments }),
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.paid) {
+            verified = true;
+            verifiedPayments.push(paymentHash);
+            
+            console.log(`Payment ${paymentHash} verified successfully`);
+            
+            // Log the verified payment
+            await fetch(`${req.headers.origin}/api/log-credit-transaction`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                pubkey: payment.pubkey,
+                type: 'add',
+                amount: payment.amount,
+                reason: 'Verified pending payment',
+                paymentHash: payment.paymentHash,
+                timestamp: new Date().toISOString()
+              })
+            }).catch(e => console.error('Error logging credit transaction:', e));
+            
+            break;
+          }
+        } else {
+          console.error(`Verification attempt ${attempt+1} failed with status ${response.status}`);
+          try {
+            const errorData = await response.json();
+            console.error('Error details:', errorData);
+          } catch (e) {
+            console.error('Could not parse error response');
+          }
+        }
+      } catch (error) {
+        console.error(`Error in verification attempt ${attempt+1} for payment ${paymentHash}:`, error);
+      }
+      
+      // Wait before next attempt (increasing delay)
+      await new Promise(r => setTimeout(r, 1000 + (attempt * 500)));
+    }
+    
+    results[paymentHash] = verified;
+  }));
+
+  console.log('Verification results:', results);
+  console.log('Verified payments:', verifiedPayments);
+
+  return res.status(200).json({ 
+    results,
+    verified: verifiedPayments
+  });
 }
