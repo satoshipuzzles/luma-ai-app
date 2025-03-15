@@ -2,9 +2,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Your LNbits configuration
-const LNBITS_API_KEY = process.env.LNBITS_API_KEY; // Your Invoice/Admin key
-const LNBITS_URL = process.env.LNBITS_URL || 'https://legend.lnbits.com'; // Default to legend.lnbits.com
-const LNBITS_WALLET_ID = process.env.LNBITS_WALLET_ID; // The ID of your wallet
+const LNBITS_API_KEY = process.env.LNBITS_API_KEY;
+const LNBITS_URL = process.env.LNBITS_URL;
+const LNBITS_WALLET_ID = process.env.LNBITS_WALLET_ID;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -19,9 +19,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     console.log(`Creating invoice for ${amount} sats`);
+    console.log(`Host: ${req.headers.host}`);
     console.log(`Using LNbits URL: ${LNBITS_URL}`);
-    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Key provided' : 'No API key found'}`);
-    console.log(`Using Wallet ID: ${LNBITS_WALLET_ID ? LNBITS_WALLET_ID : 'No wallet ID found'}`);
+    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Present' : 'Missing'}`);
+    console.log(`Using Wallet ID: ${LNBITS_WALLET_ID ? LNBITS_WALLET_ID : 'Missing'}`);
     
     // Check if we have the necessary credentials
     if (!LNBITS_API_KEY) {
@@ -29,8 +30,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Server configuration error (missing API key)' });
     }
 
-    // API endpoint to create invoice
-    // Note: The correct format when using LNbits includes the wallet_id in the URL path
+    if (!LNBITS_URL) {
+      console.error('Missing LNbits URL');
+      return res.status(500).json({ error: 'Server configuration error (missing LNbits URL)' });
+    }
+
+    // Proper LNbits API endpoint format with wallet ID as a URL parameter
     const apiEndpoint = `${LNBITS_URL}/api/v1/payments`;
 
     console.log(`Using API endpoint: ${apiEndpoint}`);
@@ -39,7 +44,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       out: false,
       amount: amount,
       memo: 'Payment for Animal Sunset video generation',
-      // No webhook - keeping it simple
     };
 
     // If this is for a specific lightning address
@@ -78,6 +82,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     console.log('Invoice data:', data);
+
+    // Make sure we have the required fields
+    if (!data.payment_hash || !data.payment_request) {
+      console.error('Missing required fields in LNbits response:', data);
+      return res.status(500).json({ 
+        error: 'Invalid invoice data from LNbits (missing required fields)' 
+      });
+    }
 
     res.status(200).json({
       payment_request: data.payment_request,
