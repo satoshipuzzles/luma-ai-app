@@ -687,7 +687,7 @@ export default function Home() {
         prompt,
         state: data.state || 'queued',
         createdAt: data.created_at || new Date().toISOString(),
-        pubkey,
+        pubkey: pubkey || '',
         videoUrl: data.assets?.video,
       };
 
