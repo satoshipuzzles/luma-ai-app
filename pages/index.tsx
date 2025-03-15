@@ -773,15 +773,15 @@ export default function Home() {
       });
       
       // Add welcome credit for new users
-      if (getUserCredits(key) === 0) {
-        const newCredits = addUserCredits(key, 500, "Welcome bonus");
-        setCredits(newCredits);
+      //if (getUserCredits(key) === 0) {
+       // const newCredits = addUserCredits(key, 500, "Welcome bonus");
+        //setCredits(newCredits);
         
-        toast({
-          title: "Welcome Bonus!",
-          description: "You've received 500 sats credit to get started.",
-        });
-      }
+       // toast({
+          //title: "Welcome Bonus!",
+          //description: "You've received 500 sats credit to get started.",
+        //});
+      //}
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
       toast({
