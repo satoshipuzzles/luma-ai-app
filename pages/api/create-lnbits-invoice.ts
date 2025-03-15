@@ -1,4 +1,4 @@
-// pages/api/check-lnbits-payment.ts
+// pages/api/create-lnbits-invoice.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Your LNbits configuration
@@ -11,14 +11,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { paymentHash } = req.body;
+  const { amount, lnAddress } = req.body;
 
-  if (!paymentHash || typeof paymentHash !== 'string') {
-    return res.status(400).json({ error: 'Missing or invalid paymentHash' });
+  if (!amount || typeof amount !== 'number') {
+    return res.status(400).json({ error: 'Invalid amount' });
   }
 
   try {
-    console.log(`Checking payment status for hash: ${paymentHash}`);
+    console.log(`Creating invoice for ${amount} sats`);
+    console.log(`Using LNbits URL: ${LNBITS_URL}`);
+    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Key provided' : 'No API key found'}`);
+    console.log(`Using Wallet ID: ${LNBITS_WALLET_ID ? LNBITS_WALLET_ID : 'No wallet ID found'}`);
     
     // Check if we have the necessary credentials
     if (!LNBITS_API_KEY) {
@@ -26,31 +29,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Server configuration error (missing API key)' });
     }
 
-    if (!LNBITS_WALLET_ID) {
-      console.error('Missing LNbits wallet ID');
-      return res.status(500).json({ error: 'Server configuration error (missing wallet ID)' });
-    }
-
-    // API endpoint to check payment status
-    const apiEndpoint = `${LNBITS_URL}/api/v1/payments/${paymentHash}`;
+    // API endpoint to create invoice
+    // Note: The correct format when using LNbits includes the wallet_id in the URL path
+    const apiEndpoint = `${LNBITS_URL}/api/v1/payments`;
 
     console.log(`Using API endpoint: ${apiEndpoint}`);
 
+    const requestBody: any = {
+      out: false,
+      amount: amount,
+      memo: 'Payment for Animal Sunset video generation',
+      // No webhook - keeping it simple
+    };
+
+    // If this is for a specific lightning address
+    if (lnAddress) {
+      requestBody.lnurl_callback = lnAddress;
+    }
+
     const response = await fetch(apiEndpoint, {
-      method: 'GET',
+      method: 'POST',
       headers: {
-        'X-Api-Key': LNBITS_API_KEY,
         'Content-Type': 'application/json',
+        'X-Api-Key': LNBITS_API_KEY,
       },
+      body: JSON.stringify(requestBody),
     });
 
-    console.log(`Response status: ${response.status}`);
-    
-    // Log the raw response for debugging
     const responseText = await response.text();
     console.log(`Raw response: ${responseText}`);
-    
-    // Parse the response as JSON
+
     let data;
     try {
       data = JSON.parse(responseText);
@@ -62,8 +70,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    console.log('LNbits payment status response:', data);
-
     if (!response.ok) {
       console.error('Error from LNbits API:', data);
       return res.status(response.status).json({ 
@@ -71,16 +77,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // Check if payment is "settled" or "paid" property is true
-    const isPaid = 
-      (data.paid === true || data.paid === 'true') || 
-      (data.details?.settled === true || data.details?.settled === 'true');
+    console.log('Invoice data:', data);
 
-    return res.status(200).json({ paid: isPaid });
+    res.status(200).json({
+      payment_request: data.payment_request,
+      payment_hash: data.payment_hash,
+    });
   } catch (error) {
-    console.error('Error checking payment status:', error);
+    console.error('Error creating invoice:', error);
     res.status(500).json({ 
-      error: error instanceof Error ? error.message : 'Error checking payment status' 
+      error: error instanceof Error ? error.message : 'Error creating invoice' 
     });
   }
 }
