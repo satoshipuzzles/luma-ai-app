@@ -1,52 +1,56 @@
-// pages/api/create-lnbits-invoice.ts
+// pages/api/check-lnbits-payment.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const LNbitsAPIKey = process.env.LNBITS_API_KEY; // Your Invoice Key
-const LNbitsURL = 'https://1a96a66a73.d.voltageapp.io'; // Your LNbits instance URL
+// Your LNbits configuration
+const LNBITS_API_KEY = process.env.LNBITS_API_KEY; // Your Invoice/Admin key
+const LNBITS_URL = process.env.LNBITS_URL || 'https://legend.lnbits.com'; // Default to legend.lnbits.com
+const LNBITS_WALLET_ID = process.env.LNBITS_WALLET_ID; // The ID of your wallet
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { amount } = req.body;
+  const { paymentHash } = req.body;
 
-  if (!amount || typeof amount !== 'number') {
-    res.status(400).json({ error: 'Invalid amount' });
-    return;
+  if (!paymentHash || typeof paymentHash !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid paymentHash' });
   }
 
   try {
-    console.log(`Creating invoice for ${amount} sats`);
-    console.log(`Using API key: ${LNbitsAPIKey ? 'Key provided' : 'No API key found'}`);
-    console.log(`Using LNbits URL: ${LNbitsURL}`);
-
-    // For development: Create a fake invoice for testing
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Development mode: Returning fake invoice');
-      return res.status(200).json({ 
-        payment_request: 'lnbc100n1p3zj427pp5eplrde0yecvd0fphu2vd39xu3r7mfspsg7dhhx4uxpfx69nekqsdqqcqzpgxqyz5vqsp5hsfy92lqjm0f3jqjvwhuahevrxzgur42tjx8fpnwj3vygkxfaejq9qyyssq6tkw4pvrc7qkmd9u9735tmqmuhnrj9euc2a8frnxp9hn2vvcdnkxwrw24vkm38k34tjnpkgxrrh8hvw8xnn7t8vp25l0qzwa065yqcpskjd7k', 
-        payment_hash: 'fake_payment_hash_for_dev'
-      });
+    console.log(`Checking payment status for hash: ${paymentHash}`);
+    
+    // Check if we have the necessary credentials
+    if (!LNBITS_API_KEY) {
+      console.error('Missing LNbits API key');
+      return res.status(500).json({ error: 'Server configuration error (missing API key)' });
     }
 
-    const response = await fetch(`${LNbitsURL}/api/v1/payments`, {
-      method: 'POST',
+    if (!LNBITS_WALLET_ID) {
+      console.error('Missing LNbits wallet ID');
+      return res.status(500).json({ error: 'Server configuration error (missing wallet ID)' });
+    }
+
+    // API endpoint to check payment status
+    const apiEndpoint = `${LNBITS_URL}/api/v1/payments/${paymentHash}`;
+
+    console.log(`Using API endpoint: ${apiEndpoint}`);
+
+    const response = await fetch(apiEndpoint, {
+      method: 'GET',
       headers: {
+        'X-Api-Key': LNBITS_API_KEY,
         'Content-Type': 'application/json',
-        'X-Api-Key': LNbitsAPIKey!,
       },
-      body: JSON.stringify({
-        out: false,
-        amount: amount,
-        memo: 'Payment for video generation',
-      }),
     });
 
+    console.log(`Response status: ${response.status}`);
+    
+    // Log the raw response for debugging
     const responseText = await response.text();
     console.log(`Raw response: ${responseText}`);
-
+    
+    // Parse the response as JSON
     let data;
     try {
       data = JSON.parse(responseText);
@@ -58,24 +62,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    console.log('LNbits payment status response:', data);
+
     if (!response.ok) {
       console.error('Error from LNbits API:', data);
-      res
-        .status(response.status)
-        .json({ error: data.detail || data.message || 'Unknown error' });
-      return;
+      return res.status(response.status).json({ 
+        error: data.detail || data.message || 'Unknown error from LNbits API'
+      });
     }
 
-    console.log('Invoice data:', data);
+    // Check if payment is "settled" or "paid" property is true
+    const isPaid = 
+      (data.paid === true || data.paid === 'true') || 
+      (data.details?.settled === true || data.details?.settled === 'true');
 
-    res.status(200).json({
-      payment_request: data.payment_request,
-      payment_hash: data.payment_hash,
-    });
+    return res.status(200).json({ paid: isPaid });
   } catch (error) {
-    console.error('Error creating invoice:', error);
-    res
-      .status(500)
-      .json({ error: (error as Error).message || 'Error creating invoice' });
+    console.error('Error checking payment status:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Error checking payment status' 
+    });
   }
 }
