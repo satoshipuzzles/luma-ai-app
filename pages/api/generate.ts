@@ -15,7 +15,18 @@ export default async function handler(
   }
 
   try {
-    const { prompt, loop = true, startImageUrl, extend, videoId } = req.body;
+    const { 
+      prompt, 
+      loop = true, 
+      startImageUrl, 
+      extend, 
+      videoId,
+      // New Ray 2 parameters
+      useRay2 = true,
+      resolution = "720p",
+      duration = "5s"
+    } = req.body;
+    
     console.log('Starting generation with prompt:', prompt);
 
     const requestBody: any = {
@@ -23,6 +34,13 @@ export default async function handler(
       aspect_ratio: "16:9",
       loop: Boolean(loop)
     };
+
+    // Set model to Ray 2 if enabled
+    if (useRay2) {
+      requestBody.model = "ray-2";
+      requestBody.resolution = resolution;
+      requestBody.duration = duration;
+    }
 
     // Add keyframes if we have a start image or extending video
     if (extend && videoId) {

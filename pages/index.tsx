@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
-import { 
+import {  
   isPromptSafe, 
   getPromptFeedback 
 } from '../lib/profanity';
@@ -40,23 +40,47 @@ interface Profile {
   about?: string;
 }
 
-/*interface NostrWindow extends Window {
-  nostr?: {
-    getPublicKey(): Promise<string>;
-    signEvent(event: any): Promise<any>;
-  };
-}
-
-declare global {
-  interface Window extends NostrWindow {}
-}
-*/
+// Type definitions for resolution and duration
+type Resolution = '540p' | '720p' | '1080p' | '4k';
+type Duration = '3s' | '5s' | '8s' | '10s';
 
 // Constants
 const LIGHTNING_INVOICE_AMOUNT = 1000; // sats
 const INVOICE_EXPIRY = 600000; // 10 minutes in milliseconds
 const GENERATION_POLL_INTERVAL = 2000; // 2 seconds
 const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+
+// Dynamic pricing constants
+const PRICING = {
+  base: 1000, // 1000 sats for basic generation
+  ray2: {
+    '540p': {
+      '3s': 1000,
+      '5s': 1500,
+      '8s': 2000,
+      '10s': 2500
+    },
+    '720p': {
+      '3s': 1500,
+      '5s': 2000,
+      '8s': 2500,
+      '10s': 3000
+    },
+    '1080p': {
+      '3s': 2000,
+      '5s': 2500,
+      '8s': 3000,
+      '10s': 3500
+    },
+    '4k': {
+      '3s': 3000,
+      '5s': 3500,
+      '8s': 4000,
+      '10s': 5000
+    }
+  } as Record<Resolution, Record<Duration, number>>
+};
+
 // Utility Functions
 const formatDate = (dateString: string) => {
   try {
@@ -233,6 +257,7 @@ const publishToNostr = async (
     throw err;
   }
 };
+
 export default function Home() {
   // State Management
   const [pubkey, setPubkey] = useState<string | null>(null);
@@ -257,6 +282,20 @@ export default function Home() {
   const [noteContent, setNoteContent] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+  
+  // New Ray 2 state variables with proper types
+  const [useRay2, setUseRay2] = useState<boolean>(true);
+  const [resolution, setResolution] = useState<Resolution>("720p");
+  const [duration, setDuration] = useState<Duration>("5s");
+
+  // Price calculation function
+  const calculatePrice = (): number => {
+    if (!useRay2) {
+      return PRICING.base;
+    }
+    
+    return PRICING.ray2[resolution][duration];
+  };
 
   // Effects
   useEffect(() => {
@@ -296,6 +335,7 @@ export default function Home() {
 
     loadProfile();
   }, [pubkey]);
+  
   // Core Functions
   const connectNostr = async () => {
     try {
@@ -314,86 +354,88 @@ export default function Home() {
       });
     }
   };
-const handleImageUpload = async (file: File) => {
-  try {
-    setUploadingImage(true);
-    setError('');
-    
-    if (!window.nostr) {
-      throw new Error('Nostr extension not found');
-    }
-    
-    if (!pubkey) {
-      throw new Error('Not connected to Nostr');
-    }
 
-    const formData = new FormData();
-    formData.append('file', file);
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploadingImage(true);
+      setError('');
+      
+      if (!window.nostr) {
+        throw new Error('Nostr extension not found');
+      }
+      
+      if (!pubkey) {
+        throw new Error('Not connected to Nostr');
+      }
 
-    // Create proper NIP-98 event
-    const event: Partial<Event> = {
-      kind: 27235,
-      created_at: Math.floor(Date.now() / 1000),
-      content: "",
-      tags: [
-        ["u", "https://nostr.build/api/v2/upload/files"],
-        ["method", "POST"],
-      ],
-      pubkey
-    };
+      const formData = new FormData();
+      formData.append('file', file);
 
-    const hashedEvent = getEventHash(event as Event);
-    const signedEvent = await window.nostr.signEvent({
-      ...event,
-      id: hashedEvent
-    } as Event);
+      // Create proper NIP-98 event
+      const event: Partial<Event> = {
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        content: "",
+        tags: [
+          ["u", "https://nostr.build/api/v2/upload/files"],
+          ["method", "POST"],
+        ],
+        pubkey
+      };
 
-    if (!signedEvent) {
-      throw new Error('Failed to sign event');
-    }
+      const hashedEvent = getEventHash(event as Event);
+      const signedEvent = await window.nostr.signEvent({
+        ...event,
+        id: hashedEvent
+      } as Event);
 
-    // Base64 encode the signed event
-    const authToken = btoa(JSON.stringify(signedEvent));
+      if (!signedEvent) {
+        throw new Error('Failed to sign event');
+      }
 
-    // Upload to nostr.build with Authorization header
-    const response = await fetch('https://nostr.build/api/v2/upload/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Nostr ${authToken}`
-      },
-      body: formData,
-    });
+      // Base64 encode the signed event
+      const authToken = btoa(JSON.stringify(signedEvent));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error('Upload failed: ' + errorText);
-    }
-
-    const result = await response.json();
-    
-    if (result.status === 'success') {
-      setStartImageUrl(result.data[0].url);
-      toast({
-        title: "Image uploaded",
-        description: "Start image has been set"
+      // Upload to nostr.build with Authorization header
+      const response = await fetch('https://nostr.build/api/v2/upload/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Nostr ${authToken}`
+        },
+        body: formData,
       });
-      return result.data[0].url;
-    } else {
-      throw new Error(result.message || 'Upload failed');
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error('Upload failed: ' + errorText);
+      }
+
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setStartImageUrl(result.data[0].url);
+        toast({
+          title: "Image uploaded",
+          description: "Start image has been set"
+        });
+        return result.data[0].url;
+      } else {
+        throw new Error(result.message || 'Upload failed');
+      }
+    } catch (err) {
+      console.error('Failed to upload image:', err);
+      setError('Failed to upload image. Please try again.');
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Please try again"
+      });
+      return null;
+    } finally {
+      setUploadingImage(false);
     }
-  } catch (err) {
-    console.error('Failed to upload image:', err);
-    setError('Failed to upload image. Please try again.');
-    toast({
-      variant: "destructive",
-      title: "Upload failed",
-      description: err instanceof Error ? err.message : "Please try again"
-    });
-    return null;
-  } finally {
-    setUploadingImage(false);
-  }
-};
+  };
+
   const handleCopyInvoice = async () => {
     if (paymentRequest) {
       try {
@@ -433,11 +475,20 @@ const handleImageUpload = async (file: File) => {
     }
   };
 
+  // Updated waitForPayment function
   const waitForPayment = async (paymentHash: string): Promise<boolean> => {
     const startTime = Date.now();
+    let attempts = 0;
+    const MAX_ATTEMPTS = 60; // Limit number of attempts
+    const POLL_INTERVAL = 3000; // 3 seconds between checks
     
-    while (Date.now() - startTime < INVOICE_EXPIRY) {
+    console.log(`Beginning payment check for hash: ${paymentHash}`);
+    
+    while (Date.now() - startTime < INVOICE_EXPIRY && attempts < MAX_ATTEMPTS) {
       try {
+        attempts++;
+        console.log(`Payment check attempt ${attempts}, hash: ${paymentHash}`);
+        
         const response = await fetch('/api/check-lnbits-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -445,12 +496,29 @@ const handleImageUpload = async (file: File) => {
         });
 
         if (!response.ok) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          const errorData = await response.json();
+          console.error(`Payment check error (${response.status}):`, errorData);
+          
+          // If we get a 404 or wallet not found, we might need to handle differently
+          if (response.status === 404 || (errorData.error && errorData.error.includes('wallet'))) {
+            toast({
+              variant: "destructive",
+              title: "Payment verification error",
+              description: "Could not verify payment status. Please contact support."
+            });
+            return false;
+          }
+          
+          // For other errors, wait and retry
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
           continue;
         }
-
+        
         const data = await response.json();
+        console.log('Payment check response:', data);
+
         if (data.paid) {
+          console.log('Payment confirmed as paid!');
           toast({
             title: "Payment received",
             description: "Starting video generation",
@@ -458,17 +526,19 @@ const handleImageUpload = async (file: File) => {
           return true;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('Payment not confirmed yet, waiting...');
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       } catch (err) {
         console.error('Error checking payment status:', err);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       }
     }
 
+    console.log('Payment check timed out or too many attempts');
     toast({
       variant: "destructive",
-      title: "Payment expired",
-      description: "Please try again",
+      title: "Payment verification timeout",
+      description: "Please try again or contact support if payment was sent"
     });
     return false;
   };
@@ -567,57 +637,17 @@ const handleImageUpload = async (file: File) => {
     poll();
   };
 
-  const generateVideo = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!prompt || !pubkey) return;
-
-    if (!isPromptSafe(prompt)) {
-      setError(getPromptFeedback(prompt));
-      toast({
-        variant: "destructive",
-        title: "Invalid prompt",
-        description: getPromptFeedback(prompt),
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
+  // Separated generation logic
+  const handleGeneration = async () => {
     try {
-      // Create Lightning invoice
-      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ amount: LIGHTNING_INVOICE_AMOUNT }),
-      });
-
-      if (!invoiceResponse.ok) {
-        const errorData = await invoiceResponse.json();
-        throw new Error(errorData.error || 'Failed to create invoice');
-      }
-
-      const invoiceData = await invoiceResponse.json();
-      const { payment_request, payment_hash } = invoiceData;
-
-      setPaymentRequest(payment_request);
-      setPaymentHash(payment_hash);
-
-      const paymentConfirmed = await waitForPayment(payment_hash);
-      if (!paymentConfirmed) {
-        setLoading(false);
-        return;
-      }
-
-      setPaymentRequest(null);
-      setPaymentHash(null);
-
-      // Prepare generation request
+      // Prepare generation request with Ray 2 parameters
       const generationBody: any = { 
         prompt,
-        loop: isLooping
+        loop: isLooping,
+        // Add Ray 2 parameters
+        useRay2: useRay2,
+        resolution: useRay2 ? resolution : undefined,
+        duration: useRay2 ? duration : undefined
       };
 
       if (isExtending && selectedVideoId) {
@@ -626,6 +656,8 @@ const handleImageUpload = async (file: File) => {
       } else if (startImageUrl) {
         generationBody.startImageUrl = startImageUrl;
       }
+
+      console.log('Sending generation request with body:', JSON.stringify(generationBody));
 
       // Generate video
       const response = await fetch('/api/generate', {
@@ -636,15 +668,18 @@ const handleImageUpload = async (file: File) => {
         body: JSON.stringify(generationBody),
       });
 
+      console.log('Generation response status:', response.status);
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to generate video');
       }
 
       const data = await response.json();
+      console.log('Generation response data:', data);
 
       if (!data.id) {
-        throw new Error('Invalid response from server');
+        throw new Error('Invalid response from server: no generation ID');
       }
 
       const newGeneration: StoredGeneration = {
@@ -652,7 +687,7 @@ const handleImageUpload = async (file: File) => {
         prompt,
         state: data.state || 'queued',
         createdAt: data.created_at || new Date().toISOString(),
-        pubkey,
+        pubkey: pubkey || '',
         videoUrl: data.assets?.video,
       };
 
@@ -681,6 +716,98 @@ const handleImageUpload = async (file: File) => {
       setLoading(false);
     }
   };
+
+  // Updated generateVideo function
+  const generateVideo = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!prompt || !pubkey) return;
+
+    if (!isPromptSafe(prompt)) {
+      setError(getPromptFeedback(prompt));
+      toast({
+        variant: "destructive",
+        title: "Invalid prompt",
+        description: getPromptFeedback(prompt),
+      });
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const calculatedAmount = calculatePrice();
+      console.log(`Creating invoice for ${calculatedAmount} sats`);
+      
+      // Create Lightning invoice
+      const invoiceResponse = await fetch('/api/create-lnbits-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: calculatedAmount }),
+      });
+
+      console.log('Invoice response status:', invoiceResponse.status);
+
+      if (!invoiceResponse.ok) {
+        const errorData = await invoiceResponse.json();
+        console.error('Invoice creation error:', errorData);
+        
+        // Check specifically for wallet errors
+        if (errorData.error && 
+            (errorData.error.includes('wallet') || 
+             errorData.error.includes('configuration'))) {
+          throw new Error('Payment system is currently unavailable. Please try again later.');
+        }
+        
+        throw new Error(errorData.error || 'Failed to create invoice');
+      }
+
+      const invoiceData = await invoiceResponse.json();
+      console.log('Invoice data:', invoiceData);
+      
+      const { payment_request, payment_hash } = invoiceData;
+
+      // Make sure we got valid data back
+      if (!payment_request || !payment_hash) {
+        throw new Error('Invalid invoice data received');
+      }
+
+      setPaymentRequest(payment_request);
+      setPaymentHash(payment_hash);
+
+      const paymentConfirmed = await waitForPayment(payment_hash);
+      if (!paymentConfirmed) {
+        setLoading(false);
+        setPaymentRequest(null);
+        setPaymentHash(null);
+        return;
+      }
+
+      setPaymentRequest(null);
+      setPaymentHash(null);
+
+      // Call the separate generation handler
+      await handleGeneration();
+    } catch (err) {
+      console.error('Payment error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to process payment. Please try again.'
+      );
+      toast({
+        variant: "destructive",
+        title: "Payment system error",
+        description: err instanceof Error ? err.message : "Please try again",
+      });
+      setLoading(false);
+      setPaymentRequest(null);
+      setPaymentHash(null);
+    }
+  };
+  
   // Render
   if (!pubkey) {
     return (
@@ -941,6 +1068,57 @@ const handleImageUpload = async (file: File) => {
 
                   {/* Video Options */}
                   <div className="space-y-4">
+                    {/* Ray 2 Model Toggle */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-300">Use Ray 2 Model</label>
+                      <Switch
+                        checked={useRay2}
+                        onCheckedChange={setUseRay2}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    {/* Ray 2 Options (only show when Ray 2 is enabled) */}
+                    {useRay2 && (
+                      <>
+                        {/* Resolution Selector */}
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-300">
+                            Resolution
+                          </label>
+                          <select
+                            className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                            value={resolution}
+                            onChange={(e) => setResolution(e.target.value as Resolution)}
+                            disabled={loading}
+                          >
+                            <option value="540p">540p</option>
+                            <option value="720p">720p (Recommended)</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4k">4K</option>
+                          </select>
+                        </div>
+
+                        {/* Duration Selector */}
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-300">
+                            Duration
+                          </label>
+                          <select
+                            className="w-full bg-[#2a2a2a] rounded-lg border border-gray-700 p-2 text-white"
+                            value={duration}
+                            onChange={(e) => setDuration(e.target.value as Duration)}
+                            disabled={loading}
+                          >
+                            <option value="3s">3 seconds</option>
+                            <option value="5s">5 seconds (Recommended)</option>
+                            <option value="8s">8 seconds</option>
+                            <option value="10s">10 seconds</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
+
                     {/* Loop Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Loop Video</label>
@@ -954,15 +1132,14 @@ const handleImageUpload = async (file: File) => {
                     {/* Extend Toggle */}
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-300">Extend Previous Video</label>
-                       <Switch
-  checked={isExtending}
-  onCheckedChange={(checked) => { 
-    setIsExtending(checked); 
-    if (checked) setStartImageUrl(null);
-  }}
-  disabled={loading}
-/>
-
+                      <Switch
+                        checked={isExtending}
+                        onCheckedChange={(checked) => { 
+                          setIsExtending(checked); 
+                          if (checked) setStartImageUrl(null);
+                        }}
+                        disabled={loading}
+                      />
                     </div>
 
                     {/* Conditional Content */}
@@ -1090,7 +1267,16 @@ const handleImageUpload = async (file: File) => {
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-300">Please pay 1000 sats to proceed.</p>
+            
+            {/* Dynamic pricing message */}
+            <p className="text-sm text-gray-300">
+              Please pay {calculatePrice()} sats to proceed.
+              {useRay2 && (
+                <span className="block mt-1 text-purple-400">
+                  Using Ray 2 model with {resolution} resolution, {duration} duration.
+                </span>
+              )}
+            </p>
             
             <div className="flex justify-center p-4 bg-white rounded-lg">
               <QRCode 
