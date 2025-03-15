@@ -19,16 +19,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     console.log(`Checking payment status for hash: ${paymentHash}`);
+    console.log(`Using LNbits URL: ${LNBITS_URL}`);
+    console.log(`Using API Key: ${LNBITS_API_KEY ? 'Key provided' : 'No API key found'}`);
     
     // Check if we have the necessary credentials
     if (!LNBITS_API_KEY) {
       console.error('Missing LNbits API key');
       return res.status(500).json({ error: 'Server configuration error (missing API key)' });
-    }
-
-    if (!LNBITS_WALLET_ID) {
-      console.error('Missing LNbits wallet ID');
-      return res.status(500).json({ error: 'Server configuration error (missing wallet ID)' });
     }
 
     // API endpoint to check payment status
