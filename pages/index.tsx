@@ -108,17 +108,17 @@ const PRICING = {
 // Sample videos for the landing page
 const SAMPLE_VIDEOS = [
   {
-    url: "https://cdn.animalsunset.com/samples/giraffe-sunset.mp4",
+    url: "https://storage.cdn-luma.com/dream_machine/4985734e-22a0-4c17-b2e7-9d978a0d0b27/ab6e4bca-5376-4077-b7e0-6093c58a0045_output_7691bdaffb11193d.mp4",
     title: "Giraffe at Sunset",
     description: "A majestic giraffe silhouetted against a vibrant African sunset"
   },
   {
-    url: "https://cdn.animalsunset.com/samples/penguin-snow.mp4",
+    url: "https://storage.cdn-luma.com/dream_machine/4985734e-22a0-4c17-b2e7-9d978a0d0b27/ab6e4bca-5376-4077-b7e0-6093c58a0045_output_7691bdaffb11193d.mp4",
     title: "Penguin Adventure",
     description: "Adorable penguins sliding across Antarctic ice fields"
   },
   {
-    url: "https://cdn.animalsunset.com/samples/lion-pride.mp4",
+    url: "https://storage.cdn-luma.com/dream_machine/4985734e-22a0-4c17-b2e7-9d978a0d0b27/ab6e4bca-5376-4077-b7e0-6093c58a0045_output_7691bdaffb11193d.mp4",
     title: "Lion Pride",
     description: "A powerful lion pride roaming through the savanna"
   }
@@ -350,7 +350,7 @@ const LandingPage = ({ onConnect }: { onConnect: () => void }) => {
             loop 
             playsInline
             className="absolute w-full h-full object-cover"
-            src="https://cdn.animalsunset.com/hero-background.mp4"
+            src="https://storage.cdn-luma.com/dream_machine/4985734e-22a0-4c17-b2e7-9d978a0d0b27/ab6e4bca-5376-4077-b7e0-6093c58a0045_output_7691bdaffb11193d.mp4"
           ></video>
         </div>
 
@@ -772,16 +772,6 @@ export default function Home() {
         description: "Successfully connected to Nostr",
       });
       
-      // Add welcome credit for new users
-      //if (getUserCredits(key) === 0) {
-       // const newCredits = addUserCredits(key, 500, "Welcome bonus");
-        //setCredits(newCredits);
-        
-       // toast({
-          //title: "Welcome Bonus!",
-          //description: "You've received 500 sats credit to get started.",
-        //});
-      //}
     } catch (err) {
       setError('Failed to connect Nostr. Please install a NIP-07 extension like Alby.');
       toast({
