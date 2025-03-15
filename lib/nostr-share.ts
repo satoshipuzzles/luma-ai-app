@@ -1,5 +1,15 @@
 // lib/nostr-share.ts
-import { Event, getEventHash } from 'nostr-tools';
+import { Event, getEventHash, relayInit } from 'nostr-tools';
+
+// Define interfaces for window with Nostr
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: any): Promise<any>;
+    }
+  }
+}
 
 // Function to publish a regular note (kind 1) with video content
 export const publishNostrNote = async (
@@ -28,21 +38,47 @@ export const publishNostrNote = async (
     noteEvent.id = getEventHash(noteEvent as Event);
     const signedEvent = await window.nostr.signEvent(noteEvent as Event);
 
-    // Publish to relays
-    const relays = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+    // Publish to relays using nostr-tools relayInit
+    const relayUrls = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
+    const relayConnections = relayUrls.map(url => relayInit(url));
     
-    for (const relayUrl of relays) {
-      try {
-        const relay = window.NostrTools ? 
-          new window.NostrTools.Relay(relayUrl) : 
-          { publish: () => { throw new Error('NostrTools not available'); } };
+    // Using Promise.allSettled to handle relay connection failures gracefully
+    await Promise.allSettled(
+      relayConnections.map(relay => {
+        return new Promise<void>((resolve, reject) => {
+          let connected = false;
           
-        await relay.publish(signedEvent);
-      } catch (relayError) {
-        console.warn(`Failed to publish to relay ${relayUrl}:`, relayError);
-        // Continue with other relays even if one fails
-      }
-    }
+          relay.on('connect', async () => {
+            connected = true;
+            try {
+              await relay.publish(signedEvent);
+              resolve();
+            } catch (error) {
+              reject(error);
+            } finally {
+              // Close the connection after publishing
+              relay.close();
+            }
+          });
+
+          relay.on('error', () => {
+            if (!connected) {
+              reject(new Error(`Failed to connect to relay ${relay.url}`));
+            }
+          });
+
+          // Set timeout for relay connection
+          setTimeout(() => {
+            if (!connected) {
+              reject(new Error(`Connection timeout for relay ${relay.url}`));
+              relay.close();
+            }
+          }, 5000);
+
+          relay.connect();
+        });
+      })
+    );
 
     return;
   } catch (err) {
