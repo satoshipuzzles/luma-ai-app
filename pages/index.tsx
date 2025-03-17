@@ -212,7 +212,7 @@ const downloadVideo = async (url: string, filename: string) => {
     });
   }
 };
-
+const DEFAULT_RELAY_URLS = ['wss://relay.damus.io', 'wss://relay.nostrfreaks.com'];
 const publishToNostr = async (
   videoUrl: string, 
   prompt: string, 
