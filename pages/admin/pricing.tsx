@@ -24,8 +24,9 @@ interface PricingConfig {
   ray2: Ray2Pricing;
   photon: number; // Base price for Photon (still images)
 }
-//Admin Password
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+// Admin Password (with fallback for development)
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'temporary-dev-password';
 
 export default function AdminPricing() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -63,6 +64,20 @@ export default function AdminPricing() {
     }
   });
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Admin password in development mode:', ADMIN_PASSWORD);
+    }
+    
+    if (!ADMIN_PASSWORD) {
+      toast({
+        variant: "destructive",
+        title: "Configuration Error",
+        description: "Admin password not configured. Please check environment variables."
+      });
+    }
+  }, []);
+
   // Load existing pricing on mount
   useEffect(() => {
     const loadPricing = async () => {
@@ -94,6 +109,17 @@ export default function AdminPricing() {
   // Handle login
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Attempting login with provided password');
+    
+    if (!ADMIN_PASSWORD) {
+      toast({
+        variant: "destructive",
+        title: "Configuration Error",
+        description: "Admin password not configured. Please check server environment variables."
+      });
+      return;
+    }
+    
     if (password === ADMIN_PASSWORD) {
       setAuthenticated(true);
       toast({
@@ -333,93 +359,4 @@ export default function AdminPricing() {
       </main>
     </div>
   );
-}
-
-// pages/api/admin/pricing.ts
-import { NextApiRequest, NextApiResponse } from 'next';
-import fs from 'fs';
-import path from 'path';
-
-// File path for storing pricing
-const PRICING_FILE_PATH = path.join(process.cwd(), 'pricing.json');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'animalsunset';
-
-// Default pricing
-const DEFAULT_PRICING = {
-  base: 1000,
-  photon: 500,
-  ray2: {
-    '540p': {
-      '3s': 1000,
-      '5s': 1500,
-      '8s': 2000,
-      '10s': 2500
-    },
-    '720p': {
-      '3s': 1500,
-      '5s': 2000,
-      '8s': 2500,
-      '10s': 3000
-    },
-    '1080p': {
-      '3s': 2000,
-      '5s': 2500,
-      '8s': 3000,
-      '10s': 3500
-    },
-    '4k': {
-      '3s': 3000,
-      '5s': 3500,
-      '8s': 4000,
-      '10s': 5000
-    }
-  }
-};
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // GET request - return current pricing
-  if (req.method === 'GET') {
-    try {
-      // Check if pricing file exists
-      if (fs.existsSync(PRICING_FILE_PATH)) {
-        const pricingData = fs.readFileSync(PRICING_FILE_PATH, 'utf8');
-        return res.status(200).json(JSON.parse(pricingData));
-      } else {
-        // Return default pricing if file doesn't exist
-        return res.status(200).json(DEFAULT_PRICING);
-      }
-    } catch (error) {
-      console.error('Error reading pricing file:', error);
-      return res.status(500).json({ message: 'Failed to retrieve pricing data' });
-    }
-  }
-
-  // POST request - update pricing
-  if (req.method === 'POST') {
-    try {
-      const { pricing, adminPassword } = req.body;
-
-      // Simple authentication
-      if (adminPassword !== ADMIN_PASSWORD) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
-
-      // Validate pricing object
-      if (!pricing || typeof pricing !== 'object') {
-        return res.status(400).json({ message: 'Invalid pricing data' });
-      }
-
-      // Save pricing to file
-      fs.writeFileSync(PRICING_FILE_PATH, JSON.stringify(pricing, null, 2));
-      
-      return res.status(200).json({ message: 'Pricing updated successfully' });
-    } catch (error) {
-      console.error('Error saving pricing data:', error);
-      return res.status(500).json({ message: 'Failed to save pricing data' });
-    }
-  }
-
-  // Other HTTP methods not allowed
-  res.setHeader('Allow', ['GET', 'POST']);
-  res.status(405).json({ message: `Method ${req.method} not allowed` });
 }
