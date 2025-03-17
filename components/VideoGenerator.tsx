@@ -103,9 +103,8 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({
         pubkey
       };
 
-      const hashedEvent = window.nostr.getEventHash 
-        ? window.nostr.getEventHash(event)
-        : await import('nostr-tools').then(tools => tools.getEventHash(event));
+      // Get event hash using imported library instead of browser extension
+      const hashedEvent = await import('nostr-tools').then(tools => tools.getEventHash(event));
       
       const signedEvent = await window.nostr.signEvent({
         ...event,
