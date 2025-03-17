@@ -17,15 +17,16 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
   const [bitcoinConnectAvailable, setBitcoinConnectAvailable] = useState(false);
   const [bitcoinConnectEnabled, setBitcoinConnectEnabled] = useState(false);
   const [isEnablingBitcoinConnect, setIsEnablingBitcoinConnect] = useState(false);
-  const [nostrWalletConnect, setNostrWalletConnect] = useState<string>('');
   
   // Check if Bitcoin Connect is available and its status
   useEffect(() => {
     const checkBitcoinConnect = async () => {
+      console.log("Checking for Bitcoin Connect...");
       const available = typeof window !== 'undefined' && !!window.bitcoinConnect;
+      console.log("Bitcoin Connect available:", available);
       setBitcoinConnectAvailable(available);
       
-      if (available) {
+      if (available && window.bitcoinConnect) {
         const enabled = window.bitcoinConnect.isEnabled;
         setBitcoinConnectEnabled(enabled);
         
@@ -33,7 +34,6 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
           if (enabled) {
             const info = await window.bitcoinConnect.getInfo();
             console.log('Bitcoin Connect info:', info);
-            // We could store some of this info if needed
           }
         } catch (error) {
           console.error('Error getting Bitcoin Connect info:', error);
@@ -48,13 +48,7 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
     // Load settings from localStorage
     const savedSettings = localStorage.getItem(`settings-${pubkey}`);
     if (savedSettings) {
-      const parsedSettings = JSON.parse(savedSettings);
-      setSettings(parsedSettings);
-      
-      // If we have stored NWC string, use it
-      if (parsedSettings.nostrWalletConnect) {
-        setNostrWalletConnect(parsedSettings.nostrWalletConnect);
-      }
+      setSettings(JSON.parse(savedSettings));
     }
   }, [pubkey, isOpen]);
 
@@ -116,26 +110,6 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
       setIsEnablingBitcoinConnect(false);
     }
   };
-  
-  // Save Nostr Wallet Connect string
-  const saveNostrWalletConnect = () => {
-    if (!nostrWalletConnect.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Invalid NWC",
-        description: "Please enter a valid Nostr Wallet Connect string"
-      });
-      return;
-    }
-    
-    // Add validation here if needed
-    handleSettingChange('nostrWalletConnect', nostrWalletConnect.trim());
-    
-    toast({
-      title: "NWC Saved",
-      description: "Your Nostr Wallet Connect has been saved"
-    });
-  };
 
   if (!isOpen) return null;
 
@@ -193,91 +167,61 @@ export const SettingsModal = ({ isOpen, onClose, pubkey, onSettingsChange }: Set
               Lightning Wallet Settings
             </h3>
             
-            {/* Browser Wallet (Bitcoin Connect) */}
+            {/* Bitcoin Connect */}
             <div className="mb-4">
-              <h4 className="text-md font-medium mb-2">Browser Wallet</h4>
-              {bitcoinConnectAvailable ? (
-                <div className="flex flex-col space-y-3">
-                  <div className="flex items-center">
-                    <div className="flex-1">
-                      <p className="text-sm">
-                        {bitcoinConnectEnabled ? 
-                          "Bitcoin Connect is enabled and ready to use" : 
-                          "Enable your browser wallet for easy payments"}
-                      </p>
-                    </div>
-                    
-                    <button
-                      onClick={enableBitcoinConnect}
-                      disabled={bitcoinConnectEnabled || isEnablingBitcoinConnect}
-                      className={`ml-4 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center ${
-                        bitcoinConnectEnabled 
-                          ? 'bg-green-600 text-white cursor-default' 
-                          : 'bg-blue-600 hover:bg-blue-700 text-white'
-                      }`}
-                    >
-                      {bitcoinConnectEnabled ? (
-                        <>
-                          <Zap size={16} className="mr-1.5" />
-                          Connected
-                        </>
-                      ) : isEnablingBitcoinConnect ? (
-                        "Connecting..."
-                      ) : (
-                        "Connect"
-                      )}
-                    </button>
+              <h4 className="text-md font-medium mb-2">Bitcoin Connect</h4>
+              <div className="flex flex-col space-y-3">
+                <div className="flex items-center">
+                  <div className="flex-1">
+                    <p className="text-sm">
+                      {bitcoinConnectEnabled ? 
+                        "Bitcoin Connect is enabled and ready to use" : 
+                        "Enable Bitcoin Connect for easy Lightning payments"}
+                    </p>
                   </div>
                   
-                  {bitcoinConnectEnabled && (
-                    <div className="text-xs text-gray-400 rounded-lg bg-gray-800 p-2">
-                      Your browser wallet is connected and will appear as a payment option.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-gray-400 rounded-lg bg-gray-800 p-3">
-                  Bitcoin Connect is not available in your browser. You may need to install an extension like
-                  <a 
-                    href="https://getalby.com" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 ml-1"
-                  >
-                    Alby
-                  </a>.
-                </div>
-              )}
-            </div>
-            
-            {/* Nostr Wallet Connect */}
-            <div className="mt-6">
-              <h4 className="text-md font-medium mb-2">Nostr Wallet Connect</h4>
-              <div className="space-y-3">
-                <p className="text-sm text-gray-300">
-                  Connect to your Lightning wallet using a Nostr Wallet Connect string
-                </p>
-                
-                <input
-                  type="text"
-                  placeholder="nostr+walletconnect://..."
-                  value={nostrWalletConnect}
-                  onChange={(e) => setNostrWalletConnect(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-sm"
-                />
-                
-                <div className="flex justify-end">
                   <button
-                    onClick={saveNostrWalletConnect}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-sm"
+                    onClick={enableBitcoinConnect}
+                    disabled={bitcoinConnectEnabled || isEnablingBitcoinConnect}
+                    className={`ml-4 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center ${
+                      bitcoinConnectEnabled 
+                        ? 'bg-green-600 text-white cursor-default' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
                   >
-                    Save NWC Connection
+                    {bitcoinConnectEnabled ? (
+                      <>
+                        <Zap size={16} className="mr-1.5" />
+                        Connected
+                      </>
+                    ) : isEnablingBitcoinConnect ? (
+                      "Connecting..."
+                    ) : (
+                      "Connect"
+                    )}
                   </button>
                 </div>
                 
-                <div className="text-xs text-gray-400">
-                  You can get a NWC string from wallets like Alby, Mutiny, or Zeus. This allows you to pay without a browser extension.
-                </div>
+                {bitcoinConnectEnabled ? (
+                  <div className="text-xs text-gray-400 rounded-lg bg-gray-800 p-2">
+                    Your Bitcoin Connect wallet is connected and will appear as a payment option.
+                  </div>
+                ) : bitcoinConnectAvailable ? (
+                  <div className="text-xs text-gray-400 rounded-lg bg-gray-800 p-2">
+                    Connect your Lightning wallet via Bitcoin Connect for one-click payments.
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-400 rounded-lg bg-gray-800 p-2">
+                    Bitcoin Connect not detected. <a 
+                      href="https://getalby.com" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:underline"
+                    >
+                      Install Alby
+                    </a> or another compatible wallet.
+                  </div>
+                )}
               </div>
             </div>
           </div>
