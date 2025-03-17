@@ -1,7 +1,7 @@
 // components/PaymentModal.tsx
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode.react';
-import { X, Copy, Check, RefreshCw, Zap, Wallet } from 'lucide-react';
+import { X, Copy, Check, RefreshCw, Zap, Wallet, ExternalLink } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
 interface PaymentModalProps {
@@ -10,6 +10,7 @@ interface PaymentModalProps {
   amount: number;
   onClose: () => void;
   onPaymentStarted: () => void;
+  pubkey: string;
   extraInfo?: React.ReactNode;
 }
 
@@ -19,15 +20,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   amount,
   onClose,
   onPaymentStarted,
+  pubkey,
   extraInfo
 }) => {
   const [hasCopied, setHasCopied] = useState(false);
   const [bitcoinConnectAvailable, setBitcoinConnectAvailable] = useState(false);
   const [bitcoinConnectEnabled, setBitcoinConnectEnabled] = useState(false);
   const [bitcoinConnectPaying, setBitcoinConnectPaying] = useState(false);
+  const [nwcAvailable, setNwcAvailable] = useState(false);
+  const [nwcPaying, setNwcPaying] = useState(false);
   
-  // Check if Bitcoin Connect is available
+  // Check for payment options
   useEffect(() => {
+    // Check Bitcoin Connect availability
     const checkBitcoinConnect = () => {
       console.log("Checking for Bitcoin Connect...");
       const available = typeof window !== 'undefined' && !!window.bitcoinConnect;
@@ -41,12 +46,31 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       }
     };
     
+    // Check for Nostr Wallet Connect string
+    const checkNWC = () => {
+      if (typeof window === 'undefined') return;
+      
+      try {
+        const savedSettings = localStorage.getItem(`settings-${pubkey}`);
+        if (savedSettings) {
+          const settings = JSON.parse(savedSettings);
+          if (settings.nostrWalletConnect) {
+            console.log("NWC available");
+            setNwcAvailable(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking NWC:', error);
+      }
+    };
+    
     checkBitcoinConnect();
+    checkNWC();
     
     // Try checking again after a short delay to allow script to load
     const timeoutId = setTimeout(checkBitcoinConnect, 1000);
     return () => clearTimeout(timeoutId);
-  }, []);
+  }, [pubkey]);
   
   // Handle copy invoice
   const handleCopyInvoice = async () => {
@@ -151,6 +175,66 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       setBitcoinConnectPaying(false);
     }
   };
+  
+  // Handle NWC Payment
+  const handleNWCPayment = async () => {
+    try {
+      setNwcPaying(true);
+      
+      // Get the NWC string from settings
+      const savedSettings = localStorage.getItem(`settings-${pubkey}`);
+      if (!savedSettings) {
+        throw new Error("No wallet settings found");
+      }
+      
+      const settings = JSON.parse(savedSettings);
+      const nwcString = settings.nostrWalletConnect;
+      
+      if (!nwcString) {
+        throw new Error("Nostr Wallet Connect not configured");
+      }
+      
+      // Create a deep link to open the NWC wallet with the payment request
+      // Format: [nwc_string]?pr=[payment_request]
+      const paymentUrl = `${nwcString}?pr=${encodeURIComponent(paymentRequest)}`;
+      
+      // Open in a new window
+      window.open(paymentUrl, '_blank');
+      
+      toast({
+        title: "Wallet opened",
+        description: "Complete the payment in your wallet"
+      });
+      
+      // We can't know for sure if the payment was successful from here
+      // The user will need to confirm it manually or we can poll the payment status
+      toast({
+        title: "Payment status",
+        description: "Click 'Payment Complete' once you've paid"
+      });
+      
+      // In a real implementation, we would poll the payment status here
+      
+    } catch (error) {
+      console.error('NWC payment error:', error);
+      toast({
+        variant: "destructive",
+        title: "NWC Error",
+        description: error instanceof Error ? error.message : "Please try again"
+      });
+    } finally {
+      setNwcPaying(false);
+    }
+  };
+  
+  // For NWC: User manually confirms payment
+  const handleManualPaymentConfirmation = () => {
+    toast({
+      title: "Payment confirmed",
+      description: "Verifying your payment..."
+    });
+    onPaymentStarted();
+  };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
@@ -180,7 +264,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center gap-2 bg-[#2a2a2a] p-2 rounded-lg">
             <input
               type="text"
@@ -197,26 +281,70 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             </button>
           </div>
           
-          {/* Bitcoin Connect button - display if available */}
-          {bitcoinConnectAvailable && (
+          {/* Payment options */}
+          <div className="flex flex-col space-y-2">
+            {/* Bitcoin Connect - Show if available */}
+            {bitcoinConnectAvailable && (
+              <button
+                onClick={handleBitcoinConnect}
+                disabled={bitcoinConnectPaying}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {bitcoinConnectPaying ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wallet size={16} />
+                    <span>{bitcoinConnectEnabled ? 'Pay with Browser Wallet' : 'Connect Browser Wallet'}</span>
+                  </>
+                )}
+              </button>
+            )}
+            
+            {/* Nostr Wallet Connect - Show if available */}
+            {nwcAvailable && (
+              <button
+                onClick={handleNWCPayment}
+                disabled={nwcPaying}
+                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {nwcPaying ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>Opening Wallet...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap size={16} />
+                    <span>Pay with Nostr Wallet</span>
+                  </>
+                )}
+              </button>
+            )}
+            
+            {/* External wallets */}
             <button
-              onClick={handleBitcoinConnect}
-              disabled={bitcoinConnectPaying}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              onClick={() => {
+                // Open BOLT11 in default Lightning wallet
+                window.open(`lightning:${paymentRequest}`, '_blank');
+              }}
+              className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
             >
-              {bitcoinConnectPaying ? (
-                <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>Processing...</span>
-                </>
-              ) : (
-                <>
-                  <Wallet size={16} />
-                  <span>{bitcoinConnectEnabled ? 'Pay with Bitcoin Connect' : 'Connect Wallet'}</span>
-                </>
-              )}
+              <ExternalLink size={16} />
+              <span>Open in Lightning Wallet</span>
             </button>
-          )}
+            
+            {/* Confirmation button for NWC and external wallets */}
+            <button
+              onClick={handleManualPaymentConfirmation}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors mt-2"
+            >
+              <span>Payment Complete</span>
+            </button>
+          </div>
           
           <div className="flex items-center justify-center gap-2 text-sm text-gray-400 mt-2">
             <div className="animate-pulse w-2 h-2 bg-purple-500 rounded-full"></div>
@@ -224,7 +352,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
           
           <p className="text-xs text-gray-500 text-center mt-1">
-            If you've already paid but it's not detecting, don't worry!
+            If you've already paid but it's not detecting, click "Payment Complete".
             <br />We'll verify and credit your account automatically.
           </p>
         </div>
