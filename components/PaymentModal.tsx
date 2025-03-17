@@ -3,11 +3,6 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode.react';
 import { X, Copy, Check, RefreshCw, Zap, Wallet } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
-import { 
-  isBitcoinConnectAvailable, 
-  enableBitcoinConnect, 
-  payWithBitcoinConnect 
-} from '../utils/bitcoin-connect';
 
 interface PaymentModalProps {
   paymentRequest: string;
@@ -33,17 +28,24 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   
   // Check if Bitcoin Connect is available
   useEffect(() => {
-    const checkBitcoinConnect = async () => {
-      const available = isBitcoinConnectAvailable();
+    const checkBitcoinConnect = () => {
+      console.log("Checking for Bitcoin Connect...");
+      const available = typeof window !== 'undefined' && !!window.bitcoinConnect;
+      console.log("Bitcoin Connect available:", available);
       setBitcoinConnectAvailable(available);
       
       // If available, check if already enabled
       if (available && window.bitcoinConnect?.isEnabled) {
+        console.log("Bitcoin Connect is already enabled");
         setBitcoinConnectEnabled(true);
       }
     };
     
     checkBitcoinConnect();
+    
+    // Try checking again after a short delay to allow script to load
+    const timeoutId = setTimeout(checkBitcoinConnect, 1000);
+    return () => clearTimeout(timeoutId);
   }, []);
   
   // Handle copy invoice
@@ -69,15 +71,39 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   // Handle Bitcoin Connect
   const handleBitcoinConnect = async () => {
     try {
+      console.log("Handling Bitcoin Connect payment");
       if (!bitcoinConnectEnabled) {
-        const enabled = await enableBitcoinConnect();
-        setBitcoinConnectEnabled(enabled);
-        
-        if (!enabled) {
+        console.log("Enabling Bitcoin Connect...");
+        if (!window.bitcoinConnect) {
+          console.error("Bitcoin Connect not available");
           toast({
             variant: "destructive",
             title: "Bitcoin Connect",
-            description: "Failed to enable Bitcoin Connect"
+            description: "Bitcoin Connect not available in your browser"
+          });
+          return;
+        }
+        
+        try {
+          await window.bitcoinConnect.enable();
+          const enabled = window.bitcoinConnect.isEnabled;
+          console.log("Bitcoin Connect enabled:", enabled);
+          setBitcoinConnectEnabled(enabled);
+          
+          if (!enabled) {
+            toast({
+              variant: "destructive",
+              title: "Bitcoin Connect",
+              description: "Failed to enable Bitcoin Connect"
+            });
+            return;
+          }
+        } catch (error) {
+          console.error("Error enabling Bitcoin Connect:", error);
+          toast({
+            variant: "destructive",
+            title: "Bitcoin Connect",
+            description: "Error enabling Bitcoin Connect"
           });
           return;
         }
@@ -85,21 +111,30 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       
       // Now pay with Bitcoin Connect
       setBitcoinConnectPaying(true);
+      console.log("Sending payment with Bitcoin Connect:", paymentRequest);
       
-      const result = await payWithBitcoinConnect(paymentRequest);
-      
-      if (result.success) {
-        toast({
-          title: "Payment sent",
-          description: "Your payment is being processed"
-        });
-        onPaymentStarted();
-      } else {
+      try {
+        const result = await window.bitcoinConnect.sendPayment(paymentRequest);
+        console.log("Bitcoin Connect payment result:", result);
+        
+        if (result && result.preimage) {
+          toast({
+            title: "Payment sent",
+            description: "Your payment is being processed"
+          });
+          onPaymentStarted();
+        } else {
+          throw new Error("Invalid payment result");
+        }
+      } catch (error) {
+        console.error('Bitcoin Connect payment error:', error);
         toast({
           variant: "destructive",
           title: "Payment failed",
-          description: result.error || "Please try again"
+          description: error instanceof Error ? error.message : "Please try again"
         });
+      } finally {
+        setBitcoinConnectPaying(false);
       }
     } catch (error) {
       console.error('Bitcoin Connect error:', error);
@@ -108,7 +143,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         title: "Payment error",
         description: error instanceof Error ? error.message : "Please try again"
       });
-    } finally {
       setBitcoinConnectPaying(false);
     }
   };
@@ -158,7 +192,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             </button>
           </div>
           
-          {/* Bitcoin Connect button */}
+          {/* Bitcoin Connect button - display if available */}
           {bitcoinConnectAvailable && (
             <button
               onClick={handleBitcoinConnect}
