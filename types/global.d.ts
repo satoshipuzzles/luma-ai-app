@@ -1,3 +1,4 @@
+// types/global.d.ts
 interface Window {
   nostr?: {
     getPublicKey(): Promise<string>;
