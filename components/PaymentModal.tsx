@@ -114,6 +114,11 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       console.log("Sending payment with Bitcoin Connect:", paymentRequest);
       
       try {
+        // Add another null check here
+        if (!window.bitcoinConnect) {
+          throw new Error("Bitcoin Connect became unavailable");
+        }
+        
         const result = await window.bitcoinConnect.sendPayment(paymentRequest);
         console.log("Bitcoin Connect payment result:", result);
         
