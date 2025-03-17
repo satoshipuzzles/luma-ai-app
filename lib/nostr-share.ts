@@ -1,15 +1,8 @@
 // lib/nostr-share.ts
 import { Event, getEventHash, relayInit } from 'nostr-tools';
 
-// Define interfaces for window with Nostr
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent(event: any): Promise<any>;
-    }
-  }
-}
+// DO NOT redeclare Window interface here since it's already defined in types/global.d.ts
+// The conflict was causing the build error
 
 // Function to publish a regular note (kind 1) with video content
 export const publishNostrNote = async (
